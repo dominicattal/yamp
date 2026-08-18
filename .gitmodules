@@ -1,0 +1,18 @@
+[submodule "vendor/imgui"]
+	path = vendor/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "vendor/glfw"]
+	path = vendor/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "vendor/portable-file-dialogs"]
+	path = vendor/portable-file-dialogs
+	url = https://github.com/samhocevar/portable-file-dialogs.git
+[submodule "vendor/miniaudio"]
+	path = vendor/miniaudio
+	url = https://github.com/mackron/miniaudio.git
+[submodule "vendor/id3v2lib"]
+	path = vendor/id3v2lib
+	url = https://github.com/larsbs/id3v2lib.git
+[submodule "vendor/mINI"]
+	path = vendor/mINI
+	url = https://github.com/metayeti/mINI.git
