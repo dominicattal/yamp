@@ -4,23 +4,40 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <deque>
 
 struct Song {
     std::string title;
     std::string album;
     std::string artist;
     std::string track;
+    std::string path;
 };
 
 struct MPContext {
     Song current_song;
+    std::deque<std::string> queue;
 };
 
 extern MPContext mp_ctx;
 
+// Initializes and cleans up music play context
 void mp_init();
+void mp_cleanup();
+
+// Add a song to the program. Right now, just add it to the database whether or not it exists.
+// Eventually, flow should be like preview song in ui -> add config -> choose to save to database
 void mp_add_song(const std::string& song_path);
 void mp_add_songs(const std::vector<std::string>& song_paths);
-void mp_cleanup();
+
+// Immediately play a song
+void mp_play_song(const std::string& song_path);
+
+// Queue a song or mulitple songs
+void mp_queue_song(const std::string& song_path);
+void mp_queue_songs(const std::vector<std::string>& song_paths);
+
+// Skip current song in queue
+void mp_queue_skip();
 
 #endif

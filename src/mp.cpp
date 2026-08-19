@@ -33,7 +33,27 @@ void mp_init()
     reset_current_song();
 }
 
+void mp_cleanup()
+{
+    if (ctx.current_song_tag != nullptr) {
+        ma_sound_uninit(&ctx.current_song_sound);
+        ID3v2_Tag_free(ctx.current_song_tag);
+    }
+    ma_engine_uninit(&ctx.engine);
+    db_cleanup();
+}
+
 void mp_add_song(const std::string& song_path)
+{
+    (void)song_path;
+}
+
+void mp_add_songs(const std::vector<std::string>& song_paths)
+{
+    (void)song_paths;
+}
+
+void mp_play_song(const std::string& song_path)
 {
     std::cout << song_path << '\n';
 
@@ -67,18 +87,20 @@ void mp_add_song(const std::string& song_path)
         mp_ctx.current_song.track = frame->data->text;
 }
 
-void mp_add_songs(const std::vector<std::string>& song_paths)
+void mp_queue_song(const std::string& song_path)
 {
-    for (const std::string& song_path : song_paths)
-        mp_add_song(song_path);
+    mp_ctx.queue.push_back(song_path);
 }
 
-void mp_cleanup()
+void mp_queue_songs(const std::vector<std::string>& song_paths)
 {
-    if (ctx.current_song_tag != nullptr) {
-        ma_sound_uninit(&ctx.current_song_sound);
-        ID3v2_Tag_free(ctx.current_song_tag);
-    }
-    ma_engine_uninit(&ctx.engine);
-    db_cleanup();
+    for (const std::string& song_path : song_paths)
+        mp_queue_song(song_path);
+}
+
+void mp_queue_skip()
+{
+    std::string song_path = mp_ctx.queue.front();
+    mp_ctx.queue.pop_front();
+    mp_play_song(song_path);
 }

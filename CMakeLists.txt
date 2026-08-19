@@ -6,6 +6,7 @@ add_subdirectory(vendor/glfw)
 add_subdirectory(vendor/miniaudio)
 add_subdirectory(vendor/portable-file-dialogs)
 add_subdirectory(vendor/id3v2lib)
+add_subdirectory(vendor/spdlog)
 find_package(OpenGL REQUIRED)
 
 add_executable(yamp
@@ -30,4 +31,4 @@ PRIVATE
     ${CMAKE_HOME_DIRECTORY}/vendor/sqlite-amalgamation-3530400
 )
 
-target_link_libraries(yamp PRIVATE glfw OpenGL::GL portable_file_dialogs miniaudio id3v2lib)
+target_link_libraries(yamp PRIVATE glfw OpenGL::GL portable_file_dialogs miniaudio id3v2lib spdlog)

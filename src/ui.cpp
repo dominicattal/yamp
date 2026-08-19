@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "db.h"
 #include "mp.h"
+#include <cstring>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
@@ -8,6 +9,7 @@
 #include <iostream>
 #include <GLFW/glfw3.h>
 #include <vector>
+#include <spdlog/spdlog.h>
 
 struct UIContext {
     GLFWwindow* window;
@@ -104,12 +106,9 @@ void ui_init()
 
     int (*callback)(void*,int,char**,char**) = [](void* data, int num_cols, char** values, char** keys) -> int {
         (void)data; (void)num_cols; (void)keys;
-        Song song{values[1], "n/a", values[2], "n/a"};
+        Song song{values[1], "n/a", values[2], "n/a", values[4]};
         ctx.table_songs.push_back(song);
-        for (int i = 0; i < num_cols; i++) {
-            printf("%s %s\n", keys[i], values[i]);
-        }
-        puts("");
+        spdlog::info("{} {} {}", values[1], values[2], values[4]);
         return 0;
     };
 
@@ -149,7 +148,8 @@ static void draw_imgui()
 
     {
         ImGui::BeginChild("ChildL", ImVec2(200, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_None);
-        if (ImGui::Button("Add Song", ImVec2(100, 30))) {
+        if (ImGui::Button("Add Song", ImVec2(100, 30))) 
+        {
             const std::string title {"Choose files to read"};
             const std::string default_path = pfd::path::home();
             const std::vector<std::string> filters {"All Files", "*"};
@@ -157,14 +157,29 @@ static void draw_imgui()
             std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
             mp_add_songs(song_paths);
         }
+        if (ImGui::Button("Skip", ImVec2(100, 30))) 
+        {
+            mp_queue_skip();
+        }
 
-        if (mp_ctx.current_song.title.size() > 0) {
+        if (mp_ctx.current_song.title.length() > 0) {
             ImGui::Text("No song playing");
         } else {
             ImGui::Text("Name: %s", mp_ctx.current_song.title.c_str());
             ImGui::Text("Album: %s", mp_ctx.current_song.album.c_str());
             ImGui::Text("Artist: %s", mp_ctx.current_song.artist.c_str());
             ImGui::Text("Track: %s", mp_ctx.current_song.track.c_str());
+        }
+        if (ImGui::BeginTable("Queue", 1, ImGuiTableFlags_None))
+        {
+            ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_NoSort);
+            ImGui::TableHeadersRow();
+            for (const std::string& path : mp_ctx.queue)
+            {
+                ImGui::TableNextColumn();
+                ImGui::Text("%s", path.c_str());
+            }
+            ImGui::EndTable();
         }
         ImGui::EndChild();
     }
@@ -173,18 +188,27 @@ static void draw_imgui()
 
     {
         ImGui::BeginChild("Main", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_None);
-        static ImGuiTableFlags flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable;
-        if (ImGui::BeginTable("AAAAAA", 4, flags))
+        static ImGuiTableFlags flags = ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable;
+        if (ImGui::BeginTable("All Songs", 5, flags))
         {
-            ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort);
+            ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Album", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Artist", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
+            int id = 0;
             for (const Song& song : ctx.table_songs)
             {
-                (void)song;
                 //ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::PushID(id++);
+                if (ImGui::Button("Play"))
+                    mp_play_song(song.path);;
+                ImGui::SameLine();
+                if (ImGui::Button("Queue"))
+                    mp_queue_song(song.path);
+                ImGui::PopID();
                 ImGui::TableNextColumn();
                 ImGui::Text("%s", song.title.c_str());
                 ImGui::TableNextColumn();
@@ -196,7 +220,6 @@ static void draw_imgui()
             }
             ImGui::EndTable();
         }
-        ImGui::Text("Hello World!!!!!");
         ImGui::EndChild();
     }
 
