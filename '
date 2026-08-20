@@ -1,11 +1,10 @@
 #include "mp.h"
 #include "db.h"
-#include "log.h"
 #include <iostream>
-#include <format>
 #include <cassert>
 #include <miniaudio.h>
 #include <id3v2lib.h>
+#include <spdlog/spdlog.h>
 
 struct MPContextInternal {
     ma_engine engine;
@@ -24,35 +23,6 @@ static void reset_current_song()
     mp_ctx.current_song.track = "";
 }
 
-static int song_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)keys;
-    Song song{values[1], "n/a", values[2], "n/a", values[4], std::atoi(values[0])};
-    mp_ctx.songs.push_back(song);
-    log_info("Loaded song: %s %s %s", values[1], values[2], values[4]);
-    return 0;
-}
-
-static int album_song_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)values; (void)keys;
-    Album* album = static_cast<Album*>(data);
-    log_info("%p %s %s", album ,values[0], values[1]);
-    int song_id = std::atoi(values[0]);
-    album->songs.push_back(mp_get_song_by_id(song_id));
-    return 0;
-}
-
-static int album_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)keys;
-    int album_id = std::atoi(values[0]);
-    mp_ctx.albums.emplace_back(values[1], std::vector<Song*>{}, album_id);
-    std::string query = std::format("SELECT * FROM AlbumSong WHERE album_id={}", album_id);
-    sqlite3_exec(db, query.c_str(), album_song_callback, &mp_ctx.albums.back(), NULL);
-    return 0;
-}
-
 void mp_init()
 {
     db_init();
@@ -61,7 +31,21 @@ void mp_init()
     if (res != MA_SUCCESS)
         exit(1);
 
+    int (*song_callback)(void*,int,char**,char**) = [](void* data, int num_cols, char** values, char** keys) -> int {
+        (void)data; (void)num_cols; (void)keys;
+        Song song{values[1], "n/a", values[2], "n/a", values[4]};
+        mp_ctx.songs.push_back(song);
+        spdlog::info("{} {} {}", values[1], values[2], values[4]);
+        return 0;
+    };
     sqlite3_exec(db, "SELECT * FROM Songs", song_callback, NULL, NULL);
+
+    int (*album_callback)(void*,int,char**,char**) = [](void* data, int num_cols, char** values, char** keys) -> int {
+        (void)data; (void)num_cols; (void)keys;
+        Album album{values[1]};
+        mp_ctx.albums.push_back(album);
+        return 0;
+    };
     sqlite3_exec(db, "SELECT * FROM Albums", album_callback, NULL, NULL);
 
     reset_current_song();
@@ -132,19 +116,8 @@ void mp_queue_songs(const std::vector<std::string>& song_paths)
         mp_queue_song(song_path);
 }
 
-Song* mp_get_song_by_id(int id)
-{
-    for (Song& song : mp_ctx.songs)
-        if (song.id == id)
-            return &song;
-    return nullptr;
-}
-
 void mp_queue_skip()
 {
-    if (mp_ctx.queue.size() == 0)
-        return;
-
     std::string song_path = mp_ctx.queue.front();
     mp_ctx.queue.pop_front();
     mp_play_song(song_path);

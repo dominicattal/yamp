@@ -12,10 +12,24 @@ struct Song {
     std::string artist;
     std::string track;
     std::string path;
+    int id;
+};
+
+struct Album {
+    std::string name;
+    std::vector<Song*> songs;
+    int id;
+};
+
+struct Playlist {
+    std::string name;
 };
 
 struct MPContext {
     Song current_song;
+    std::vector<Song> songs;
+    std::vector<Album> albums;
+    std::vector<Playlist> playlists;
     std::deque<std::string> queue;
 };
 
@@ -36,6 +50,8 @@ void mp_play_song(const std::string& song_path);
 // Queue a song or mulitple songs
 void mp_queue_song(const std::string& song_path);
 void mp_queue_songs(const std::vector<std::string>& song_paths);
+
+Song* mp_get_song_by_id(int id);
 
 // Skip current song in queue
 void mp_queue_skip();

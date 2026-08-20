@@ -1,6 +1,6 @@
 #include "ui.h"
-#include "db.h"
 #include "mp.h"
+#include "log.h"
 #include <cstring>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -9,14 +9,10 @@
 #include <iostream>
 #include <GLFW/glfw3.h>
 #include <vector>
-#include <spdlog/spdlog.h>
 
 struct UIContext {
     GLFWwindow* window;
     bool show_demo_window;
-
-    // Songs to display in search table
-    std::vector<Song> table_songs;
 };
 
 static UIContext ctx;
@@ -103,16 +99,6 @@ void ui_init()
 
     const char* glsl_version = nullptr;
     ImGui_ImplOpenGL3_Init(glsl_version);
-
-    int (*callback)(void*,int,char**,char**) = [](void* data, int num_cols, char** values, char** keys) -> int {
-        (void)data; (void)num_cols; (void)keys;
-        Song song{values[1], "n/a", values[2], "n/a", values[4]};
-        ctx.table_songs.push_back(song);
-        spdlog::info("{} {} {}", values[1], values[2], values[4]);
-        return 0;
-    };
-
-    sqlite3_exec(db, "SELECT * FROM Songs", callback, NULL, NULL);
 }
 
 void ui_cleanup()
@@ -172,7 +158,7 @@ static void draw_imgui()
         }
         if (ImGui::BeginTable("Queue", 1, ImGuiTableFlags_None))
         {
-            ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_NoSort);
+            ImGui::TableSetupColumn("Queue", ImGuiTableColumnFlags_NoSort);
             ImGui::TableHeadersRow();
             for (const std::string& path : mp_ctx.queue)
             {
@@ -198,7 +184,7 @@ static void draw_imgui()
             ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
             int id = 0;
-            for (const Song& song : ctx.table_songs)
+            for (const Song& song : mp_ctx.songs)
             {
                 //ImGui::TableNextRow();
                 ImGui::TableNextColumn();
@@ -217,6 +203,32 @@ static void draw_imgui()
                 ImGui::Text("%s", song.artist.c_str());
                 ImGui::TableNextColumn();
                 ImGui::Text("%s", song.track.c_str());
+            }
+            ImGui::EndTable();
+        }
+        if (ImGui::BeginTable("All Albums", 1, flags))
+        {
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
+            for (const Album& album : mp_ctx.albums)
+            {
+                ImGui::TableNextColumn();
+                ImGui::Text("%s", album.name.c_str());
+                log_info("%d", album.songs.size());
+                if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
+                {
+                    ImGui::TableSetupColumn("Song");
+                    ImGui::TableSetupColumn("Track");
+                    ImGui::TableHeadersRow();
+                    for (const Song* song : album.songs)
+                    {
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s", song->title.c_str());
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%d", 0);
+                    }
+                    ImGui::EndTable();
+                }
             }
             ImGui::EndTable();
         }
