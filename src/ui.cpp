@@ -1,6 +1,5 @@
 #include "ui.h"
 #include "mp.h"
-#include "log.h"
 #include <cstring>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -73,7 +72,7 @@ void ui_init()
     int window_width = (int)(1280 * main_scale);
     int window_height = (int)(800 * main_scale);
 
-    ctx.window = glfwCreateWindow(window_width, window_height, "UMP", nullptr, nullptr);
+    ctx.window = glfwCreateWindow(window_width, window_height, "yamp", nullptr, nullptr);
     if (ctx.window == nullptr)
         exit(1);
     glfwMakeContextCurrent(ctx.window);
@@ -152,7 +151,6 @@ static void draw_imgui()
             ImGui::Text("No song playing");
         } else {
             ImGui::Text("Name: %s", mp_ctx.current_song.title.c_str());
-            ImGui::Text("Album: %s", mp_ctx.current_song.album.c_str());
             ImGui::Text("Artist: %s", mp_ctx.current_song.artist.c_str());
             ImGui::Text("Track: %s", mp_ctx.current_song.track.c_str());
         }
@@ -173,13 +171,12 @@ static void draw_imgui()
     ImGui::SameLine();
 
     {
-        ImGui::BeginChild("Main", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_None);
+        ImGui::BeginChild("Main", ImVec2(500, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_None);
         static ImGuiTableFlags flags = ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable;
-        if (ImGui::BeginTable("All Songs", 5, flags))
+        if (ImGui::BeginTable("All Songs", 4, flags))
         {
             ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort);
             ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Album", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Artist", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
@@ -198,8 +195,6 @@ static void draw_imgui()
                 ImGui::TableNextColumn();
                 ImGui::Text("%s", song.title.c_str());
                 ImGui::TableNextColumn();
-                ImGui::Text("%s", song.album.c_str());
-                ImGui::TableNextColumn();
                 ImGui::Text("%s", song.artist.c_str());
                 ImGui::TableNextColumn();
                 ImGui::Text("%s", song.track.c_str());
@@ -214,13 +209,44 @@ static void draw_imgui()
             {
                 ImGui::TableNextColumn();
                 ImGui::Text("%s", album.name.c_str());
-                log_info("%d", album.songs.size());
                 if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
                 {
                     ImGui::TableSetupColumn("Song");
                     ImGui::TableSetupColumn("Track");
                     ImGui::TableHeadersRow();
                     for (const Song* song : album.songs)
+                    {
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s", song->title.c_str());
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s", song->track.c_str());
+                    }
+                    ImGui::EndTable();
+                }
+            }
+            ImGui::EndTable();
+        }
+        ImGui::EndChild();
+    }
+
+    ImGui::SameLine();
+
+    {
+        ImGui::BeginChild("PPP", ImVec2(300, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_None);
+        if (ImGui::BeginTable("Playlists", 1, 0) )
+        {
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
+            for (const Playlist& playlist : mp_ctx.playlists)
+            {
+                ImGui::TableNextColumn();
+                ImGui::Text("%s", playlist.name.c_str());
+                if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
+                {
+                    ImGui::TableSetupColumn("Song");
+                    ImGui::TableSetupColumn("Track");
+                    ImGui::TableHeadersRow();
+                    for (const Song* song : playlist.songs)
                     {
                         ImGui::TableNextColumn();
                         ImGui::Text("%s", song->title.c_str());
@@ -233,6 +259,7 @@ static void draw_imgui()
             ImGui::EndTable();
         }
         ImGui::EndChild();
+
     }
 
     ImGui::End();

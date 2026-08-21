@@ -2,15 +2,14 @@ CREATE TABLE IF NOT EXISTS Songs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title VARCHAR(255),
     artist VARCHAR(255),
-    date INT,
+    date INTEGER,
     track INTEGER,
     path VARCHAR(255)
 );
 
 CREATE TABLE IF NOT EXISTS Albums (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255),
-    path VARCHAR(255)
+    name VARCHAR(255)
 );
 
 CREATE TABLE IF NOT EXISTS Playlists (

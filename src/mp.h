@@ -4,11 +4,11 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <unordered_map>
 #include <deque>
 
 struct Song {
     std::string title;
-    std::string album;
     std::string artist;
     std::string track;
     std::string path;
@@ -23,6 +23,8 @@ struct Album {
 
 struct Playlist {
     std::string name;
+    std::vector<Song*> songs;
+    int id;
 };
 
 struct MPContext {
