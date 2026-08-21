@@ -54,6 +54,7 @@ void mp_queue_song(const std::string& song_path);
 void mp_queue_songs(const std::vector<std::string>& song_paths);
 
 Song* mp_get_song_by_id(int id);
+Album* mp_get_album_by_id(int id);
 
 // Skip current song in queue
 void mp_queue_skip();

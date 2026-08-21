@@ -8,6 +8,8 @@
 #include <iostream>
 #include <GLFW/glfw3.h>
 #include <vector>
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
+#include <spdlog/spdlog.h>
 
 struct UIContext {
     GLFWwindow* window;
@@ -216,6 +218,7 @@ static void draw_imgui()
                     ImGui::TableHeadersRow();
                     for (const Song* song : album.songs)
                     {
+                        assert(song);
                         ImGui::TableNextColumn();
                         ImGui::Text("%s", song->title.c_str());
                         ImGui::TableNextColumn();
