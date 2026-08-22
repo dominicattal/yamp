@@ -10,6 +10,7 @@
 #include <sqlite3.h>
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
+#include <stb_image.h>
 
 struct MPContextInternal {
     ma_engine engine;
@@ -46,7 +47,9 @@ static int song_callback(void* data, int num_cols, char** values, char** keys)
     int id = std::atoi(values[0]);
     std::string title = values[1];
     std::string path = values[2];
-    mp_ctx.songs.emplace_back(title, path, id);
+    Song& song = mp_ctx.songs.emplace_back(title, path, id);
+    if (mp_ctx.song_callback)
+        mp_ctx.song_callback(&song);
     SPDLOG_INFO("Loaded song: {} [{}]", values[0], values[1], values[2]);
     return 0;
 }
@@ -222,9 +225,11 @@ void mp_add_song(const std::string& song_path)
     int song_id = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
 
-    SPDLOG_INFO("Created song {} {}", song_id, title);
+    Song& song = mp_ctx.songs.emplace_back(title, path, song_id);
+    if (mp_ctx.song_callback)
+        mp_ctx.song_callback(&song);
 
-    mp_ctx.songs.emplace_back(title, path, song_id);
+    SPDLOG_INFO("Created song {} {}", song_id, title);
 
     int album_id{}, artist_id{};
     if (album_name.size() > 0) {
@@ -318,6 +323,8 @@ void mp_add_song(const std::string& song_path)
         }
         sqlite3_finalize(stmt);
     }
+
+    ID3v2_Tag_free(tag);
 }
 
 void mp_add_songs(const std::vector<std::string>& song_paths)
@@ -358,7 +365,31 @@ void mp_queue_songs(const std::vector<std::string>& song_paths)
         mp_queue_song(song_path);
 }
 
-const Song* mp_get_song_by_id(int id)
+FrontCover mp_song_front_cover_load(Song* song)
+{
+    FrontCover front_cover{};
+    ID3v2_Tag* tag = ID3v2_read_tag(song->path.c_str());
+    if (!tag)
+        return front_cover;
+    ID3v2_ApicFrame* apic_cover = ID3v2_Tag_get_album_cover_frame(tag);
+    if (!apic_cover)
+        return front_cover;
+    unsigned char* apic_data = (unsigned char*)apic_cover->data->data;
+    int picture_size = apic_cover->data->picture_size;
+    int num_channels;
+    unsigned char* raw_data = stbi_load_from_memory(apic_data, picture_size, &front_cover.width, &front_cover.height, &num_channels, 4);
+    front_cover.data = raw_data;
+    ID3v2_Tag_free(tag);
+    return front_cover;
+}
+
+void mp_song_front_cover_free(FrontCover* front_cover)
+{
+    if (front_cover->data)
+        stbi_image_free(front_cover->data);
+}
+
+const Song* mp_get_song_from_id(int id)
 {
     for (const Song& song : mp_ctx.songs)
         if (song.id == id)
@@ -366,7 +397,7 @@ const Song* mp_get_song_by_id(int id)
     return nullptr;
 }
 
-const Album* mp_get_album_by_id(int id)
+const Album* mp_get_album_from_id(int id)
 {
     for (const Album& album : mp_ctx.albums)
         if (album.id == id)
@@ -374,7 +405,7 @@ const Album* mp_get_album_by_id(int id)
     return nullptr;
 }
 
-const Artist* mp_get_artist_by_id(int id)
+const Artist* mp_get_artist_from_id(int id)
 {
     for (const Artist& artist : mp_ctx.artists)
         if (artist.id == id)

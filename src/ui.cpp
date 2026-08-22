@@ -2,6 +2,7 @@
 #include "mp.h"
 #include <cstring>
 #include <imgui.h>
+#include <unordered_map>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <portable-file-dialogs.h>
@@ -15,10 +16,12 @@
 #include <stb_image.h>
 
 struct UIContext {
+    std::unordered_map<int, GLuint> song_textures;
+
     GLFWwindow* window;
-    GLuint cover_texture;
-    int cover_texture_width;
-    int cover_texture_height;
+    GLuint default_texture;
+    int default_texture_width;
+    int default_texture_height;
     bool show_demo_window;
 };
 
@@ -45,23 +48,41 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
         return;
 }
 
-static void initialize_textures()
+static void initialize_default_texture()
 {
-    glGenTextures(1, &ctx.cover_texture);
-    glBindTexture(GL_TEXTURE_2D, ctx.cover_texture);
+    glGenTextures(1, &ctx.default_texture);
+    glBindTexture(GL_TEXTURE_2D, ctx.default_texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     FILE* fptr = fopen("music/Chopin Etudes/cover.jpg", "r");
     int nc;
-    unsigned char* data = stbi_load_from_file(fptr, &ctx.cover_texture_width, &ctx.cover_texture_height, &nc, 4);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ctx.cover_texture_width, ctx.cover_texture_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    unsigned char* data = stbi_load_from_file(fptr, &ctx.default_texture_width, &ctx.default_texture_height, &nc, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ctx.default_texture_width, ctx.default_texture_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     stbi_image_free(data);
+    fclose(fptr);
 }
 
 static void cleanup_textures()
 {
-    glDeleteTextures(1, &ctx.cover_texture);
+    glDeleteTextures(1, &ctx.default_texture);
+    for (auto song_texture : ctx.song_textures)
+        glDeleteTextures(1, &song_texture.second);
+}
+
+static void song_callback(Song* song)
+{
+    FrontCover front_cover = mp_song_front_cover_load(song);
+
+    glGenTextures(1, &ctx.song_textures[song->id]);
+    glBindTexture(GL_TEXTURE_2D, ctx.song_textures[song->id]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
+
+    mp_song_front_cover_free(&front_cover);
+    SPDLOG_INFO("callback on {}", song->title);
 }
 
 void ui_init()
@@ -107,7 +128,7 @@ void ui_init()
     glfwSwapInterval(1);
     glfwSetKeyCallback(ctx.window, key_callback);
 
-    initialize_textures();
+    initialize_default_texture();
     
     assert(pfd::settings::available() && "Portable File Dialogs are not available on this platform.\n");
     //pfd::settings::verbose(true);
@@ -127,6 +148,8 @@ void ui_init()
 
     const char* glsl_version = nullptr;
     ImGui_ImplOpenGL3_Init(glsl_version);
+
+    mp_ctx.song_callback = song_callback;
 }
 
 void ui_cleanup()
@@ -150,7 +173,7 @@ static void draw_left_side()
     ImVec2 uv_min = ImVec2(0.0f, 0.0f); // Top-left
     ImVec2 uv_max = ImVec2(0.0f, 0.0f); // Lower-right
     //ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, IM_MAX(1.0f, ImGui::GetStyle().ImageBorderSize));
-    ImGui::ImageWithBg(ctx.cover_texture, ImVec2(200, 200), uv_min, uv_max, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(ctx.default_texture, ImVec2(200, 200), uv_min, uv_max, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     //ImGui::PopStyleVar();
     if (ImGui::Button("Add Song", ImVec2(100, 30))) 
     {
@@ -189,42 +212,33 @@ static void draw_left_side()
 
 static void draw_all_songs()
 {
-    ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("All Songs", 4, flags, ImVec2(ImGui::GetContentRegionAvail().x, 300)))
+    ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
+    if (ImGui::BeginTable("All Songs", 3, flags, ImVec2(ImGui::GetContentRegionAvail().x, 300)))
     {
-        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort);
-        ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Artist", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Album", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableHeadersRow();
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
+        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
+        ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_NoSort);
+        //ImGui::TableSetupScrollFreeze(0, 1);
+        //ImGui::TableHeadersRow();
         int id = 0;
         for (const Song& song : mp_ctx.songs)
         {
-            //ImGui::TableNextRow();
             ImGui::TableNextColumn();
             ImGui::PushID(id++);
             if (ImGui::Button("Play"))
                 mp_play_song(song.path);;
-            ImGui::SameLine();
             if (ImGui::Button("Queue"))
                 mp_queue_song(song.path);
             ImGui::PopID();
             ImGui::TableNextColumn();
+            ImGui::ImageWithBg(ctx.song_textures[song.id], ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImGui::TableNextColumn();
             ImGui::Text("%s", song.title.c_str());
-            ImGui::TableNextColumn();
             int artist_id = mp_get_artist_id_from_song_id(song.id);
-            assert(artist_id);
-            const Artist* artist = mp_get_artist_by_id(artist_id);
-            assert(artist);
-            ImGui::Text("%s", artist->name.c_str());
-            ImGui::TableNextColumn();
-            int album_id = mp_get_album_id_from_song_id(song.id);
-            if (album_id != -1) {
-                const Album* album = mp_get_album_by_id(album_id);
-                ImGui::Text("%s", album->name.c_str());
-            } else {
-                ImGui::Text("null");
+            if (artist_id != -1) {
+                const Artist* artist = mp_get_artist_from_id(artist_id);
+                assert(artist);
+                ImGui::Text("%s", artist->name.c_str());
             }
         }
         ImGui::EndTable();
@@ -249,7 +263,7 @@ static void draw_all_artists()
                 std::vector<int> album_ids = mp_get_album_ids_from_artist_id(artist.id);
                 for (int album_id : album_ids)
                 {
-                    const Album* album = mp_get_album_by_id(album_id);
+                    const Album* album = mp_get_album_from_id(album_id);
                     ImGui::TableNextColumn();
                     ImGui::Text("%s", album->name.c_str());
                 }
@@ -273,7 +287,7 @@ static void draw_all_albums()
 
             int artist_id = mp_get_artist_id_from_album_id(album.id);
             assert(artist_id != -1);
-            const Artist* artist = mp_get_artist_by_id(artist_id);
+            const Artist* artist = mp_get_artist_from_id(artist_id);
             assert(artist);
             ImGui::Text("%s - %s", album.name.c_str(), artist->name.c_str());
             if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
@@ -284,7 +298,7 @@ static void draw_all_albums()
                 std::vector<SongTrack> song_tracks = mp_get_song_ids_from_album_id(album.id);
                 for (const SongTrack& song_track : song_tracks)
                 {
-                    const Song* song = mp_get_song_by_id(song_track.song_id);
+                    const Song* song = mp_get_song_from_id(song_track.song_id);
                     ImGui::TableNextColumn();
                     ImGui::Text("%s", song->title.c_str());
                     ImGui::TableNextColumn();
@@ -314,7 +328,7 @@ static void draw_center()
     //ImVec2 uv_min = ImVec2(0.0f, 0.0f); // Top-left
     //ImVec2 uv_max = ImVec2(0.0f, 0.0f); // Lower-right
     ////ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, IM_MAX(1.0f, ImGui::GetStyle().ImageBorderSize));
-    //ImGui::ImageWithBg(ctx.cover_texture, ImVec2(200, 200), uv_min, uv_max, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    //ImGui::ImageWithBg(ctx.default_texture, ImVec2(200, 200), uv_min, uv_max, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     //ImGui::SameLine();
     //{
     //    ImGui::BeginChild("album_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));

@@ -5,6 +5,8 @@
 #include <string_view>
 #include <vector>
 #include <deque>
+#include <functional>
+#include <memory>
 
 struct Song {
     std::string title;
@@ -54,6 +56,14 @@ struct SongTrack {
     int track;
 };
 
+struct FrontCover {
+    unsigned char* data;
+    int width;
+    int height;
+};
+
+using SongCallback = std::function<void(Song*)>;
+
 struct MPContext {
     Song current_song;
     std::vector<Song> songs;
@@ -64,6 +74,9 @@ struct MPContext {
     std::vector<ArtistSong> artist_songs;
     std::vector<ArtistAlbum> artist_albums;
     std::vector<PlaylistSong> playlist_songs;
+
+    SongCallback song_callback;
+
     std::deque<std::string> queue;
 };
 
@@ -85,9 +98,13 @@ void mp_play_song(const std::string& song_path);
 void mp_queue_song(const std::string& song_path);
 void mp_queue_songs(const std::vector<std::string>& song_paths);
 
-const Song* mp_get_song_by_id(int id);
-const Album* mp_get_album_by_id(int id);
-const Artist* mp_get_artist_by_id(int id);
+// Load song cover art from memory
+FrontCover mp_song_front_cover_load(Song* song);
+void mp_song_front_cover_free(FrontCover* data);
+
+const Song* mp_get_song_from_id(int id);
+const Album* mp_get_album_from_id(int id);
+const Artist* mp_get_artist_from_id(int id);
 
 int mp_get_album_id_from_song_id(int song_id);
 int mp_get_artist_id_from_song_id(int song_id);
