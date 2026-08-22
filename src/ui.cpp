@@ -6,13 +6,19 @@
 #include <imgui_impl_opengl3.h>
 #include <portable-file-dialogs.h>
 #include <iostream>
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <vector>
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 #include <spdlog/spdlog.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 struct UIContext {
     GLFWwindow* window;
+    GLuint cover_texture;
+    int cover_texture_width;
+    int cover_texture_height;
     bool show_demo_window;
 };
 
@@ -23,20 +29,39 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
-bool ui_key_callback(int key, int scancode, int action, int mods)
+static bool ui_key_callback(int key, int scancode, int action, int mods)
 {
 
     (void)key; (void)scancode; (void)action; (void)mods;
     return ImGui::GetIO().WantCaptureKeyboard;
 }
 
-void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     (void)window;
     if (key == GLFW_KEY_F1 && action == GLFW_PRESS)
         ctx.show_demo_window = !ctx.show_demo_window;
     if (ui_key_callback(key, scancode, action, mods))
         return;
+}
+
+static void initialize_textures()
+{
+    glGenTextures(1, &ctx.cover_texture);
+    glBindTexture(GL_TEXTURE_2D, ctx.cover_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    FILE* fptr = fopen("music/Chopin Etudes/cover.jpg", "r");
+    int nc;
+    unsigned char* data = stbi_load_from_file(fptr, &ctx.cover_texture_width, &ctx.cover_texture_height, &nc, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ctx.cover_texture_width, ctx.cover_texture_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    stbi_image_free(data);
+}
+
+static void cleanup_textures()
+{
+    glDeleteTextures(1, &ctx.cover_texture);
 }
 
 void ui_init()
@@ -78,9 +103,11 @@ void ui_init()
     if (ctx.window == nullptr)
         exit(1);
     glfwMakeContextCurrent(ctx.window);
+    gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
     glfwSwapInterval(1);
-
     glfwSetKeyCallback(ctx.window, key_callback);
+
+    initialize_textures();
     
     assert(pfd::settings::available() && "Portable File Dialogs are not available on this platform.\n");
     //pfd::settings::verbose(true);
@@ -104,12 +131,189 @@ void ui_init()
 
 void ui_cleanup()
 {
+    cleanup_textures();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
     glfwDestroyWindow(ctx.window);
     glfwTerminate();
+}
+
+static void draw_left_side()
+{
+    ImGuiChildFlags child_flags = ImGuiChildFlags_ResizeX | ImGuiChildFlags_Borders;
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+    float width = 200;
+    //ImGui::SetNextWindowSizeConstraints(ImVec2(200.0f, 0.0f), ImVec2(300.0f, FLT_MAX));
+    ImGui::BeginChild("left_side", ImVec2(width, ImGui::GetContentRegionAvail().y), child_flags, window_flags);
+    ImVec2 uv_min = ImVec2(0.0f, 0.0f); // Top-left
+    ImVec2 uv_max = ImVec2(0.0f, 0.0f); // Lower-right
+    //ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, IM_MAX(1.0f, ImGui::GetStyle().ImageBorderSize));
+    ImGui::ImageWithBg(ctx.cover_texture, ImVec2(200, 200), uv_min, uv_max, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    //ImGui::PopStyleVar();
+    if (ImGui::Button("Add Song", ImVec2(100, 30))) 
+    {
+        const std::string title {"Choose files to read"};
+        const std::string default_path = pfd::path::home();
+        const std::vector<std::string> filters {"All Files", "*"};
+        const pfd::opt options = pfd::opt::multiselect;
+        std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
+        mp_add_songs(song_paths);
+    }
+    if (ImGui::Button("Skip", ImVec2(100, 30))) 
+    {
+        mp_queue_skip();
+    }
+
+    if (mp_ctx.current_song.title.length() > 0) {
+        ImGui::Text("No song playing");
+    } else {
+        ImGui::Text("Name: %s", mp_ctx.current_song.title.c_str());
+        ImGui::Text("Artist: %s", mp_ctx.current_song.artist.c_str());
+        ImGui::Text("Track: %s", mp_ctx.current_song.track.c_str());
+    }
+    if (ImGui::BeginTable("Queue", 1, ImGuiTableFlags_None))
+    {
+        ImGui::TableSetupColumn("Queue", ImGuiTableColumnFlags_NoSort);
+        ImGui::TableHeadersRow();
+        for (const std::string& path : mp_ctx.queue)
+        {
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", path.c_str());
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndChild();
+}
+
+[[maybe_unused]] static void draw_all_songs()
+{
+    ImGuiTableFlags flags =
+        ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti
+        | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody
+        | ImGuiTableFlags_ScrollY;
+    if (ImGui::BeginTable("All Songs", 4, flags, ImVec2(ImGui::GetContentRegionAvail().x, 300)))
+    {
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort);
+        ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Artist", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        int id = 0;
+        for (const Song& song : mp_ctx.songs)
+        {
+            //ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::PushID(id++);
+            if (ImGui::Button("Play"))
+                mp_play_song(song.path);;
+            ImGui::SameLine();
+            if (ImGui::Button("Queue"))
+                mp_queue_song(song.path);
+            ImGui::PopID();
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", song.title.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", song.artist.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", song.track.c_str());
+        }
+        ImGui::EndTable();
+    }
+}
+
+[[maybe_unused]] static void draw_all_albums()
+{
+    ImGuiTableFlags flags =
+        ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti
+        | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody
+        | ImGuiTableFlags_ScrollY;
+    if (ImGui::BeginTable("All Albums", 1, flags))
+    {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        for (const Album& album : mp_ctx.albums)
+        {
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", album.name.c_str());
+            if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
+            {
+                ImGui::TableSetupColumn("Song");
+                ImGui::TableSetupColumn("Track");
+                ImGui::TableHeadersRow();
+                for (const Song* song : album.songs)
+                {
+                    assert(song);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", song->title.c_str());
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", song->track.c_str());
+                }
+                ImGui::EndTable();
+            }
+        }
+        ImGui::EndTable();
+    }
+}
+
+static void draw_center()
+{
+    ImGuiChildFlags child_flags = ImGuiChildFlags_ResizeX;
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+    int width = ImGui::GetContentRegionAvail().x - 300;
+    ImGui::BeginChild("center", ImVec2(width, ImGui::GetContentRegionAvail().y), child_flags, window_flags);
+
+    ImVec2 uv_min = ImVec2(0.0f, 0.0f); // Top-left
+    ImVec2 uv_max = ImVec2(0.0f, 0.0f); // Lower-right
+    //ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, IM_MAX(1.0f, ImGui::GetStyle().ImageBorderSize));
+    ImGui::ImageWithBg(ctx.cover_texture, ImVec2(200, 200), uv_min, uv_max, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::SameLine();
+    {
+        ImGui::BeginChild("album_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
+        ImGui::SetWindowFontScale(4.0f); 
+        ImGui::Text("Album Name");
+        ImGui::SetWindowFontScale(2.0f); 
+        ImGui::Text("Artist");
+        ImGui::SetWindowFontScale(1.0f); 
+        ImGui::Button("Play Album");
+        ImGui::EndChild();
+    }
+
+    ImGui::EndChild();
+}
+
+void draw_right_side()
+{
+    ImGuiChildFlags child_flags = ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysAutoResize;
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+    ImGui::BeginChild("right_side", ImGui::GetContentRegionAvail(), child_flags, window_flags);
+    if (ImGui::BeginTable("Playlists", 1, 0) )
+    {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        for (const Playlist& playlist : mp_ctx.playlists)
+        {
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", playlist.name.c_str());
+            if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
+            {
+                ImGui::TableSetupColumn("Song");
+                ImGui::TableSetupColumn("Track");
+                ImGui::TableHeadersRow();
+                for (const Song* song : playlist.songs)
+                {
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", song->title.c_str());
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%d", 0);
+                }
+                ImGui::EndTable();
+            }
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndChild();
 }
 
 static void draw_imgui()
@@ -133,137 +337,11 @@ static void draw_imgui()
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("UMP", &window_open, window_flags);
 
-    {
-        ImGui::BeginChild("ChildL", ImVec2(200, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_None);
-        if (ImGui::Button("Add Song", ImVec2(100, 30))) 
-        {
-            const std::string title {"Choose files to read"};
-            const std::string default_path = pfd::path::home();
-            const std::vector<std::string> filters {"All Files", "*"};
-            const pfd::opt options = pfd::opt::multiselect;
-            std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
-            mp_add_songs(song_paths);
-        }
-        if (ImGui::Button("Skip", ImVec2(100, 30))) 
-        {
-            mp_queue_skip();
-        }
-
-        if (mp_ctx.current_song.title.length() > 0) {
-            ImGui::Text("No song playing");
-        } else {
-            ImGui::Text("Name: %s", mp_ctx.current_song.title.c_str());
-            ImGui::Text("Artist: %s", mp_ctx.current_song.artist.c_str());
-            ImGui::Text("Track: %s", mp_ctx.current_song.track.c_str());
-        }
-        if (ImGui::BeginTable("Queue", 1, ImGuiTableFlags_None))
-        {
-            ImGui::TableSetupColumn("Queue", ImGuiTableColumnFlags_NoSort);
-            ImGui::TableHeadersRow();
-            for (const std::string& path : mp_ctx.queue)
-            {
-                ImGui::TableNextColumn();
-                ImGui::Text("%s", path.c_str());
-            }
-            ImGui::EndTable();
-        }
-        ImGui::EndChild();
-    }
-
+    draw_left_side();
     ImGui::SameLine();
-
-    {
-        ImGui::BeginChild("Main", ImVec2(500, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_None);
-        static ImGuiTableFlags flags = ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable;
-        if (ImGui::BeginTable("All Songs", 4, flags))
-        {
-            ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort);
-            ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Artist", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableHeadersRow();
-            int id = 0;
-            for (const Song& song : mp_ctx.songs)
-            {
-                //ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::PushID(id++);
-                if (ImGui::Button("Play"))
-                    mp_play_song(song.path);;
-                ImGui::SameLine();
-                if (ImGui::Button("Queue"))
-                    mp_queue_song(song.path);
-                ImGui::PopID();
-                ImGui::TableNextColumn();
-                ImGui::Text("%s", song.title.c_str());
-                ImGui::TableNextColumn();
-                ImGui::Text("%s", song.artist.c_str());
-                ImGui::TableNextColumn();
-                ImGui::Text("%s", song.track.c_str());
-            }
-            ImGui::EndTable();
-        }
-        if (ImGui::BeginTable("All Albums", 1, flags))
-        {
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableHeadersRow();
-            for (const Album& album : mp_ctx.albums)
-            {
-                ImGui::TableNextColumn();
-                ImGui::Text("%s", album.name.c_str());
-                if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
-                {
-                    ImGui::TableSetupColumn("Song");
-                    ImGui::TableSetupColumn("Track");
-                    ImGui::TableHeadersRow();
-                    for (const Song* song : album.songs)
-                    {
-                        assert(song);
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%s", song->title.c_str());
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%s", song->track.c_str());
-                    }
-                    ImGui::EndTable();
-                }
-            }
-            ImGui::EndTable();
-        }
-        ImGui::EndChild();
-    }
-
+    draw_center();
     ImGui::SameLine();
-
-    {
-        ImGui::BeginChild("PPP", ImVec2(300, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_None);
-        if (ImGui::BeginTable("Playlists", 1, 0) )
-        {
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableHeadersRow();
-            for (const Playlist& playlist : mp_ctx.playlists)
-            {
-                ImGui::TableNextColumn();
-                ImGui::Text("%s", playlist.name.c_str());
-                if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
-                {
-                    ImGui::TableSetupColumn("Song");
-                    ImGui::TableSetupColumn("Track");
-                    ImGui::TableHeadersRow();
-                    for (const Song* song : playlist.songs)
-                    {
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%s", song->title.c_str());
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%d", 0);
-                    }
-                    ImGui::EndTable();
-                }
-            }
-            ImGui::EndTable();
-        }
-        ImGui::EndChild();
-
-    }
+    draw_right_side();
 
     ImGui::End();
 

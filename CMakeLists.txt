@@ -20,6 +20,7 @@ add_executable(yamp
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/imgui_tables.cpp
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/imgui.cpp
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/imgui_draw.cpp
+    ${CMAKE_HOME_DIRECTORY}/vendor/glad/src/glad.c
     ${CMAKE_HOME_DIRECTORY}/vendor/sqlite-amalgamation-3530400/sqlite3.c
 )
 
@@ -27,7 +28,9 @@ target_include_directories(yamp
 PRIVATE
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui 
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/backends
+    ${CMAKE_HOME_DIRECTORY}/vendor/glad/include
     ${CMAKE_HOME_DIRECTORY}/vendor/sqlite-amalgamation-3530400
+    ${CMAKE_HOME_DIRECTORY}/vendor/stb
 )
 
-target_link_libraries(yamp PRIVATE glfw OpenGL::GL portable_file_dialogs miniaudio id3v2lib spdlog)
+target_link_libraries(yamp PRIVATE glfw portable_file_dialogs miniaudio id3v2lib spdlog)
