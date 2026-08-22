@@ -170,8 +170,8 @@ static void draw_left_side()
         ImGui::Text("No song playing");
     } else {
         ImGui::Text("Name: %s", mp_ctx.current_song.title.c_str());
-        ImGui::Text("Artist: %s", mp_ctx.current_song.artist.c_str());
-        ImGui::Text("Track: %s", mp_ctx.current_song.track.c_str());
+        //ImGui::Text("Artist: %s", mp_ctx.current_song.artist.c_str());
+        //ImGui::Text("Track: %s", mp_ctx.current_song.track.c_str());
     }
     if (ImGui::BeginTable("Queue", 1, ImGuiTableFlags_None))
     {
@@ -197,8 +197,8 @@ static void draw_left_side()
     {
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Artist", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthStretch);
+        //ImGui::TableSetupColumn("Artist", ImGuiTableColumnFlags_WidthStretch);
+        //ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         int id = 0;
         for (const Song& song : mp_ctx.songs)
@@ -214,10 +214,10 @@ static void draw_left_side()
             ImGui::PopID();
             ImGui::TableNextColumn();
             ImGui::Text("%s", song.title.c_str());
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", song.artist.c_str());
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", song.track.c_str());
+            //ImGui::TableNextColumn();
+            //ImGui::Text("%s", song.artist.c_str());
+            //ImGui::TableNextColumn();
+            //ImGui::Text("%s", song.track.c_str());
         }
         ImGui::EndTable();
     }
@@ -225,41 +225,41 @@ static void draw_left_side()
 
 [[maybe_unused]] static void draw_all_albums()
 {
-    ImGuiTableFlags flags =
-        ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti
-        | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody
-        | ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("All Albums", 1, flags))
-    {
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableHeadersRow();
-        for (const Album& album : mp_ctx.albums)
-        {
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", album.name.c_str());
-            if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
-            {
-                ImGui::TableSetupColumn("Song");
-                ImGui::TableSetupColumn("Track");
-                ImGui::TableHeadersRow();
-                for (const Song* song : album.songs)
-                {
-                    assert(song);
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%s", song->title.c_str());
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%s", song->track.c_str());
-                }
-                ImGui::EndTable();
-            }
-        }
-        ImGui::EndTable();
-    }
+    //ImGuiTableFlags flags =
+    //    ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti
+    //    | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody
+    //    | ImGuiTableFlags_ScrollY;
+    //if (ImGui::BeginTable("All Albums", 1, flags))
+    //{
+    //    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+    //    ImGui::TableHeadersRow();
+    //    for (const Album& album : mp_ctx.albums)
+    //    {
+    //        ImGui::TableNextColumn();
+    //        ImGui::Text("%s", album.name.c_str());
+    //        if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
+    //        {
+    //            ImGui::TableSetupColumn("Song");
+    //            ImGui::TableSetupColumn("Track");
+    //            ImGui::TableHeadersRow();
+    //            for (const Song* song : album.songs)
+    //            {
+    //                assert(song);
+    //                ImGui::TableNextColumn();
+    //                ImGui::Text("%s", song->title.c_str());
+    //                ImGui::TableNextColumn();
+    //                ImGui::Text("%s", song->track.c_str());
+    //            }
+    //            ImGui::EndTable();
+    //        }
+    //    }
+    //    ImGui::EndTable();
+    //}
 }
 
 static void draw_center()
 {
-    ImGuiChildFlags child_flags = ImGuiChildFlags_ResizeX;
+    ImGuiChildFlags child_flags = ImGuiChildFlags_ResizeX | ImGuiChildFlags_Borders;
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
     int width = ImGui::GetContentRegionAvail().x - 300;
     ImGui::BeginChild("center", ImVec2(width, ImGui::GetContentRegionAvail().y), child_flags, window_flags);
@@ -280,6 +280,23 @@ static void draw_center()
         ImGui::EndChild();
     }
 
+    //const Album& album = mp_ctx.albums[0];
+    //if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
+    //{
+    //    ImGui::TableSetupColumn("Song");
+    //    ImGui::TableSetupColumn("Track");
+    //    ImGui::TableHeadersRow();
+    //    for (const Song* song : album.songs)
+    //    {
+    //        assert(song);
+    //        ImGui::TableNextColumn();
+    //        ImGui::Text("%s", song->title.c_str());
+    //        ImGui::TableNextColumn();
+    //        ImGui::Text("%s", song->track.c_str());
+    //    }
+    //    ImGui::EndTable();
+    //}
+
     ImGui::EndChild();
 }
 
@@ -296,20 +313,20 @@ void draw_right_side()
         {
             ImGui::TableNextColumn();
             ImGui::Text("%s", playlist.name.c_str());
-            if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
-            {
-                ImGui::TableSetupColumn("Song");
-                ImGui::TableSetupColumn("Track");
-                ImGui::TableHeadersRow();
-                for (const Song* song : playlist.songs)
-                {
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%s", song->title.c_str());
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%d", 0);
-                }
-                ImGui::EndTable();
-            }
+            //if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
+            //{
+            //    ImGui::TableSetupColumn("Song");
+            //    ImGui::TableSetupColumn("Track");
+            //    ImGui::TableHeadersRow();
+            //    for (const Song* song : playlist.songs)
+            //    {
+            //        ImGui::TableNextColumn();
+            //        ImGui::Text("%s", song->title.c_str());
+            //        ImGui::TableNextColumn();
+            //        ImGui::Text("%d", 0);
+            //    }
+            //    ImGui::EndTable();
+            //}
         }
         ImGui::EndTable();
     }

@@ -1,29 +1,43 @@
 CREATE TABLE IF NOT EXISTS Songs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title VARCHAR(255),
-    artist VARCHAR(255),
-    date INTEGER,
-    track INTEGER,
-    path VARCHAR(255)
+    title VARCHAR(256),
+    path VARCHAR(256)
+);
+
+CREATE TABLE IF NOT EXISTS Artists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(256)
 );
 
 CREATE TABLE IF NOT EXISTS Albums (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255)
+    name VARCHAR(256)
 );
 
 CREATE TABLE IF NOT EXISTS Playlists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255)
+    name VARCHAR(256)
 );
 
 CREATE TABLE IF NOT EXISTS AlbumSong (
-    song_id INT,
-    album_id INT
+    album_id INTEGER,
+    song_id INTEGER,
+    track INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS ArtistAlbum (
+    artist_id INTEGER,
+    album_id INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS ArtistSong (
+    artist_id INTEGER,
+    song_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS PlaylistSong (
-    song_id INT,
-    playlist_id INT
+    playlist_id INTEGER,
+    song_id INTEGER,
+    track INTEGER
 );
 

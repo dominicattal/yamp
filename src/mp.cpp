@@ -8,7 +8,7 @@
 #include <miniaudio.h>
 #include <id3v2lib.h>
 #include <sqlite3.h>
-#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
 
 struct MPContextInternal {
@@ -38,11 +38,6 @@ static void execute_file(const char* path)
 
 static void reset_current_song()
 {
-    mp_ctx.current_song.title = "";
-    mp_ctx.current_song.artist = "";
-    mp_ctx.current_song.track = "";
-    mp_ctx.current_song.path = "";
-    mp_ctx.current_song.id = 0;
 }
 
 static int song_callback(void* data, int num_cols, char** values, char** keys)
@@ -50,21 +45,9 @@ static int song_callback(void* data, int num_cols, char** values, char** keys)
     (void)data; (void)num_cols; (void)keys;
     int id = std::atoi(values[0]);
     std::string title = values[1];
-    std::string artist = values[2];
-    //int date = std::atoi(values[3]);
-    std::string track = values[4];
-    std::string path = values[5];
-    mp_ctx.songs.emplace_back(title, artist, track, path, id);
-    SPDLOG_INFO("Loaded song: {}|{}|{}", values[1], values[2], values[4]);
-    return 0;
-}
-
-static int album_song_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)values; (void)keys;
-    Album* album = static_cast<Album*>(data);
-    int song_id = std::atoi(values[0]);
-    album->songs.push_back(mp_get_song_by_id(song_id));
+    std::string path = values[2];
+    mp_ctx.songs.emplace_back(title, path, id);
+    SPDLOG_INFO("Loaded song: {} [{}]", values[0], values[1], values[2]);
     return 0;
 }
 
@@ -72,18 +55,17 @@ static int album_callback(void* data, int num_cols, char** values, char** keys)
 {
     (void)data; (void)num_cols; (void)keys;
     int album_id = std::atoi(values[0]);
-    mp_ctx.albums.emplace_back(values[1], std::vector<Song*>{}, album_id);
-    std::string query = std::format("SELECT * FROM AlbumSong WHERE album_id={}", album_id);
-    sqlite3_exec(ctx.db, query.c_str(), album_song_callback, &mp_ctx.albums.back(), NULL);
+    mp_ctx.albums.emplace_back(values[1], album_id);
+    SPDLOG_INFO("Loaded album: {} [{}]", values[0], values[1]);
     return 0;
 }
 
-static int playlist_song_callback(void* data, int num_cols, char** values, char** keys)
+static int artist_callback(void* data, int num_cols, char** values, char** keys)
 {
-    (void)data; (void)num_cols; (void)values; (void)keys;
-    Playlist* playlist = static_cast<Playlist*>(data);
-    int song_id = std::atoi(values[0]);
-    playlist->songs.push_back(mp_get_song_by_id(song_id));
+    (void)data; (void)num_cols; (void)keys;
+    int artist_id = std::atoi(values[0]);
+    mp_ctx.artists.emplace_back(values[1], artist_id);
+    SPDLOG_INFO("Loaded artist: {} [{}]", values[0], values[1]);
     return 0;
 }
 
@@ -91,9 +73,50 @@ static int playlist_callback(void* data, int num_cols, char** values, char** key
 {
     (void)data; (void)num_cols; (void)keys;
     int playlist_id = std::atoi(values[0]);
-    mp_ctx.playlists.emplace_back(values[1], std::vector<Song*>{}, playlist_id);
-    std::string query = std::format("SELECT * FROM PlaylistSong WHERE playlist_id={}", playlist_id);
-    sqlite3_exec(ctx.db, query.c_str(), playlist_song_callback, &mp_ctx.playlists.back(), NULL);
+    mp_ctx.playlists.emplace_back(values[1], playlist_id);
+    SPDLOG_INFO("Loaded playlist: {} [{}]", values[0], values[1]);
+    return 0;
+}
+
+static int album_song_callback(void* data, int num_cols, char** values, char** keys)
+{
+    (void)data; (void)num_cols; (void)values; (void)keys;
+    int album_id = std::atoi(values[0]);
+    int song_id = std::atoi(values[1]);
+    int track = std::atoi(values[2]);
+    mp_ctx.album_song.emplace_back(album_id, song_id, track);
+    SPDLOG_INFO("Loaded album song: album_id={} song_id={}", values[0], values[1]);
+    return 0;
+}
+
+static int artist_song_callback(void* data, int num_cols, char** values, char** keys)
+{
+    (void)data; (void)num_cols; (void)values; (void)keys;
+    int artist_id = std::atoi(values[0]);
+    int song_id = std::atoi(values[1]);
+    mp_ctx.artist_song.emplace_back(artist_id, song_id);
+    SPDLOG_INFO("Loaded artist song: artist_id={} song_id={}", values[0], values[1]);
+    return 0;
+}
+
+static int artist_album_callback(void* data, int num_cols, char** values, char** keys)
+{
+    (void)data; (void)num_cols; (void)values; (void)keys;
+    int artist_id = std::atoi(values[0]);
+    int album_id = std::atoi(values[1]);
+    mp_ctx.artist_album.emplace_back(artist_id, album_id);
+    SPDLOG_INFO("Loaded artist album: artist_id={} album_id={}", values[0], values[1]);
+    return 0;
+}
+
+static int playlist_song_callback(void* data, int num_cols, char** values, char** keys)
+{
+    (void)data; (void)num_cols; (void)values; (void)keys;
+    int playlist_id = std::atoi(values[0]);
+    int song_id = std::atoi(values[1]);
+    int track = std::atoi(values[2]);
+    mp_ctx.playlist_song.emplace_back(playlist_id, song_id, track);
+    SPDLOG_INFO("Loaded playlist song: playlist_id={} song_id={} track={}", values[0], values[1], values[2]);
     return 0;
 }
 
@@ -131,7 +154,12 @@ void mp_init()
 
     sqlite3_exec(ctx.db, "SELECT * FROM Songs", song_callback, NULL, NULL);
     sqlite3_exec(ctx.db, "SELECT * FROM Albums", album_callback, NULL, NULL);
+    sqlite3_exec(ctx.db, "SELECT * FROM Artists", artist_callback, NULL, NULL);
     sqlite3_exec(ctx.db, "SELECT * FROM Playlists", playlist_callback, NULL, NULL);
+    sqlite3_exec(ctx.db, "SELECT * FROM AlbumSong", album_song_callback, NULL, NULL);
+    sqlite3_exec(ctx.db, "SELECT * FROM ArtistAlbum", artist_album_callback, NULL, NULL);
+    sqlite3_exec(ctx.db, "SELECT * FROM ArtistSong", artist_song_callback, NULL, NULL);
+    sqlite3_exec(ctx.db, "SELECT * FROM PlaylistSong", playlist_song_callback, NULL, NULL);
 
     reset_current_song();
 }
@@ -150,10 +178,10 @@ void mp_add_song(const std::string& song_path)
 {
     ID3v2_TextFrame* frame;
     std::string title{""};
-    std::string artist{""};
-    std::string track{"1"};
+    std::string artist_name{""};
     std::string album_name{""};
     std::string path{song_path};
+    int track{};
     ID3v2_Tag* tag = ID3v2_read_tag(song_path.c_str());
     if (!tag) {
         puts("Could not read tag");
@@ -168,10 +196,10 @@ void mp_add_song(const std::string& song_path)
     }
     frame = ID3v2_Tag_get_artist_frame(tag);
     if (frame)
-        artist = frame->data->text;
+        artist_name = frame->data->text;
     frame = ID3v2_Tag_get_track_frame(tag);
     if (frame)
-        track = frame->data->text;
+        track = std::atoi(frame->data->text);
     frame = ID3v2_Tag_get_album_frame(tag);
     if (frame)
         album_name = frame->data->text;
@@ -180,12 +208,10 @@ void mp_add_song(const std::string& song_path)
 
     sqlite3_stmt* stmt;
     const char* query;
-    query = "INSERT INTO Songs (title, artist, date, track, path) VALUES (?1, ?2, 0, ?3, ?4);";
+    query = "INSERT INTO Songs (title, path) VALUES (?1, ?2);";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, title.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, artist.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, track.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 4, path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, path.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
@@ -196,10 +222,11 @@ void mp_add_song(const std::string& song_path)
     int song_id = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
 
-    SPDLOG_INFO("song id: {}", song_id);
+    SPDLOG_INFO("Created song {} {}", song_id, title);
 
-    Song* song = &mp_ctx.songs.emplace_back(title, artist, track, path, song_id);
+    mp_ctx.songs.emplace_back(title, path, song_id);
 
+    int album_id, artist_id;
     if (album_name.size() > 0) {
         int album_id;
         query = "SELECT id FROM Albums WHERE name=?1";
@@ -208,7 +235,6 @@ void mp_add_song(const std::string& song_path)
         int res = sqlite3_step(stmt);
         if (res != SQLITE_ROW) {
             sqlite3_finalize(stmt);
-            SPDLOG_INFO("Creating album {}", album_name);
             query = "INSERT INTO Albums (name) VALUES (?1)";
             sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
             sqlite3_bind_text(stmt, 1, album_name.c_str(), -1, SQLITE_TRANSIENT);
@@ -220,22 +246,66 @@ void mp_add_song(const std::string& song_path)
             sqlite3_bind_text(stmt, 1, album_name.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_step(stmt);
             album_id = sqlite3_column_int(stmt, 0);
-            mp_ctx.albums.emplace_back(album_name, std::vector<Song*>{}, album_id);
+            mp_ctx.albums.emplace_back(album_name, album_id);
             sqlite3_finalize(stmt);
+
+            SPDLOG_INFO("Created album {} {}", album_id, album_name);
         } else {
             album_id = sqlite3_column_int(stmt, 0);
             sqlite3_finalize(stmt);
         }
-        query = "INSERT INTO AlbumSong (song_id, album_id) VALUES (?1, ?2)";
+        query = "INSERT INTO AlbumSong (album_id, song_id, track) VALUES (?1, ?2, ?3)";
         sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-        sqlite3_bind_int(stmt, 1, song_id);
+        sqlite3_bind_int(stmt, 1, album_id);
+        sqlite3_bind_int(stmt, 2, song_id);
+        sqlite3_bind_int(stmt, 3, track);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        mp_ctx.album_song.emplace_back(album_id, song_id, track);
+    }
+
+    if (artist_name.size() > 0) {
+        query = "SELECT id FROM Artists WHERE name=?1";
+        sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+        sqlite3_bind_text(stmt, 1, artist_name.c_str(), -1, SQLITE_TRANSIENT);
+        int res = sqlite3_step(stmt);
+        if (res != SQLITE_ROW) {
+            sqlite3_finalize(stmt);
+            query = "INSERT INTO Artists (name) VALUES (?1)";
+            sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+            sqlite3_bind_text(stmt, 1, artist_name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+
+            query = "SELECT id FROM Artists WHERE name=?1";
+            sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+            sqlite3_bind_text(stmt, 1, artist_name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(stmt);
+            artist_id = sqlite3_column_int(stmt, 0);
+            mp_ctx.albums.emplace_back(artist_name, artist_id);
+            sqlite3_finalize(stmt);
+
+            SPDLOG_INFO("Created artist {} {}", artist_id, artist_name);
+        } else {
+            artist_id = sqlite3_column_int(stmt, 0);
+            sqlite3_finalize(stmt);
+        }
+        query = "INSERT INTO ArtistSong (artist_id, song_id) VALUES (?1, ?2)";
+        sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+        sqlite3_bind_int(stmt, 1, artist_id);
+        sqlite3_bind_int(stmt, 2, song_id);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        mp_ctx.artist_song.emplace_back(artist_id, album_id);
+    }
+
+    if (artist_name.size() > 0 && album_name.size() > 0) {
+        query = "INSERT INTO ArtistAlbum (artist_id, album_id) VALUES (?1, ?2)";
+        sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+        sqlite3_bind_int(stmt, 1, artist_id);
         sqlite3_bind_int(stmt, 2, album_id);
         sqlite3_step(stmt);
         sqlite3_finalize(stmt);
-        SPDLOG_INFO("album id: {}", album_id);
-        Album* album = mp_get_album_by_id(album_id);
-        assert(album != nullptr);
-        album->songs.push_back(song);
     }
 }
 
@@ -264,13 +334,6 @@ void mp_play_song(const std::string& song_path)
     frame = ID3v2_Tag_get_title_frame(ctx.current_song_tag);
     if (frame)
         mp_ctx.current_song.title = frame->data->text;
-    frame = ID3v2_Tag_get_album_frame(ctx.current_song_tag);
-    frame = ID3v2_Tag_get_artist_frame(ctx.current_song_tag);
-    if (frame)
-        mp_ctx.current_song.artist = frame->data->text;
-    frame = ID3v2_Tag_get_track_frame(ctx.current_song_tag);
-    if (frame)
-        mp_ctx.current_song.track = frame->data->text;
 }
 
 void mp_queue_song(const std::string& song_path)
@@ -298,6 +361,16 @@ Album* mp_get_album_by_id(int id)
         SPDLOG_INFO("{} {}", album.id, id);
         if (album.id == id)
             return &album;
+    }
+    return nullptr;
+}
+
+Artist* mp_get_artist_by_id(int id)
+{
+    for (Artist& artist : mp_ctx.artists) {
+        SPDLOG_INFO("{} {}", artist.id, id);
+        if (artist.id == id)
+            return &artist;
     }
     return nullptr;
 }
