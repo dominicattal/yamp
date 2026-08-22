@@ -39,16 +39,31 @@ struct PlaylistSong {
     int track;
 };
 
+struct ArtistSong {
+    int artist_id;
+    int song_id;
+};
+
+struct ArtistAlbum {
+    int artist_id;
+    int album_id;
+};
+
+struct SongTrack {
+    int song_id;
+    int track;
+};
+
 struct MPContext {
     Song current_song;
     std::vector<Song> songs;
     std::vector<Album> albums;
     std::vector<Artist> artists;
     std::vector<Playlist> playlists;
-    std::vector<AlbumSong> album_song;
-    std::vector<std::pair<int, int>> artist_album;
-    std::vector<std::pair<int, int>> artist_song;
-    std::vector<PlaylistSong> playlist_song;
+    std::vector<AlbumSong> album_songs;
+    std::vector<ArtistSong> artist_songs;
+    std::vector<ArtistAlbum> artist_albums;
+    std::vector<PlaylistSong> playlist_songs;
     std::deque<std::string> queue;
 };
 
@@ -70,9 +85,15 @@ void mp_play_song(const std::string& song_path);
 void mp_queue_song(const std::string& song_path);
 void mp_queue_songs(const std::vector<std::string>& song_paths);
 
-Song* mp_get_song_by_id(int id);
-Album* mp_get_album_by_id(int id);
-Artist* mp_get_artist_by_id(int id);
+const Song* mp_get_song_by_id(int id);
+const Album* mp_get_album_by_id(int id);
+const Artist* mp_get_artist_by_id(int id);
+
+int mp_get_album_id_from_song_id(int song_id);
+int mp_get_artist_id_from_song_id(int song_id);
+int mp_get_artist_id_from_album_id(int album_id);
+std::vector<SongTrack> mp_get_song_ids_from_album_id(int album_id);
+std::vector<int> mp_get_album_ids_from_artist_id(int artist_id);
 
 // Skip current song in queue
 void mp_queue_skip();
