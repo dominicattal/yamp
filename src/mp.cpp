@@ -14,8 +14,8 @@
 
 struct MPContextInternal {
     ma_engine engine;
-    ID3v2_Tag* current_song_tag;
     ma_sound current_song_sound;
+    bool current_song_loaded;
     sqlite3* db;
 };
 
@@ -35,10 +35,6 @@ static void execute_file(const char* path)
         SPDLOG_INFO("SQLite3 error: %s", error_msg);
         sqlite3_free(error_msg);
     }
-}
-
-static void reset_current_song()
-{
 }
 
 static int song_callback(void* data, int num_cols, char** values, char** keys)
@@ -127,7 +123,7 @@ static void db_init()
 {
     sqlite3_open("build/mp.db", &ctx.db);
 
-    execute_file("sql/schema.sql");
+    execute_file("assets/sql/schema.sql");
 
     sqlite3_stmt* stmt;
     const char* query = "SELECT COUNT(*) FROM Songs";
@@ -142,7 +138,7 @@ static void db_init()
     SPDLOG_INFO("num rows: {}", num_rows);
     // load the example data
     if (num_rows == 0) {
-        //execute_file("sql/insert.sql");
+        //execute_file("assets/sql/insert.sql");
     }
     sqlite3_finalize(stmt);
 }
@@ -163,18 +159,15 @@ void mp_init()
     sqlite3_exec(ctx.db, "SELECT * FROM ArtistAlbum", artist_album_callback, NULL, NULL);
     sqlite3_exec(ctx.db, "SELECT * FROM ArtistSong", artist_song_callback, NULL, NULL);
     sqlite3_exec(ctx.db, "SELECT * FROM PlaylistSong", playlist_song_callback, NULL, NULL);
-
-    reset_current_song();
 }
 
 void mp_cleanup()
 {
-    if (ctx.current_song_tag != nullptr) {
+    if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
-        ID3v2_Tag_free(ctx.current_song_tag);
-    }
     ma_engine_uninit(&ctx.engine);
     sqlite3_close(ctx.db);
+    SPDLOG_INFO("MP cleaned up");
 }
 
 void mp_add_song(const std::string& song_path)
@@ -333,36 +326,25 @@ void mp_add_songs(const std::vector<std::string>& song_paths)
         mp_add_song(song_path);
 }
 
-void mp_play_song(const std::string& song_path)
+void mp_play_song(const Song* song)
 {
-    const char* song_path_c_str = song_path.c_str();
-
-    if (ctx.current_song_tag != nullptr) {
+    if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
-        ID3v2_Tag_free(ctx.current_song_tag);
-    }
-
-    ma_sound_init_from_file(&ctx.engine, song_path_c_str, 0, NULL, NULL, &ctx.current_song_sound);
+    ma_sound_init_from_file(&ctx.engine, song->path.c_str(), 0, NULL, NULL, &ctx.current_song_sound);
     ma_sound_start(&ctx.current_song_sound);
-
-    ctx.current_song_tag = ID3v2_read_tag(song_path_c_str);
-
-    ID3v2_TextFrame* frame;
-    reset_current_song();
-    frame = ID3v2_Tag_get_title_frame(ctx.current_song_tag);
-    if (frame)
-        mp_ctx.current_song.title = frame->data->text;
+    ctx.current_song_loaded = true;
+    mp_ctx.current_song = song;
 }
 
-void mp_queue_song(const std::string& song_path)
+void mp_queue_song(const Song* song)
 {
-    mp_ctx.queue.push_back(song_path);
+    mp_ctx.queue.push_back(song);
 }
 
-void mp_queue_songs(const std::vector<std::string>& song_paths)
+void mp_queue_songs(const std::vector<const Song*> songs)
 {
-    for (const std::string& song_path : song_paths)
-        mp_queue_song(song_path);
+    for (const Song* song : songs)
+        mp_queue_song(song);
 }
 
 FrontCover mp_song_front_cover_load(Song* song)
@@ -469,10 +451,16 @@ int mp_get_album_id_from_artist_id(int artist_id)
 
 void mp_queue_skip()
 {
-    if (mp_ctx.queue.size() == 0)
+    if (mp_ctx.queue.size() == 0) {
+        if (ctx.current_song_loaded) {
+            mp_ctx.current_song = nullptr;
+            ma_sound_uninit(&ctx.current_song_sound);
+            ctx.current_song_loaded = false;
+        }
         return;
+    }
 
-    std::string song_path = mp_ctx.queue.front();
+    const Song* song = mp_ctx.queue.front();
     mp_ctx.queue.pop_front();
-    mp_play_song(song_path);
+    mp_play_song(song);
 }

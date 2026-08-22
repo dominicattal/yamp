@@ -55,7 +55,7 @@ static void initialize_default_texture()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    FILE* fptr = fopen("music/Chopin Etudes/cover.jpg", "r");
+    FILE* fptr = fopen("assets/No-album-art.png", "r");
     int nc;
     unsigned char* data = stbi_load_from_file(fptr, &ctx.default_texture_width, &ctx.default_texture_height, &nc, 4);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ctx.default_texture_width, ctx.default_texture_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
@@ -73,6 +73,10 @@ static void cleanup_textures()
 static void song_callback(Song* song)
 {
     FrontCover front_cover = mp_song_front_cover_load(song);
+    if (front_cover.data == nullptr) {
+        ctx.song_textures[song->id] = ctx.default_texture;
+        return;
+    }
 
     glGenTextures(1, &ctx.song_textures[song->id]);
     glBindTexture(GL_TEXTURE_2D, ctx.song_textures[song->id]);
@@ -161,6 +165,8 @@ void ui_cleanup()
 
     glfwDestroyWindow(ctx.window);
     glfwTerminate();
+
+    SPDLOG_INFO("UI cleaned up");
 }
 
 static void draw_left_side()
@@ -170,10 +176,9 @@ static void draw_left_side()
     float width = 200;
     //ImGui::SetNextWindowSizeConstraints(ImVec2(200.0f, 0.0f), ImVec2(300.0f, FLT_MAX));
     ImGui::BeginChild("left_side", ImVec2(width, ImGui::GetContentRegionAvail().y), child_flags, window_flags);
-    ImVec2 uv_min = ImVec2(0.0f, 0.0f); // Top-left
-    ImVec2 uv_max = ImVec2(0.0f, 0.0f); // Lower-right
     //ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, IM_MAX(1.0f, ImGui::GetStyle().ImageBorderSize));
-    ImGui::ImageWithBg(ctx.default_texture, ImVec2(200, 200), uv_min, uv_max, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    GLuint texture = (mp_ctx.current_song) ? ctx.song_textures[mp_ctx.current_song->id] : ctx.default_texture;
+    ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     //ImGui::PopStyleVar();
     if (ImGui::Button("Add Song", ImVec2(100, 30))) 
     {
@@ -189,10 +194,10 @@ static void draw_left_side()
         mp_queue_skip();
     }
 
-    if (mp_ctx.current_song.title.length() > 0) {
+    if (!mp_ctx.current_song) {
         ImGui::Text("No song playing");
     } else {
-        ImGui::Text("Name: %s", mp_ctx.current_song.title.c_str());
+        ImGui::Text("Name: %s", mp_ctx.current_song->title.c_str());
         //ImGui::Text("Artist: %s", mp_ctx.current_song.artist.c_str());
         //ImGui::Text("Track: %s", mp_ctx.current_song.track.c_str());
     }
@@ -200,10 +205,10 @@ static void draw_left_side()
     {
         ImGui::TableSetupColumn("Queue", ImGuiTableColumnFlags_NoSort);
         ImGui::TableHeadersRow();
-        for (const std::string& path : mp_ctx.queue)
+        for (const Song* song : mp_ctx.queue)
         {
             ImGui::TableNextColumn();
-            ImGui::Text("%s", path.c_str());
+            ImGui::Text("%s", song->title.c_str());
         }
         ImGui::EndTable();
     }
@@ -226,9 +231,9 @@ static void draw_all_songs()
             ImGui::TableNextColumn();
             ImGui::PushID(id++);
             if (ImGui::Button("Play"))
-                mp_play_song(song.path);;
+                mp_play_song(&song);;
             if (ImGui::Button("Queue"))
-                mp_queue_song(song.path);
+                mp_queue_song(&song);
             ImGui::PopID();
             ImGui::TableNextColumn();
             ImGui::ImageWithBg(ctx.song_textures[song.id], ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));

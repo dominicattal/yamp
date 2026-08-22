@@ -65,7 +65,7 @@ struct FrontCover {
 using SongCallback = std::function<void(Song*)>;
 
 struct MPContext {
-    Song current_song;
+    const Song* current_song;
     std::vector<Song> songs;
     std::vector<Album> albums;
     std::vector<Artist> artists;
@@ -77,7 +77,7 @@ struct MPContext {
 
     SongCallback song_callback;
 
-    std::deque<std::string> queue;
+    std::deque<const Song*> queue;
 };
 
 extern MPContext mp_ctx;
@@ -92,11 +92,11 @@ void mp_add_song(const std::string& song_path);
 void mp_add_songs(const std::vector<std::string>& song_paths);
 
 // Immediately play a song
-void mp_play_song(const std::string& song_path);
+void mp_play_song(const Song* song);
 
 // Queue a song or mulitple songs
-void mp_queue_song(const std::string& song_path);
-void mp_queue_songs(const std::vector<std::string>& song_paths);
+void mp_queue_song(const Song* song);
+void mp_queue_songs(const std::vector<Song*> songs);
 
 // Load song cover art from memory
 FrontCover mp_song_front_cover_load(Song* song);
