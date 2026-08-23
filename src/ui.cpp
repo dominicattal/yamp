@@ -24,6 +24,8 @@ struct UIContext {
     int default_texture_width;
     int default_texture_height;
     bool show_demo_window;
+
+    int open_album_id;
 };
 
 static UIContext ctx;
@@ -220,11 +222,12 @@ static void draw_left_side()
 static void draw_all_songs()
 {
     ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("All Songs", 3, flags, ImGui::GetContentRegionAvail()))
+    if (ImGui::BeginTable("All Songs", 4, flags, ImGui::GetContentRegionAvail()))
     {
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
         ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
         ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_NoSort);
+        ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
         //ImGui::TableHeadersRow();
         int id = 0;
@@ -236,7 +239,6 @@ static void draw_all_songs()
                 mp_play_song(&song);;
             if (ImGui::Button("Queue"))
                 mp_queue_song(&song);
-            ImGui::PopID();
             ImGui::TableNextColumn();
             ImGui::ImageWithBg(ctx.song_textures[song.id], ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImGui::TableNextColumn();
@@ -247,6 +249,10 @@ static void draw_all_songs()
                 assert(artist);
                 ImGui::Text("%s", artist->name.c_str());
             }
+            ImGui::TableNextColumn();
+            if (ImGui::Button("Open Album"))
+                ctx.open_album_id = mp_get_album_id_from_song_id(song.id);
+            ImGui::PopID();
         }
         ImGui::EndTable();
     }
@@ -318,54 +324,69 @@ static void draw_all_songs()
     }
 }
 
+static void draw_album_info()
+{
+    std::vector<SongTrack> tracks = mp_get_song_ids_from_album_id(ctx.open_album_id);
+    if (tracks.size() == 0)
+        return;
+
+    const Album* album = mp_get_album_from_id(ctx.open_album_id);
+    int artist_id = mp_get_artist_id_from_album_id(ctx.open_album_id);
+    const Artist* artist = mp_get_artist_from_id(artist_id);
+
+    ImGui::ImageWithBg(ctx.song_textures[tracks[0].song_id], ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::SameLine();
+    {
+        ImGui::BeginChild("album_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
+        ImGui::SetWindowFontScale(4.0f); 
+        ImGui::Text("%s", album->name.c_str());
+        ImGui::SetWindowFontScale(2.0f); 
+        ImGui::Text("%s", artist->name.c_str());
+        ImGui::SetWindowFontScale(1.0f); 
+        ImGui::Button("Button!");
+        ImGui::EndChild();
+    }
+
+    //const Album* album = mp_get_album_from_id(ctx.open_album_id);
+    if (ImGui::BeginTable("Nested ALbum Songs", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable))
+    {
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 75);
+        ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthFixed, 50);
+        ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        int id = 0;
+        for (auto [song_id, track] : tracks)
+        {
+            ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
+            ImGui::TableNextColumn();
+            ImGui::PushID(id++);
+            const Song* song = mp_get_song_from_id(song_id);
+            assert(song);
+            if (ImGui::Button("Play"))
+                mp_play_song(song);;
+            if (ImGui::Button("Queue"))
+                mp_queue_song(song);
+            ImGui::TableNextColumn();
+            ImGui::Text("%d", track);
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", song->title.c_str());
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+}
+
 static void draw_center()
 {
-    int width = ImGui::GetContentRegionAvail().x - 300;
-    ImGui::BeginChild("center", ImVec2(width, ImGui::GetContentRegionAvail().y));
+    ImGuiChildFlags child_flags = ImGuiChildFlags_ResizeX | ImGuiChildFlags_Borders;
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+    int width = ImGui::GetContentRegionAvail().x - 600;
+    ImGui::BeginChild("center", ImVec2(width, ImGui::GetContentRegionAvail().y), child_flags, window_flags);
     draw_all_songs();
     //draw_all_albums();
     //draw_all_artists();
     ImGui::EndChild();
     return;
-    //ImGuiChildFlags child_flags = ImGuiChildFlags_ResizeX | ImGuiChildFlags_Borders;
-    //ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-    //int width = ImGui::GetContentRegionAvail().x - 300;
-    //ImGui::BeginChild("center", ImVec2(width, ImGui::GetContentRegionAvail().y), child_flags, window_flags);
-
-    //ImVec2 uv_min = ImVec2(0.0f, 0.0f); // Top-left
-    //ImVec2 uv_max = ImVec2(0.0f, 0.0f); // Lower-right
-    ////ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, IM_MAX(1.0f, ImGui::GetStyle().ImageBorderSize));
-    //ImGui::ImageWithBg(ctx.default_texture, ImVec2(200, 200), uv_min, uv_max, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-    //ImGui::SameLine();
-    //{
-    //    ImGui::BeginChild("album_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
-    //    ImGui::SetWindowFontScale(4.0f); 
-    //    ImGui::Text("Album Name");
-    //    ImGui::SetWindowFontScale(2.0f); 
-    //    ImGui::Text("Artist");
-    //    ImGui::SetWindowFontScale(1.0f); 
-    //    ImGui::Button("Play Album");
-    //    ImGui::EndChild();
-    //}
-
-    //const Album& album = mp_ctx.albums[0];
-    //if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
-    //{
-    //    ImGui::TableSetupColumn("Song");
-    //    ImGui::TableSetupColumn("Track");
-    //    ImGui::TableHeadersRow();
-    //    for (const Song* song : album.songs)
-    //    {
-    //        assert(song);
-    //        ImGui::TableNextColumn();
-    //        ImGui::Text("%s", song->title.c_str());
-    //        ImGui::TableNextColumn();
-    //        ImGui::Text("%s", song->track.c_str());
-    //    }
-    //    ImGui::EndTable();
-    //}
-
-    //ImGui::EndChild();
 }
 
 void draw_right_side()
@@ -373,6 +394,9 @@ void draw_right_side()
     ImGuiChildFlags child_flags = ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysAutoResize;
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
     ImGui::BeginChild("right_side", ImGui::GetContentRegionAvail(), child_flags, window_flags);
+    draw_album_info();
+    ImGui::EndChild();
+    return;
     if (ImGui::BeginTable("Playlists", 1, 0) )
     {
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
@@ -398,7 +422,6 @@ void draw_right_side()
         }
         ImGui::EndTable();
     }
-    ImGui::EndChild();
 }
 
 static void draw_imgui()
