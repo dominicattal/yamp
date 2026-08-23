@@ -4,10 +4,12 @@
 #include <algorithm>
 #include <fstream>
 #include <format>
+#include <codecvt>
 #include <cassert>
 #include <miniaudio.h>
 #include <id3v2lib.h>
 #include <sqlite3.h>
+#include <utf8.h>
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
 #include <stb_image.h>
@@ -44,9 +46,9 @@ static int song_callback(void* data, int num_cols, char** values, char** keys)
     std::string title = values[1];
     std::string path = values[2];
     Song& song = mp_ctx.songs.emplace_back(title, path, id);
+    //Song& song = mp_ctx.songs.emplace(std::make_pair(id, Song{title, path, id}));
     if (mp_ctx.song_callback)
         mp_ctx.song_callback(&song);
-    SPDLOG_INFO("Loaded song: {} [{}]", values[0], values[1], values[2]);
     return 0;
 }
 
@@ -55,7 +57,6 @@ static int album_callback(void* data, int num_cols, char** values, char** keys)
     (void)data; (void)num_cols; (void)keys;
     int album_id = std::atoi(values[0]);
     mp_ctx.albums.emplace_back(values[1], album_id);
-    SPDLOG_INFO("Loaded album: {} [{}]", values[0], values[1]);
     return 0;
 }
 
@@ -64,7 +65,6 @@ static int artist_callback(void* data, int num_cols, char** values, char** keys)
     (void)data; (void)num_cols; (void)keys;
     int artist_id = std::atoi(values[0]);
     mp_ctx.artists.emplace_back(values[1], artist_id);
-    SPDLOG_INFO("Loaded artist: {} [{}]", values[0], values[1]);
     return 0;
 }
 
@@ -73,7 +73,6 @@ static int playlist_callback(void* data, int num_cols, char** values, char** key
     (void)data; (void)num_cols; (void)keys;
     int playlist_id = std::atoi(values[0]);
     mp_ctx.playlists.emplace_back(values[1], playlist_id);
-    SPDLOG_INFO("Loaded playlist: {} [{}]", values[0], values[1]);
     return 0;
 }
 
@@ -84,7 +83,6 @@ static int album_song_callback(void* data, int num_cols, char** values, char** k
     int song_id = std::atoi(values[1]);
     int track = std::atoi(values[2]);
     mp_ctx.album_songs.emplace_back(album_id, song_id, track);
-    SPDLOG_INFO("Loaded album song: album_id={} song_id={}", values[0], values[1]);
     return 0;
 }
 
@@ -94,7 +92,6 @@ static int artist_song_callback(void* data, int num_cols, char** values, char** 
     int artist_id = std::atoi(values[0]);
     int song_id = std::atoi(values[1]);
     mp_ctx.artist_songs.emplace_back(artist_id, song_id);
-    SPDLOG_INFO("Loaded artist song: artist_id={} song_id={}", values[0], values[1]);
     return 0;
 }
 
@@ -104,7 +101,6 @@ static int artist_album_callback(void* data, int num_cols, char** values, char**
     int artist_id = std::atoi(values[0]);
     int album_id = std::atoi(values[1]);
     mp_ctx.artist_albums.emplace_back(artist_id, album_id);
-    SPDLOG_INFO("Loaded artist album: artist_id={} album_id={}", values[0], values[1]);
     return 0;
 }
 
@@ -115,13 +111,12 @@ static int playlist_song_callback(void* data, int num_cols, char** values, char*
     int song_id = std::atoi(values[1]);
     int track = std::atoi(values[2]);
     mp_ctx.playlist_songs.emplace_back(playlist_id, song_id, track);
-    SPDLOG_INFO("Loaded playlist song: playlist_id={} song_id={} track={}", values[0], values[1], values[2]);
     return 0;
 }
 
 static void db_init()
 {
-    sqlite3_open("build/mp.db", &ctx.db);
+    sqlite3_open("build/yamp.db", &ctx.db);
 
     execute_file("assets/sql/schema.sql");
 
@@ -170,12 +165,38 @@ void mp_cleanup()
     SPDLOG_INFO("MP cleaned up");
 }
 
+static std::string read_text_frame(ID3v2_TextFrame* frame)
+{
+    constexpr int ASCII = 0;
+    constexpr int UNICODE_UTF16_WITH_BOM = 1;
+    constexpr int UNICODE_UTF16_WITHOUT_BOM = 2;
+    constexpr int UNICODE_UTF8 = 3;
+    const char* text = frame->data->text;
+    switch (frame->data->encoding) {
+        case ASCII:
+        case UNICODE_UTF8:
+            return text;
+        case UNICODE_UTF16_WITH_BOM: {
+            unsigned int bom = (static_cast<unsigned char>(text[1])<<8) | static_cast<unsigned char>(text[0]);
+            assert(bom == 0xFEFF);
+            std::u16string str(reinterpret_cast<const char16_t*>(text + 2), (frame->data->size - 4) / 2);
+            return utf8::utf16to8(str);
+        }
+        case UNICODE_UTF16_WITHOUT_BOM: {
+            std::u16string str(reinterpret_cast<const char16_t*>(text), (frame->data->size - 2) / 2);
+            return utf8::utf16to8(str);
+        }
+    }
+    SPDLOG_INFO("Unrecognized encoding {}", frame->data->encoding);
+    return "";
+}
+
 void mp_add_song(const std::string& song_path)
 {
     ID3v2_TextFrame* frame;
-    std::string title{""};
-    std::string artist_name{""};
-    std::string album_name{""};
+    std::string title{};
+    std::string artist_name{};
+    std::string album_name{};
     std::string path{song_path};
     int track{};
     ID3v2_Tag* tag = ID3v2_read_tag(song_path.c_str());
@@ -183,22 +204,26 @@ void mp_add_song(const std::string& song_path)
         puts("Could not read tag");
         return;
     }
+
     frame = ID3v2_Tag_get_title_frame(tag);
     if (frame) {
-        title = frame->data->text;
+        title = read_text_frame(frame);
     } else {
         std::filesystem::path path{song_path};
         title = path.stem().string();
     }
+
     frame = ID3v2_Tag_get_artist_frame(tag);
     if (frame)
-        artist_name = frame->data->text;
+        artist_name = read_text_frame(frame);
+
     frame = ID3v2_Tag_get_track_frame(tag);
     if (frame)
-        track = std::atoi(frame->data->text);
+        track = std::stoi(read_text_frame(frame));
+
     frame = ID3v2_Tag_get_album_frame(tag);
     if (frame)
-        album_name = frame->data->text;
+        album_name = read_text_frame(frame);
 
     SPDLOG_INFO(track);
 

@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <imgui_freetype.h>
 #include <portable-file-dialogs.h>
 #include <iostream>
 #include <glad/glad.h>
@@ -137,16 +138,17 @@ void ui_init()
     assert(pfd::settings::available() && "Portable File Dialogs are not available on this platform.\n");
     //pfd::settings::verbose(true);
     IMGUI_CHECKVERSION();
+
+    //static const ImWchar icons_ranges[] = { 0xf000, 0xf3ff, 0 }; // Will not be copied by AddFont* so keep in scope.
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-
-    ImGui::StyleColorsDark();
-
     ImGuiStyle& style = ImGui::GetStyle();
     style.ScaleAllSizes(main_scale);
     style.FontScaleDpi = main_scale;
+
+    ImGui::StyleColorsDark();
 
     ImGui_ImplGlfw_InitForOpenGL(ctx.window, true);
 
@@ -218,7 +220,7 @@ static void draw_left_side()
 static void draw_all_songs()
 {
     ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("All Songs", 3, flags, ImVec2(ImGui::GetContentRegionAvail().x, 300)))
+    if (ImGui::BeginTable("All Songs", 3, flags, ImGui::GetContentRegionAvail()))
     {
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
         ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
@@ -250,7 +252,7 @@ static void draw_all_songs()
     }
 }
 
-static void draw_all_artists()
+[[maybe_unused]] static void draw_all_artists()
 {
     ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
     if (ImGui::BeginTable("All Artits", 1, flags, ImVec2(ImGui::GetContentRegionAvail().x, 300)))
@@ -279,7 +281,7 @@ static void draw_all_artists()
     }
 }
 
-static void draw_all_albums()
+[[maybe_unused]] static void draw_all_albums()
 {
     ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
     if (ImGui::BeginTable("All Albums", 1, flags, ImVec2(ImGui::GetContentRegionAvail().x, 300)))
@@ -321,8 +323,8 @@ static void draw_center()
     int width = ImGui::GetContentRegionAvail().x - 300;
     ImGui::BeginChild("center", ImVec2(width, ImGui::GetContentRegionAvail().y));
     draw_all_songs();
-    draw_all_albums();
-    draw_all_artists();
+    //draw_all_albums();
+    //draw_all_artists();
     ImGui::EndChild();
     return;
     //ImGuiChildFlags child_flags = ImGuiChildFlags_ResizeX | ImGuiChildFlags_Borders;
