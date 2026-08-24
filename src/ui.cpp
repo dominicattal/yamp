@@ -588,6 +588,7 @@ void ui_loop()
 {
     while (!glfwWindowShouldClose(ctx.window))
     {
+        mp_update();
         glfwPollEvents();
         if (glfwGetWindowAttrib(ctx.window, GLFW_ICONIFIED) != 0)
             continue;

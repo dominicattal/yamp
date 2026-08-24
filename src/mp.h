@@ -86,6 +86,9 @@ extern MPContext mp_ctx;
 void mp_init();
 void mp_cleanup();
 
+// Call this every frame. Checks whether current song ended or not
+void mp_update();
+
 // Add a song to the database. Right now, just add it to the database whether or not it exists already.
 // Eventually, flow should be like preview song in ui -> add config -> choose to save to database
 void mp_add_song(const std::string& song_path);

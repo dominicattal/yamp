@@ -15,10 +15,11 @@
 #include <stb_image.h>
 
 struct MPContextInternal {
+    sqlite3* db;
     ma_engine engine;
     ma_sound current_song_sound;
     bool current_song_loaded;
-    sqlite3* db;
+    bool song_ended;
 };
 
 MPContext mp_ctx;
@@ -163,6 +164,14 @@ void mp_cleanup()
     ma_engine_uninit(&ctx.engine);
     sqlite3_close(ctx.db);
     SPDLOG_INFO("MP cleaned up");
+}
+
+void mp_update()
+{
+    if (ctx.song_ended) {
+        mp_queue_skip();
+        ctx.song_ended = false;
+    }
 }
 
 static std::string read_text_frame(ID3v2_TextFrame* frame)
@@ -415,11 +424,22 @@ void mp_add_song_id_to_playlist_id(int song_id, int playlist_id)
     mp_ctx.playlist_songs.emplace_back(playlist_id, song_id, playlist_length+1);
 }
 
+static void end_song_callback(void* user_data, ma_sound* sound)
+{
+    (void)user_data; (void)sound;
+    ctx.song_ended = true;
+}
+
 void mp_play_song(const Song* song)
 {
     if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
-    ma_sound_init_from_file(&ctx.engine, song->path.c_str(), 0, NULL, NULL, &ctx.current_song_sound);
+    //ma_sound_init_from_file(&ctx.engine, song->path.c_str(), 0, NULL, NULL, &ctx.current_song_sound);
+    ma_sound_config config = ma_sound_config_init();
+    config.channelsIn = 1;
+    config.pFilePath = song->path.c_str();
+    config.endCallback = end_song_callback;
+    ma_sound_init_ex(&ctx.engine, &config, &ctx.current_song_sound);
     ma_sound_start(&ctx.current_song_sound);
     ctx.current_song_loaded = true;
     mp_ctx.current_song = song;
@@ -434,10 +454,6 @@ void mp_queue_songs(const std::vector<const Song*> songs)
 {
     for (const Song* song : songs)
         mp_queue_song(song);
-}
-
-void mp_get_num_tracks_in_playlist()
-{
 }
 
 FrontCover mp_song_front_cover_load(Song* song)
