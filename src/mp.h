@@ -86,10 +86,18 @@ extern MPContext mp_ctx;
 void mp_init();
 void mp_cleanup();
 
-// Add a song to the program. Right now, just add it to the database whether or not it exists.
+// Add a song to the database. Right now, just add it to the database whether or not it exists already.
 // Eventually, flow should be like preview song in ui -> add config -> choose to save to database
 void mp_add_song(const std::string& song_path);
 void mp_add_songs(const std::vector<std::string>& song_paths);
+void mp_recursive_add_songs(const std::string& folder_path);
+
+// Add a playlist to the database. Returns the id of the created playlist.
+int mp_create_playlist();
+void mp_rename_playlist_id(int playlist_id, const char* new_playlist_name);
+
+// Add a song to a playlist.
+void mp_add_song_id_to_playlist_id(int song_id, int playlist_id);
 
 // Immediately play a song
 void mp_play_song(const Song* song);
@@ -105,11 +113,14 @@ void mp_song_front_cover_free(FrontCover* data);
 const Song* mp_get_song_from_id(int id);
 const Album* mp_get_album_from_id(int id);
 const Artist* mp_get_artist_from_id(int id);
+const Playlist* mp_get_playlist_from_id(int id);
 
 int mp_get_album_id_from_song_id(int song_id);
 int mp_get_artist_id_from_song_id(int song_id);
 int mp_get_artist_id_from_album_id(int album_id);
 std::vector<SongTrack> mp_get_song_ids_from_album_id(int album_id);
+int mp_get_num_tracks_in_playlist_id(int playlist_id);
+std::vector<SongTrack> mp_get_song_ids_from_playlist_id(int playlist_id);
 std::vector<int> mp_get_album_ids_from_artist_id(int artist_id);
 
 // Skip current song in queue

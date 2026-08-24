@@ -233,8 +233,12 @@ void mp_add_song(const std::string& song_path)
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, title.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, path.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_step(stmt);
+    int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    if (res == SQLITE_CONSTRAINT) {
+        SPDLOG_WARN("song path {} exists in db already", song_path);
+        return;
+    }
 
     query = "SELECT id FROM Songs WHERE title=?1 ORDER BY id DESC LIMIT 1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
@@ -351,6 +355,66 @@ void mp_add_songs(const std::vector<std::string>& song_paths)
         mp_add_song(song_path);
 }
 
+void mp_recursive_add_songs(const std::string& folder_path)
+{
+    namespace fs = std::filesystem;
+    fs::directory_options options = fs::directory_options::follow_directory_symlink;
+    fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
+    for (auto const& dir_entry : entries)
+        mp_add_song(dir_entry.path());
+}
+
+int mp_create_playlist()
+{
+    const char* playlist_name = "Unnamed Playlist";
+
+    sqlite3_stmt* stmt;
+    const char* query = "INSERT INTO Playlists (name) VALUES (?1)";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_text(stmt, 1, playlist_name, -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    query = "SELECT id FROM Playlists WHERE name=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_text(stmt, 1, playlist_name, -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    int playlist_id = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+
+    mp_ctx.playlists.emplace_back(playlist_name, playlist_id);
+
+    return playlist_id;
+}
+
+void mp_rename_playlist_id(int playlist_id, const char* new_playlist_name)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE Playlists SET name=?1 WHERE id=?2";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_text(stmt, 1, new_playlist_name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, playlist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    Playlist* playlist = const_cast<Playlist*>(mp_get_playlist_from_id(playlist_id));
+    playlist->name = new_playlist_name;
+}
+
+void mp_add_song_id_to_playlist_id(int song_id, int playlist_id)
+{
+    sqlite3_stmt* stmt;
+    int playlist_length = mp_get_num_tracks_in_playlist_id(playlist_id);
+    const char* query = "INSERT INTO PlaylistSong (playlist_id, song_id, track) VALUES (?1, ?2, ?3)";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, playlist_id);
+    sqlite3_bind_int(stmt, 2, song_id);
+    sqlite3_bind_int(stmt, 3, playlist_length+1);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    mp_ctx.playlist_songs.emplace_back(playlist_id, song_id, playlist_length+1);
+}
+
 void mp_play_song(const Song* song)
 {
     if (ctx.current_song_loaded)
@@ -370,6 +434,10 @@ void mp_queue_songs(const std::vector<const Song*> songs)
 {
     for (const Song* song : songs)
         mp_queue_song(song);
+}
+
+void mp_get_num_tracks_in_playlist()
+{
 }
 
 FrontCover mp_song_front_cover_load(Song* song)
@@ -420,6 +488,14 @@ const Artist* mp_get_artist_from_id(int id)
     return nullptr;
 }
 
+const Playlist* mp_get_playlist_from_id(int id)
+{
+    for (const Playlist& playlist : mp_ctx.playlists)
+        if (playlist.id == id)
+            return &playlist;
+    return nullptr;
+}
+
 int mp_get_artist_id_from_song_id(int song_id)
 {
     for (const ArtistSong& artist_song : mp_ctx.artist_songs)
@@ -442,6 +518,28 @@ std::vector<SongTrack> mp_get_song_ids_from_album_id(int album_id)
     for (const AlbumSong& album_song : mp_ctx.album_songs) {
         if (album_song.album_id == album_id)
             result.emplace_back(album_song.song_id, album_song.track);
+    }
+    std::sort(result.begin(), result.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
+                return pair1.track < pair2.track;
+            });
+    return result;
+}
+
+int mp_get_num_tracks_in_playlist_id(int playlist_id)
+{
+    int count = 0;
+    for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs)
+        if (playlist_song.playlist_id == playlist_id)
+            ++count;
+    return count;
+}
+
+std::vector<SongTrack> mp_get_song_ids_from_playlist_id(int playlist_id)
+{
+    std::vector<SongTrack> result{};
+    for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs) {
+        if (playlist_song.playlist_id == playlist_id)
+            result.emplace_back(playlist_song.song_id, playlist_song.track);
     }
     std::sort(result.begin(), result.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
                 return pair1.track < pair2.track;

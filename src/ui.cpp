@@ -16,6 +16,10 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#define SHOW_RIGHT_NONE 0
+#define SHOW_RIGHT_ALBUM 1
+#define SHOW_RIGHT_PLAYLIST 2
+
 struct UIContext {
     std::unordered_map<int, GLuint> song_textures;
 
@@ -25,7 +29,9 @@ struct UIContext {
     int default_texture_height;
     bool show_demo_window;
 
+    int right_side;
     int open_album_id;
+    int open_playlist_id;
 };
 
 static UIContext ctx;
@@ -179,7 +185,7 @@ static void draw_left_side()
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
     float width = 200;
     //ImGui::SetNextWindowSizeConstraints(ImVec2(200.0f, 0.0f), ImVec2(300.0f, FLT_MAX));
-    ImGui::BeginChild("left_side", ImVec2(width, ImGui::GetContentRegionAvail().y), child_flags, window_flags);
+    ImGui::BeginChild("left_side", ImVec2(width, ImGui::GetContentRegionAvail().y - 300), child_flags, window_flags);
     //ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, IM_MAX(1.0f, ImGui::GetStyle().ImageBorderSize));
     GLuint texture = (mp_ctx.current_song) ? ctx.song_textures[mp_ctx.current_song->id] : ctx.default_texture;
     ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
@@ -192,6 +198,13 @@ static void draw_left_side()
         const pfd::opt options = pfd::opt::multiselect;
         std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
         mp_add_songs(song_paths);
+    }
+    if (ImGui::Button("Add Folder", ImVec2(100, 30))) 
+    {
+        const std::string title {"Select Any Directory"};
+        const std::string default_path = pfd::path::home();
+        const std::string folder_path = pfd::select_folder(title, default_path).result();
+        mp_recursive_add_songs(folder_path);
     }
     if (ImGui::Button("Skip", ImVec2(100, 30))) 
     {
@@ -216,6 +229,32 @@ static void draw_left_side()
         }
         ImGui::EndTable();
     }
+
+    if (ImGui::Button("Create Playlist"))
+    {
+        ctx.right_side = SHOW_RIGHT_PLAYLIST;
+        ctx.open_playlist_id = mp_create_playlist();
+    }
+
+    if (ImGui::BeginTable("Playlists", 2, ImGuiTableFlags_None))
+    {
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort);
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoSort);
+        ImGui::TableHeadersRow();
+        for (const Playlist& playlist : mp_ctx.playlists)
+        {
+            ImGui::PushID(playlist.id);
+            ImGui::TableNextColumn();
+            if (ImGui::Button("Show")) {
+                ctx.right_side = SHOW_RIGHT_PLAYLIST;
+                ctx.open_playlist_id = playlist.id;
+            }
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", playlist.name.c_str());
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
     ImGui::EndChild();
 }
 
@@ -230,11 +269,10 @@ static void draw_all_songs()
         ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
         //ImGui::TableHeadersRow();
-        int id = 0;
         for (const Song& song : mp_ctx.songs)
         {
             ImGui::TableNextColumn();
-            ImGui::PushID(id++);
+            ImGui::PushID(song.id);
             if (ImGui::Button("Play"))
                 mp_play_song(&song);;
             if (ImGui::Button("Queue"))
@@ -250,8 +288,28 @@ static void draw_all_songs()
                 ImGui::Text("%s", artist->name.c_str());
             }
             ImGui::TableNextColumn();
-            if (ImGui::Button("Open Album"))
+            if (ImGui::Button("Open Album")) {
+                ctx.right_side = SHOW_RIGHT_ALBUM;
                 ctx.open_album_id = mp_get_album_id_from_song_id(song.id);
+            }
+            if (ImGui::Button("Add To Playlist"))
+                ImGui::OpenPopup("add_to_playlist_popup");
+            if (ImGui::BeginPopup("add_to_playlist_popup"))
+            {
+                for (const Playlist& playlist : mp_ctx.playlists)
+                {
+                    ImGui::PushID(playlist.id);
+                    if (ImGui::Button(playlist.name.c_str()))
+                        mp_add_song_id_to_playlist_id(song.id, playlist.id);
+                    ImGui::PopID();
+                }
+                if (ImGui::Button("Create Playlist"))
+                {
+                    ctx.right_side = SHOW_RIGHT_PLAYLIST;
+                    ctx.open_playlist_id = mp_create_playlist();
+                }
+                ImGui::EndPopup();
+            }
             ImGui::PopID();
         }
         ImGui::EndTable();
@@ -347,7 +405,72 @@ static void draw_album_info()
         ImGui::EndChild();
     }
 
-    //const Album* album = mp_get_album_from_id(ctx.open_album_id);
+    if (ImGui::BeginTable("Nested ALbum Songs", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable))
+    {
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 75);
+        ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthFixed, 50);
+        ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        int id = 0;
+        for (auto [song_id, track] : tracks)
+        {
+            ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
+            ImGui::TableNextColumn();
+            ImGui::PushID(id++);
+            const Song* song = mp_get_song_from_id(song_id);
+            assert(song);
+            if (ImGui::Button("Play"))
+                mp_play_song(song);;
+            if (ImGui::Button("Queue"))
+                mp_queue_song(song);
+            ImGui::TableNextColumn();
+            ImGui::Text("%d", track);
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", song->title.c_str());
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+}
+
+static void draw_playlist_info()
+{
+    std::vector<SongTrack> tracks = mp_get_song_ids_from_playlist_id(ctx.open_playlist_id);
+
+    const Playlist* playlist = mp_get_playlist_from_id(ctx.open_playlist_id);
+
+    GLuint texture = (tracks.size() > 0) ? ctx.song_textures[tracks[0].song_id] : ctx.default_texture;
+
+    ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::SameLine();
+    {
+        ImGui::BeginChild("playlist_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
+        ImGui::SetWindowFontScale(4.0f); 
+        ImGui::Text("%s", playlist->name.c_str());
+        ImGui::SetWindowFontScale(1.0f); 
+        static char playlist_name[256];
+        if (ImGui::Button("Change Name"))
+        {
+            std::strncpy(playlist_name, playlist->name.c_str(), sizeof(playlist_name));
+            ImGui::OpenPopup("change_playlist_name");
+        }
+        if (ImGui::BeginPopup("change_playlist_name"))
+        {
+            ImGui::Text("Edit name:");
+            ImGui::InputText("##edit", playlist_name, IM_COUNTOF(playlist_name));
+            if (ImGui::Button("Save") || ImGui::IsKeyPressed(ImGuiKey_Enter))
+            {
+                mp_rename_playlist_id(playlist->id, playlist_name);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::EndChild();
+    }
+
+    if (tracks.size() == 0)
+        return;
+
     if (ImGui::BeginTable("Nested ALbum Songs", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable))
     {
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 75);
@@ -394,7 +517,10 @@ void draw_right_side()
     ImGuiChildFlags child_flags = ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysAutoResize;
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
     ImGui::BeginChild("right_side", ImGui::GetContentRegionAvail(), child_flags, window_flags);
-    draw_album_info();
+    if (ctx.right_side == SHOW_RIGHT_ALBUM)
+        draw_album_info();
+    else if (ctx.right_side == SHOW_RIGHT_PLAYLIST)
+        draw_playlist_info();
     ImGui::EndChild();
     return;
     if (ImGui::BeginTable("Playlists", 1, 0) )
