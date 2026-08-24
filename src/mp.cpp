@@ -19,6 +19,7 @@ struct MPContextInternal {
     sqlite3* db;
     ma_engine engine;
     ma_sound current_song_sound;
+    bool paused;
     bool current_song_loaded;
     bool song_ended;
 };
@@ -450,12 +451,27 @@ void mp_play_song(const Song* song)
 void mp_queue_song(const Song* song)
 {
     mp_ctx.queue.push_back(song);
+    if (mp_ctx.queue.size() == 1 && !ctx.current_song_loaded)
+        mp_queue_skip();
 }
 
 void mp_queue_songs(const std::vector<const Song*> songs)
 {
     for (const Song* song : songs)
         mp_queue_song(song);
+}
+
+void mp_pause_or_resume()
+{
+    if (!ctx.current_song_loaded)
+        return;
+    if (ctx.paused) {
+        ctx.paused = false;
+        ma_sound_start(&ctx.current_song_sound);
+    } else {
+        ctx.paused = true;
+        ma_sound_stop(&ctx.current_song_sound);
+    }
 }
 
 FrontCover mp_song_front_cover_load(Song* song)
@@ -592,6 +608,7 @@ int mp_get_album_id_from_artist_id(int artist_id)
 
 void mp_queue_skip()
 {
+    ctx.paused = false;
     if (mp_ctx.queue.size() == 0) {
         if (mp_ctx.shuffle) {
             static std::mt19937 mt{ static_cast<std::mt19937::result_type>(
@@ -611,4 +628,9 @@ void mp_queue_skip()
     const Song* song = mp_ctx.queue.front();
     mp_ctx.queue.pop_front();
     mp_play_song(song);
+}
+
+void mp_queue_clear()
+{
+    mp_ctx.queue.clear();
 }

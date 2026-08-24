@@ -111,6 +111,9 @@ void mp_play_song(const Song* song);
 void mp_queue_song(const Song* song);
 void mp_queue_songs(const std::vector<Song*> songs);
 
+// Will pause if song is playing and resume if song is not playing
+void mp_pause_or_resume();
+
 // Load song cover art from memory
 FrontCover mp_song_front_cover_load(Song* song);
 void mp_song_front_cover_free(FrontCover* data);
@@ -130,5 +133,6 @@ std::vector<int> mp_get_album_ids_from_artist_id(int artist_id);
 
 // Skip current song in queue
 void mp_queue_skip();
+void mp_queue_clear();
 
 #endif

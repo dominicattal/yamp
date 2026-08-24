@@ -206,11 +206,17 @@ static void draw_left_side()
         const std::string folder_path = pfd::select_folder(title, default_path).result();
         mp_recursive_add_songs(folder_path);
     }
-    if (ImGui::Button("Skip", ImVec2(100, 30))) 
+    if (ImGui::Button("Skip", ImVec2(100, 30)) || ImGui::IsKeyPressed(ImGuiKey_S)) 
     {
         mp_queue_skip();
     }
     ImGui::Checkbox("Shuffle", &mp_ctx.shuffle);
+
+    if (ImGui::Button("Pause/Resume") || ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9))
+        mp_pause_or_resume();
+
+    if (ImGui::Button("Clear Queue"))
+        mp_queue_clear();
 
     if (!mp_ctx.current_song) {
         ImGui::Text("No song playing");
@@ -403,7 +409,11 @@ static void draw_album_info()
         ImGui::SetWindowFontScale(2.0f); 
         ImGui::Text("%s", artist->name.c_str());
         ImGui::SetWindowFontScale(1.0f); 
-        ImGui::Button("Button!");
+        if (ImGui::Button("Queue"))
+        {
+            for (const SongTrack& track : tracks)
+                mp_queue_song(mp_get_song_from_id(track.song_id));
+        }
         ImGui::EndChild();
     }
 
@@ -455,6 +465,11 @@ static void draw_playlist_info()
         {
             std::strncpy(playlist_name, playlist->name.c_str(), sizeof(playlist_name));
             ImGui::OpenPopup("change_playlist_name");
+        }
+        if (ImGui::Button("Queue"))
+        {
+            for (const SongTrack& track : tracks)
+                mp_queue_song(mp_get_song_from_id(track.song_id));
         }
         if (ImGui::BeginPopup("change_playlist_name"))
         {
