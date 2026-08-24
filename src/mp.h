@@ -91,43 +91,45 @@ void mp_cleanup();
 // Call this every frame. Checks whether current song ended or not
 void mp_update();
 
-const Song* mp_get_song(int song_id);
-const Album* mp_get_album(int album_id);
-const Artist* mp_get_artist(int artist_id);
-const Playlist* mp_get_playlist(int playlist_id);
-
 // Add a song to the database. Right now, just add it to the database whether or not it exists already.
 // Eventually, flow should be like preview song in ui -> add config -> choose to save to database
 void mp_add_song(const std::string& song_path);
+void mp_add_songs(const std::vector<std::string>& song_paths);
 void mp_recursive_add_songs(const std::string& folder_path);
 
 // Add a playlist to the database. Returns the id of the created playlist.
 int mp_create_playlist();
-void mp_rename_playlist(int playlist_id, const char* new_playlist_name);
+void mp_rename_playlist_id(int playlist_id, const char* new_playlist_name);
 
 // Add a song to a playlist.
-void mp_add_song_to_playlist(int song_id, int playlist_id);
+void mp_add_song_id_to_playlist_id(int song_id, int playlist_id);
 
 // Immediately play a song
 void mp_play_song(const Song* song);
 
 // Queue a song or mulitple songs
 void mp_queue_song(const Song* song);
+void mp_queue_songs(const std::vector<Song*> songs);
 
 // Will pause if song is playing and resume if song is not playing
 void mp_pause_or_resume();
 
 // Load song cover art from memory
-FrontCover mp_song_front_cover_load(int song_id);
+FrontCover mp_song_front_cover_load(Song* song);
 void mp_song_front_cover_free(FrontCover* data);
 
-int mp_get_album_from_song(int song_id);
-int mp_get_artist_from_song(int song_id);
-int mp_get_artist_from_album(int album_id);
-int mp_get_num_tracks_in_playlist(int playlist_id);
-std::vector<SongTrack> mp_get_songs_from_album(int album_id);
-std::vector<SongTrack> mp_get_songs_from_playlist(int playlist_id);
-std::vector<int> mp_get_albums_from_artist(int artist_id);
+const Song* mp_get_song_from_id(int id);
+const Album* mp_get_album_from_id(int id);
+const Artist* mp_get_artist_from_id(int id);
+const Playlist* mp_get_playlist_from_id(int id);
+
+int mp_get_album_id_from_song_id(int song_id);
+int mp_get_artist_id_from_song_id(int song_id);
+int mp_get_artist_id_from_album_id(int album_id);
+std::vector<SongTrack> mp_get_song_ids_from_album_id(int album_id);
+int mp_get_num_tracks_in_playlist_id(int playlist_id);
+std::vector<SongTrack> mp_get_song_ids_from_playlist_id(int playlist_id);
+std::vector<int> mp_get_album_ids_from_artist_id(int artist_id);
 
 // Skip current song in queue
 void mp_queue_skip();

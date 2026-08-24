@@ -361,6 +361,12 @@ void mp_add_song(const std::string& song_path)
     ID3v2_Tag_free(tag);
 }
 
+void mp_add_songs(const std::vector<std::string>& song_paths)
+{
+    for (const std::string& song_path : song_paths)
+        mp_add_song(song_path);
+}
+
 void mp_recursive_add_songs(const std::string& folder_path)
 {
     namespace fs = std::filesystem;
@@ -393,7 +399,7 @@ int mp_create_playlist()
     return playlist_id;
 }
 
-void mp_rename_playlist(int playlist_id, const char* new_playlist_name)
+void mp_rename_playlist_id(int playlist_id, const char* new_playlist_name)
 {
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Playlists SET name=?1 WHERE id=?2";
@@ -403,14 +409,14 @@ void mp_rename_playlist(int playlist_id, const char* new_playlist_name)
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
-    Playlist* playlist = const_cast<Playlist*>(mp_get_playlist(playlist_id));
+    Playlist* playlist = const_cast<Playlist*>(mp_get_playlist_from_id(playlist_id));
     playlist->name = new_playlist_name;
 }
 
-void mp_add_song_to_playlist(int song_id, int playlist_id)
+void mp_add_song_id_to_playlist_id(int song_id, int playlist_id)
 {
     sqlite3_stmt* stmt;
-    int playlist_length = mp_get_num_tracks_in_playlist(playlist_id);
+    int playlist_length = mp_get_num_tracks_in_playlist_id(playlist_id);
     const char* query = "INSERT INTO PlaylistSong (playlist_id, song_id, track) VALUES (?1, ?2, ?3)";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, playlist_id);
@@ -449,6 +455,12 @@ void mp_queue_song(const Song* song)
         mp_queue_skip();
 }
 
+void mp_queue_songs(const std::vector<const Song*> songs)
+{
+    for (const Song* song : songs)
+        mp_queue_song(song);
+}
+
 void mp_pause_or_resume()
 {
     if (!ctx.current_song_loaded)
@@ -462,10 +474,9 @@ void mp_pause_or_resume()
     }
 }
 
-FrontCover mp_song_front_cover_load(int song_id)
+FrontCover mp_song_front_cover_load(Song* song)
 {
     FrontCover front_cover{};
-    const Song* song = mp_get_song(song_id);
     ID3v2_Tag* tag = ID3v2_read_tag(song->path.c_str());
     if (!tag)
         return front_cover;
@@ -487,39 +498,39 @@ void mp_song_front_cover_free(FrontCover* front_cover)
         stbi_image_free(front_cover->data);
 }
 
-const Song* mp_get_song(int song_id)
+const Song* mp_get_song_from_id(int id)
 {
     for (const Song& song : mp_ctx.songs)
-        if (song.id == song_id)
+        if (song.id == id)
             return &song;
     return nullptr;
 }
 
-const Album* mp_get_album(int album_id)
+const Album* mp_get_album_from_id(int id)
 {
     for (const Album& album : mp_ctx.albums)
-        if (album.id == album_id)
+        if (album.id == id)
             return &album;
     return nullptr;
 }
 
-const Artist* mp_get_artist(int artist_id)
+const Artist* mp_get_artist_from_id(int id)
 {
     for (const Artist& artist : mp_ctx.artists)
-        if (artist.id == artist_id)
+        if (artist.id == id)
             return &artist;
     return nullptr;
 }
 
-const Playlist* mp_get_playlist(int playlist_id)
+const Playlist* mp_get_playlist_from_id(int id)
 {
     for (const Playlist& playlist : mp_ctx.playlists)
-        if (playlist.id == playlist_id)
+        if (playlist.id == id)
             return &playlist;
     return nullptr;
 }
 
-int mp_get_artist_from_song(int song_id)
+int mp_get_artist_id_from_song_id(int song_id)
 {
     for (const ArtistSong& artist_song : mp_ctx.artist_songs)
         if (artist_song.song_id == song_id)
@@ -527,7 +538,7 @@ int mp_get_artist_from_song(int song_id)
     return -1;
 }
 
-int mp_get_artist_from_album(int album_id)
+int mp_get_artist_id_from_album_id(int album_id)
 {
     for (const ArtistAlbum& artist_album : mp_ctx.artist_albums)
         if (artist_album.album_id == album_id)
@@ -535,7 +546,7 @@ int mp_get_artist_from_album(int album_id)
     return -1;
 }
 
-std::vector<SongTrack> mp_get_songs_from_album(int album_id)
+std::vector<SongTrack> mp_get_song_ids_from_album_id(int album_id)
 {
     std::vector<SongTrack> result{};
     for (const AlbumSong& album_song : mp_ctx.album_songs) {
@@ -548,7 +559,7 @@ std::vector<SongTrack> mp_get_songs_from_album(int album_id)
     return result;
 }
 
-int mp_get_num_tracks_in_playlist(int playlist_id)
+int mp_get_num_tracks_in_playlist_id(int playlist_id)
 {
     int count = 0;
     for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs)
@@ -557,7 +568,7 @@ int mp_get_num_tracks_in_playlist(int playlist_id)
     return count;
 }
 
-std::vector<SongTrack> mp_get_songs_from_playlist(int playlist_id)
+std::vector<SongTrack> mp_get_song_ids_from_playlist_id(int playlist_id)
 {
     std::vector<SongTrack> result{};
     for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs) {
@@ -570,7 +581,7 @@ std::vector<SongTrack> mp_get_songs_from_playlist(int playlist_id)
     return result;
 }
 
-std::vector<int> mp_get_album_from_artist(int artist_id)
+std::vector<int> mp_get_album_ids_from_artist_id(int artist_id)
 {
     std::vector<int> result{};
     for (const ArtistAlbum& artist_album : mp_ctx.artist_albums)
@@ -579,11 +590,19 @@ std::vector<int> mp_get_album_from_artist(int artist_id)
     return result;
 }
 
-int mp_get_album_from_song(int song_id)
+int mp_get_album_id_from_song_id(int song_id)
 {
     for (const AlbumSong& album_song : mp_ctx.album_songs)
         if (album_song.song_id == song_id)
             return album_song.album_id;
+    return -1;
+}
+
+int mp_get_album_id_from_artist_id(int artist_id)
+{
+    for (const ArtistAlbum& artist_album : mp_ctx.artist_albums)
+        if (artist_album.artist_id == artist_id)
+            return artist_album.album_id;
     return -1;
 }
 
