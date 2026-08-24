@@ -8,6 +8,12 @@
 #include <functional>
 #include <memory>
 
+enum LoopMode {
+    LOOP_NONE,
+    LOOP_GROUP,
+    LOOP_TRACK
+};
+
 struct Song {
     std::string title;
     std::string path;
@@ -77,9 +83,24 @@ struct MPContext {
 
     SongCallback song_callback;
 
+    // this stores songs the user explicity queues up
     std::deque<const Song*> queue;
 
+    // this stores the order songs should be play in the group
+    std::deque<const Song*> group_queue;
+
+    // whether mp is playing a group (playlist or album) or not.
+    bool playing_group;
+    // true if group is album, false otherwise
+    bool group_is_album;
+    // album_id if group_is_album == true, playlist_id otherwise
+    int group_id;
+
+    // whether to play songs in random order. when this is on, music will play even
+    // if the end of the queue is reached
     bool shuffle;
+
+    LoopMode loop_mode;
 };
 
 extern MPContext mp_ctx;
@@ -109,10 +130,11 @@ void mp_play_song(const Song* song);
 
 // Queue a song or mulitple songs
 void mp_queue_song(const Song* song);
-void mp_queue_songs(const std::vector<Song*> songs);
 
 // Will pause if song is playing and resume if song is not playing
 void mp_pause_or_resume();
+
+void mp_play_playlist(int playlist_id);
 
 // Load song cover art from memory
 FrontCover mp_song_front_cover_load(Song* song);

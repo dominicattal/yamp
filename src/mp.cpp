@@ -16,6 +16,8 @@
 #include <stb_image.h>
 
 struct MPContextInternal {
+    std::mt19937 mt;
+
     sqlite3* db;
     ma_engine engine;
     ma_sound current_song_sound;
@@ -119,8 +121,8 @@ static int playlist_song_callback(void* data, int num_cols, char** values, char*
 
 static void db_init()
 {
+    ctx.mt.seed(std::chrono::steady_clock::now().time_since_epoch().count());
     sqlite3_open("build/yamp.db", &ctx.db);
-
     execute_file("assets/sql/schema.sql");
 
     sqlite3_stmt* stmt;
@@ -455,12 +457,6 @@ void mp_queue_song(const Song* song)
         mp_queue_skip();
 }
 
-void mp_queue_songs(const std::vector<const Song*> songs)
-{
-    for (const Song* song : songs)
-        mp_queue_song(song);
-}
-
 void mp_pause_or_resume()
 {
     if (!ctx.current_song_loaded)
@@ -472,6 +468,29 @@ void mp_pause_or_resume()
         ctx.paused = true;
         ma_sound_stop(&ctx.current_song_sound);
     }
+}
+
+static void add_playlist_songs_to_group_queue(int playlist_id)
+{
+    for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs) {
+        if (playlist_song.playlist_id == playlist_id) {
+            const Song* song = mp_get_song_from_id(playlist_song.song_id);
+            mp_ctx.group_queue.push_back(song);
+        }
+    }
+    if (mp_ctx.shuffle)
+        std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
+}
+
+void mp_play_playlist(int playlist_id)
+{
+    mp_ctx.playing_group = true;
+    mp_ctx.group_is_album = false;
+    mp_ctx.group_id = playlist_id;
+    mp_ctx.queue.clear();
+    mp_ctx.group_queue.clear();
+    add_playlist_songs_to_group_queue(playlist_id);
+    mp_queue_skip();
 }
 
 FrontCover mp_song_front_cover_load(Song* song)
@@ -606,28 +625,49 @@ int mp_get_album_id_from_artist_id(int artist_id)
     return -1;
 }
 
+static void play_next_group_song()
+{
+    if (mp_ctx.group_queue.size() == 0) 
+    {
+        if (mp_ctx.loop_mode == LOOP_NONE) {
+            mp_ctx.playing_group = false;
+            return;
+        }
+
+        add_playlist_songs_to_group_queue(mp_ctx.group_id);
+
+        if (mp_ctx.group_queue.size() == 0) {
+            SPDLOG_WARN("Tried to play group with no songs");
+            mp_ctx.playing_group = false;
+            return;
+        }
+    }
+    const Song* song = mp_ctx.group_queue.front();
+    mp_ctx.group_queue.pop_front();
+    mp_play_song(song);
+}
+
 void mp_queue_skip()
 {
     ctx.paused = false;
     if (mp_ctx.queue.size() == 0) {
-        if (mp_ctx.shuffle) {
-            static std::mt19937 mt{ static_cast<std::mt19937::result_type>(
-		std::chrono::steady_clock::now().time_since_epoch().count()
-		) };
+        if (mp_ctx.playing_group) {
+            play_next_group_song();
+        } else if (mp_ctx.shuffle) {
+            auto now = std::chrono::steady_clock::now();
+            static std::mt19937 mt{static_cast<std::mt19937::result_type>(now.time_since_epoch().count())};
             size_t idx = mt() % mp_ctx.songs.size();
             mp_play_song(&mp_ctx.songs[idx]);
-        }
-        else if (ctx.current_song_loaded) {
+        } else if (ctx.current_song_loaded) {
             mp_ctx.current_song = nullptr;
             ma_sound_uninit(&ctx.current_song_sound);
             ctx.current_song_loaded = false;
         }
-        return;
+    } else {
+        const Song* song = mp_ctx.queue.front();
+        mp_ctx.queue.pop_front();
+        mp_play_song(song);
     }
-
-    const Song* song = mp_ctx.queue.front();
-    mp_ctx.queue.pop_front();
-    mp_play_song(song);
 }
 
 void mp_queue_clear()

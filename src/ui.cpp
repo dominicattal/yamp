@@ -471,6 +471,10 @@ static void draw_playlist_info()
             for (const SongTrack& track : tracks)
                 mp_queue_song(mp_get_song_from_id(track.song_id));
         }
+        if (ImGui::Button("Play"))
+        {
+            mp_play_playlist(playlist->id);
+        }
         if (ImGui::BeginPopup("change_playlist_name"))
         {
             ImGui::Text("Edit name:");
