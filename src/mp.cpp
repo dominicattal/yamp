@@ -7,6 +7,7 @@
 #include <codecvt>
 #include <cassert>
 #include <miniaudio.h>
+#include <random>
 #include <id3v2lib.h>
 #include <sqlite3.h>
 #include <utf8.h>
@@ -141,6 +142,7 @@ static void db_init()
 
 void mp_init()
 {
+    mp_ctx.shuffle = true;
     db_init();
     ma_result res;
     res = ma_engine_init(NULL, &ctx.engine);
@@ -591,7 +593,14 @@ int mp_get_album_id_from_artist_id(int artist_id)
 void mp_queue_skip()
 {
     if (mp_ctx.queue.size() == 0) {
-        if (ctx.current_song_loaded) {
+        if (mp_ctx.shuffle) {
+            static std::mt19937 mt{ static_cast<std::mt19937::result_type>(
+		std::chrono::steady_clock::now().time_since_epoch().count()
+		) };
+            size_t idx = mt() % mp_ctx.songs.size();
+            mp_play_song(&mp_ctx.songs[idx]);
+        }
+        else if (ctx.current_song_loaded) {
             mp_ctx.current_song = nullptr;
             ma_sound_uninit(&ctx.current_song_sound);
             ctx.current_song_loaded = false;

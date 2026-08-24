@@ -78,6 +78,8 @@ struct MPContext {
     SongCallback song_callback;
 
     std::deque<const Song*> queue;
+
+    bool shuffle;
 };
 
 extern MPContext mp_ctx;

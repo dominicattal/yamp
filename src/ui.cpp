@@ -210,6 +210,7 @@ static void draw_left_side()
     {
         mp_queue_skip();
     }
+    ImGui::Checkbox("Shuffle", &mp_ctx.shuffle);
 
     if (!mp_ctx.current_song) {
         ImGui::Text("No song playing");
@@ -307,6 +308,7 @@ static void draw_all_songs()
                 {
                     ctx.right_side = SHOW_RIGHT_PLAYLIST;
                     ctx.open_playlist_id = mp_create_playlist();
+                    mp_add_song_id_to_playlist_id(song.id, ctx.open_playlist_id);
                 }
                 ImGui::EndPopup();
             }
