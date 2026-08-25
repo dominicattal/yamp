@@ -389,7 +389,7 @@ int mp_create_playlist()
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
-    query = "SELECT id FROM Playlists WHERE name=?1";
+    query = "SELECT id FROM Playlists WHERE name=?1 ORDER BY id DESC";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, playlist_name, -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
@@ -445,7 +445,7 @@ void mp_play_song(const Song* song)
     config.pFilePath = song->path.c_str();
     config.endCallback = end_song_callback;
     ma_sound_init_ex(&ctx.engine, &config, &ctx.current_song_sound);
-    ma_sound_start(&ctx.current_song_sound);
+    //ma_sound_start(&ctx.current_song_sound);
     ctx.current_song_loaded = true;
     mp_ctx.current_song = song;
 }
@@ -472,14 +472,34 @@ void mp_pause_or_resume()
 
 static void add_playlist_songs_to_group_queue(int playlist_id)
 {
-    for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs) {
-        if (playlist_song.playlist_id == playlist_id) {
-            const Song* song = mp_get_song_from_id(playlist_song.song_id);
-            mp_ctx.group_queue.push_back(song);
-        }
+    std::vector<SongTrack> song_tracks = mp_get_song_ids_from_playlist_id(playlist_id);
+    mp_ctx.group_queue.clear();
+    if (mp_ctx.shuffle) {
+        std::shuffle(song_tracks.begin(), song_tracks.end(), ctx.mt);
+    } else {
+        std::sort(song_tracks.begin(), song_tracks.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
+                return pair1.track < pair2.track;
+            });
     }
-    if (mp_ctx.shuffle)
-        std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
+
+    for (const SongTrack& song_track : song_tracks)
+        mp_ctx.group_queue.push_back(mp_get_song_from_id(song_track.song_id));
+}
+
+static void add_album_songs_to_group_queue(int album_id)
+{
+    std::vector<SongTrack> song_tracks = mp_get_song_ids_from_album_id(album_id);
+    mp_ctx.group_queue.clear();
+    if (mp_ctx.shuffle) {
+        std::shuffle(song_tracks.begin(), song_tracks.end(), ctx.mt);
+    } else {
+        std::sort(song_tracks.begin(), song_tracks.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
+                return pair1.track < pair2.track;
+            });
+    }
+
+    for (const SongTrack& song_track : song_tracks)
+        mp_ctx.group_queue.push_back(mp_get_song_from_id(song_track.song_id));
 }
 
 void mp_play_playlist(int playlist_id)
@@ -488,8 +508,17 @@ void mp_play_playlist(int playlist_id)
     mp_ctx.group_is_album = false;
     mp_ctx.group_id = playlist_id;
     mp_ctx.queue.clear();
-    mp_ctx.group_queue.clear();
     add_playlist_songs_to_group_queue(playlist_id);
+    mp_queue_skip();
+}
+
+void mp_play_album(int album_id)
+{
+    mp_ctx.playing_group = true;
+    mp_ctx.group_is_album = true;
+    mp_ctx.group_id = album_id;
+    mp_ctx.queue.clear();
+    add_album_songs_to_group_queue(album_id);
     mp_queue_skip();
 }
 
@@ -634,7 +663,10 @@ static void play_next_group_song()
             return;
         }
 
-        add_playlist_songs_to_group_queue(mp_ctx.group_id);
+        if (mp_ctx.group_is_album)
+            add_album_songs_to_group_queue(mp_ctx.group_id);
+        else
+            add_playlist_songs_to_group_queue(mp_ctx.group_id);
 
         if (mp_ctx.group_queue.size() == 0) {
             SPDLOG_WARN("Tried to play group with no songs");
@@ -649,6 +681,10 @@ static void play_next_group_song()
 
 void mp_queue_skip()
 {
+    if (mp_ctx.loop_mode == LOOP_TRACK) {
+        mp_play_song(mp_ctx.current_song);
+        return;
+    }
     ctx.paused = false;
     if (mp_ctx.queue.size() == 0) {
         if (mp_ctx.playing_group) {

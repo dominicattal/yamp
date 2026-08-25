@@ -211,6 +211,8 @@ static void draw_left_side()
         mp_queue_skip();
     }
     ImGui::Checkbox("Shuffle", &mp_ctx.shuffle);
+    const char* loop_enum[] = {"none", "group", "track"};
+    ImGui::Combo("combo", &mp_ctx.loop_mode, loop_enum, std::size(loop_enum));
 
     if (ImGui::Button("Pause/Resume") || ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9))
         mp_pause_or_resume();
@@ -241,6 +243,7 @@ static void draw_left_side()
     {
         ctx.right_side = SHOW_RIGHT_PLAYLIST;
         ctx.open_playlist_id = mp_create_playlist();
+        SPDLOG_INFO("{}", ctx.open_playlist_id);
     }
 
     if (ImGui::BeginTable("Playlists", 2, ImGuiTableFlags_None))
@@ -413,6 +416,10 @@ static void draw_album_info()
         {
             for (const SongTrack& track : tracks)
                 mp_queue_song(mp_get_song_from_id(track.song_id));
+        }
+        if (ImGui::Button("Play"))
+        {
+            mp_play_album(album->id);
         }
         ImGui::EndChild();
     }

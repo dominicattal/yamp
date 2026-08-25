@@ -100,7 +100,7 @@ struct MPContext {
     // if the end of the queue is reached
     bool shuffle;
 
-    LoopMode loop_mode;
+    int loop_mode;
 };
 
 extern MPContext mp_ctx;
@@ -135,6 +135,7 @@ void mp_queue_song(const Song* song);
 void mp_pause_or_resume();
 
 void mp_play_playlist(int playlist_id);
+void mp_play_album(int album_id);
 
 // Load song cover art from memory
 FrontCover mp_song_front_cover_load(Song* song);
