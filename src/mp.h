@@ -87,7 +87,7 @@ struct MPContext {
     std::deque<const Song*> queue;
 
     // this stores the order songs should be play in the group
-    std::deque<const Song*> group_queue;
+    std::deque<SongTrack> group_queue;
 
     // whether mp is playing a group (playlist or album) or not.
     bool playing_group;
@@ -126,19 +126,21 @@ void mp_rename_playlist_id(int playlist_id, const char* new_playlist_name);
 void mp_add_song_id_to_playlist_id(int song_id, int playlist_id);
 
 // Immediately play a song
-void mp_play_song(const Song* song);
+void mp_play_song(int song_id);
 
 // Queue a song or mulitple songs
-void mp_queue_song(const Song* song);
+void mp_queue_song(int song_id);
 
 // Will pause if song is playing and resume if song is not playing
 void mp_pause_or_resume();
+
+void mp_toggle_shuffle();
 
 void mp_play_playlist(int playlist_id);
 void mp_play_album(int album_id);
 
 // Load song cover art from memory
-FrontCover mp_song_front_cover_load(Song* song);
+FrontCover mp_song_front_cover_load(int song_id);
 void mp_song_front_cover_free(FrontCover* data);
 
 const Song* mp_get_song_from_id(int id);

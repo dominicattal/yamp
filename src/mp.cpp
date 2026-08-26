@@ -435,23 +435,25 @@ static void end_song_callback(void* user_data, ma_sound* sound)
     ctx.song_ended = true;
 }
 
-void mp_play_song(const Song* song)
+void mp_play_song(int song_id)
 {
     if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
     //ma_sound_init_from_file(&ctx.engine, song->path.c_str(), 0, NULL, NULL, &ctx.current_song_sound);
+    const Song* song = mp_get_song_from_id(song_id);
     ma_sound_config config = ma_sound_config_init();
     config.channelsIn = 1;
     config.pFilePath = song->path.c_str();
     config.endCallback = end_song_callback;
     ma_sound_init_ex(&ctx.engine, &config, &ctx.current_song_sound);
-    //ma_sound_start(&ctx.current_song_sound);
+    ma_sound_start(&ctx.current_song_sound);
     ctx.current_song_loaded = true;
     mp_ctx.current_song = song;
 }
 
-void mp_queue_song(const Song* song)
+void mp_queue_song(int song_id)
 {
+    const Song* song = mp_get_song_from_id(song_id);
     mp_ctx.queue.push_back(song);
     if (mp_ctx.queue.size() == 1 && !ctx.current_song_loaded)
         mp_queue_skip();
@@ -470,36 +472,48 @@ void mp_pause_or_resume()
     }
 }
 
+void mp_toggle_shuffle()
+{
+    if (mp_ctx.playing_group) {
+        if (mp_ctx.shuffle) {
+            std::sort(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
+                    return pair1.track < pair2.track;
+                });
+        } else {
+            std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
+        }
+    }
+    mp_ctx.shuffle = !mp_ctx.shuffle;
+}
+
 static void add_playlist_songs_to_group_queue(int playlist_id)
 {
-    std::vector<SongTrack> song_tracks = mp_get_song_ids_from_playlist_id(playlist_id);
     mp_ctx.group_queue.clear();
+    for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs)
+        if (playlist_song.playlist_id == playlist_id)
+            mp_ctx.group_queue.emplace_back(playlist_song.song_id, playlist_song.track);
     if (mp_ctx.shuffle) {
-        std::shuffle(song_tracks.begin(), song_tracks.end(), ctx.mt);
+        std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
     } else {
-        std::sort(song_tracks.begin(), song_tracks.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
+        std::sort(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
                 return pair1.track < pair2.track;
             });
     }
-
-    for (const SongTrack& song_track : song_tracks)
-        mp_ctx.group_queue.push_back(mp_get_song_from_id(song_track.song_id));
 }
 
 static void add_album_songs_to_group_queue(int album_id)
 {
-    std::vector<SongTrack> song_tracks = mp_get_song_ids_from_album_id(album_id);
     mp_ctx.group_queue.clear();
+    for (const AlbumSong& album_song : mp_ctx.album_songs)
+        if (album_song.album_id == album_id)
+            mp_ctx.group_queue.emplace_back(album_song.song_id, album_song.track);
     if (mp_ctx.shuffle) {
-        std::shuffle(song_tracks.begin(), song_tracks.end(), ctx.mt);
+        std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
     } else {
-        std::sort(song_tracks.begin(), song_tracks.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
+        std::sort(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
                 return pair1.track < pair2.track;
-            });
+        });
     }
-
-    for (const SongTrack& song_track : song_tracks)
-        mp_ctx.group_queue.push_back(mp_get_song_from_id(song_track.song_id));
 }
 
 void mp_play_playlist(int playlist_id)
@@ -522,9 +536,10 @@ void mp_play_album(int album_id)
     mp_queue_skip();
 }
 
-FrontCover mp_song_front_cover_load(Song* song)
+FrontCover mp_song_front_cover_load(int song_id)
 {
     FrontCover front_cover{};
+    const Song* song = mp_get_song_from_id(song_id);
     ID3v2_Tag* tag = ID3v2_read_tag(song->path.c_str());
     if (!tag)
         return front_cover;
@@ -674,15 +689,16 @@ static void play_next_group_song()
             return;
         }
     }
-    const Song* song = mp_ctx.group_queue.front();
+    SongTrack song_track = mp_ctx.group_queue.front();
+    const Song* song = mp_get_song_from_id(song_track.song_id);
     mp_ctx.group_queue.pop_front();
-    mp_play_song(song);
+    mp_play_song(song->id);
 }
 
 void mp_queue_skip()
 {
     if (mp_ctx.loop_mode == LOOP_TRACK) {
-        mp_play_song(mp_ctx.current_song);
+        mp_play_song(mp_ctx.current_song->id);
         return;
     }
     ctx.paused = false;
@@ -693,7 +709,7 @@ void mp_queue_skip()
             auto now = std::chrono::steady_clock::now();
             static std::mt19937 mt{static_cast<std::mt19937::result_type>(now.time_since_epoch().count())};
             size_t idx = mt() % mp_ctx.songs.size();
-            mp_play_song(&mp_ctx.songs[idx]);
+            mp_play_song(mp_ctx.songs[idx].id);
         } else if (ctx.current_song_loaded) {
             mp_ctx.current_song = nullptr;
             ma_sound_uninit(&ctx.current_song_sound);
@@ -702,7 +718,7 @@ void mp_queue_skip()
     } else {
         const Song* song = mp_ctx.queue.front();
         mp_ctx.queue.pop_front();
-        mp_play_song(song);
+        mp_play_song(song->id);
     }
 }
 

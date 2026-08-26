@@ -81,7 +81,7 @@ static void cleanup_textures()
 
 static void song_callback(Song* song)
 {
-    FrontCover front_cover = mp_song_front_cover_load(song);
+    FrontCover front_cover = mp_song_front_cover_load(song->id);
     if (front_cover.data == nullptr) {
         ctx.song_textures[song->id] = ctx.default_texture;
         return;
@@ -210,7 +210,11 @@ static void draw_left_side()
     {
         mp_queue_skip();
     }
-    ImGui::Checkbox("Shuffle", &mp_ctx.shuffle);
+
+    bool shuffle_copy = mp_ctx.shuffle;
+    if (ImGui::Checkbox("Shuffle", &shuffle_copy))
+        mp_toggle_shuffle();
+
     const char* loop_enum[] = {"none", "group", "track"};
     ImGui::Combo("combo", &mp_ctx.loop_mode, loop_enum, std::size(loop_enum));
 
@@ -227,12 +231,39 @@ static void draw_left_side()
         //ImGui::Text("Artist: %s", mp_ctx.current_song.artist.c_str());
         //ImGui::Text("Track: %s", mp_ctx.current_song.track.c_str());
     }
+
+    if (mp_ctx.playing_group) {
+        if (mp_ctx.group_is_album) {
+            const Album* album = mp_get_album_from_id(mp_ctx.group_id);
+            ImGui::Text("Playing: %s", album->name.c_str());
+            ImGui::SameLine();
+            if (ImGui::Button("Open")) {
+                ctx.right_side = SHOW_RIGHT_ALBUM;
+                ctx.open_album_id = album->id;
+            }
+        } else {
+            const Playlist* playlist = mp_get_playlist_from_id(mp_ctx.group_id);
+            ImGui::Text("Playing: %s", playlist->name.c_str());
+            ImGui::SameLine();
+            if (ImGui::Button("Open")) {
+                ctx.right_side = SHOW_RIGHT_PLAYLIST;
+                ctx.open_album_id = playlist->id;
+            }
+        }
+    }
+
     if (ImGui::BeginTable("Queue", 1, ImGuiTableFlags_None))
     {
         ImGui::TableSetupColumn("Queue", ImGuiTableColumnFlags_NoSort);
         ImGui::TableHeadersRow();
         for (const Song* song : mp_ctx.queue)
         {
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", song->title.c_str());
+        }
+        for (auto [song_id, track] : mp_ctx.group_queue)
+        {
+            const Song* song = mp_get_song_from_id(song_id);
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
         }
@@ -284,9 +315,9 @@ static void draw_all_songs()
             ImGui::TableNextColumn();
             ImGui::PushID(song.id);
             if (ImGui::Button("Play"))
-                mp_play_song(&song);;
+                mp_play_song(song.id);;
             if (ImGui::Button("Queue"))
-                mp_queue_song(&song);
+                mp_queue_song(song.id);
             ImGui::TableNextColumn();
             ImGui::ImageWithBg(ctx.song_textures[song.id], ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImGui::TableNextColumn();
@@ -414,8 +445,8 @@ static void draw_album_info()
         ImGui::SetWindowFontScale(1.0f); 
         if (ImGui::Button("Queue"))
         {
-            for (const SongTrack& track : tracks)
-                mp_queue_song(mp_get_song_from_id(track.song_id));
+            for (auto [song_id, track] : tracks)
+                mp_queue_song(song_id);
         }
         if (ImGui::Button("Play"))
         {
@@ -436,15 +467,14 @@ static void draw_album_info()
             ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
             ImGui::TableNextColumn();
             ImGui::PushID(id++);
-            const Song* song = mp_get_song_from_id(song_id);
-            assert(song);
             if (ImGui::Button("Play"))
-                mp_play_song(song);;
+                mp_play_song(song_id);;
             if (ImGui::Button("Queue"))
-                mp_queue_song(song);
+                mp_queue_song(song_id);
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
+            const Song* song = mp_get_song_from_id(song_id);
             ImGui::Text("%s", song->title.c_str());
             ImGui::PopID();
         }
@@ -475,8 +505,8 @@ static void draw_playlist_info()
         }
         if (ImGui::Button("Queue"))
         {
-            for (const SongTrack& track : tracks)
-                mp_queue_song(mp_get_song_from_id(track.song_id));
+            for (auto [song_id, track] : tracks)
+                mp_queue_song(song_id);
         }
         if (ImGui::Button("Play"))
         {
@@ -514,9 +544,9 @@ static void draw_playlist_info()
             const Song* song = mp_get_song_from_id(song_id);
             assert(song);
             if (ImGui::Button("Play"))
-                mp_play_song(song);;
+                mp_play_song(song_id);;
             if (ImGui::Button("Queue"))
-                mp_queue_song(song);
+                mp_queue_song(song_id);
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
