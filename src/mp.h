@@ -143,6 +143,9 @@ void mp_play_album(int album_id);
 FrontCover mp_song_front_cover_load(int song_id);
 void mp_song_front_cover_free(FrontCover* data);
 
+// Search for songs based on query
+std::vector<int> mp_search_songs(const char* search_query);
+
 const Song* mp_get_song_from_id(int id);
 const Album* mp_get_album_from_id(int id);
 const Artist* mp_get_artist_from_id(int id);

@@ -555,6 +555,23 @@ FrontCover mp_song_front_cover_load(int song_id)
     return front_cover;
 }
 
+std::vector<int> mp_search_songs(const char* search_query)
+{
+    std::vector<int> result{};
+    sqlite3_stmt* stmt;
+    constexpr int limit = 50;
+    const char* query = "SELECT id FROM Songs WHERE title LIKE ?1 LIMIT ?2";
+    char buffer[256];
+    snprintf(buffer, sizeof(buffer), "%%%s%%", search_query);
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, limit);
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+        result.push_back(sqlite3_column_int(stmt, 0));
+    sqlite3_finalize(stmt);
+    return result;
+}
+
 void mp_song_front_cover_free(FrontCover* front_cover)
 {
     if (front_cover->data)
