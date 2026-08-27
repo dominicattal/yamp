@@ -124,8 +124,8 @@ void mp_recursive_add_songs(const std::string& folder_path);
 int mp_create_playlist();
 void mp_rename_playlist_id(int playlist_id, const char* new_playlist_name);
 
-// Add a song to a playlist.
 void mp_add_song_id_to_playlist_id(int song_id, int playlist_id);
+void mp_add_album_id_to_playlist_id(int song_id, int playlist_id);
 
 // Immediately play a song
 void mp_play_song(int song_id);

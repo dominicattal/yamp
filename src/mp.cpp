@@ -433,6 +433,12 @@ void mp_add_song_id_to_playlist_id(int song_id, int playlist_id)
     mp_ctx.playlist_songs.emplace_back(playlist_id, song_id, playlist_length+1);
 }
 
+void mp_add_album_id_to_playlist_id(int album_id, int playlist_id)
+{
+    for (auto [song_id, track] : mp_get_song_ids_from_album_id(album_id))
+        mp_add_song_id_to_playlist_id(song_id, playlist_id);
+}
+
 static void end_song_callback(void* user_data, ma_sound* sound)
 {
     (void)user_data; (void)sound;

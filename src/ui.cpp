@@ -461,13 +461,28 @@ static void draw_album_info()
         }
         ImGui::SetWindowFontScale(1.0f); 
         if (ImGui::Button("Queue"))
-        {
             for (auto [song_id, track] : tracks)
                 mp_queue_song(song_id);
-        }
         if (ImGui::Button("Play"))
-        {
             mp_play_album(album->id);
+        if (ImGui::Button("Add To Playlist"))
+            ImGui::OpenPopup("add_to_playlist_popup");
+        if (ImGui::BeginPopup("add_to_playlist_popup"))
+        {
+            for (const Playlist& playlist : mp_ctx.playlists)
+            {
+                ImGui::PushID(playlist.id);
+                if (ImGui::Button(playlist.name.c_str()))
+                    mp_add_album_id_to_playlist_id(album->id, playlist.id);
+                ImGui::PopID();
+            }
+            if (ImGui::Button("Create Playlist"))
+            {
+                ctx.center = SHOW_CENTER_PLAYLIST;
+                ctx.open_playlist_id = mp_create_playlist();
+                mp_add_album_id_to_playlist_id(album->id, ctx.open_playlist_id);
+            }
+            ImGui::EndPopup();
         }
         ImGui::EndChild();
     }
@@ -687,6 +702,25 @@ static void draw_artist_info()
             ImGui::SameLine();
             if (ImGui::Button("Play"))
                 mp_play_album(album->id);
+            if (ImGui::Button("Add To Playlist"))
+                ImGui::OpenPopup("add_to_playlist_popup");
+            if (ImGui::BeginPopup("add_to_playlist_popup"))
+            {
+                for (const Playlist& playlist : mp_ctx.playlists)
+                {
+                    ImGui::PushID(playlist.id);
+                    if (ImGui::Button(playlist.name.c_str()))
+                        mp_add_album_id_to_playlist_id(album->id, playlist.id);
+                    ImGui::PopID();
+                }
+                if (ImGui::Button("Create Playlist"))
+                {
+                    ctx.center = SHOW_CENTER_PLAYLIST;
+                    ctx.open_playlist_id = mp_create_playlist();
+                    mp_add_album_id_to_playlist_id(album->id, ctx.open_playlist_id);
+                }
+                ImGui::EndPopup();
+            }
             ImGui::PopID();
         }
         ImGui::EndTable();
