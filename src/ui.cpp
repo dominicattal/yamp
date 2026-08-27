@@ -106,7 +106,6 @@ static void song_callback(Song* song)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
 
     mp_song_front_cover_free(&front_cover);
-    SPDLOG_INFO("callback on {}", song->title);
 }
 
 void ui_init()
@@ -227,6 +226,16 @@ static void draw_left_side()
     if (ImGui::Checkbox("Autoplay", &autoplay))
         mp_toggle_autoplay();
 
+    if (ImGui::SliderFloat("Volume", &mp_ctx.volume, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_None))
+        mp_update_volume();
+
+    char cursor_str[256];
+    int cursor = static_cast<int>(mp_ctx.current_song_cursor);
+    int length = static_cast<int>(mp_ctx.current_song_length);
+    snprintf(cursor_str, sizeof(cursor_str), "%d:%02d / %d:%02d", cursor / 60, cursor % 60, length / 60, length % 60);
+    if (ImGui::SliderFloat("Cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, cursor_str, ImGuiSliderFlags_None))
+        mp_update_cursor();
+
     const char* loop_enum[] = {"none", "group", "track"};
     ImGui::Combo("combo", &mp_ctx.loop_mode, loop_enum, std::size(loop_enum));
 
@@ -314,24 +323,32 @@ static void draw_left_side()
 static void draw_all_songs()
 {
     ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("All Songs", 4, flags, ImGui::GetContentRegionAvail()))
+    if (ImGui::BeginTable("All Songs", 5, flags, ImGui::GetContentRegionAvail()))
     {
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
         ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
+        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
         ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
         //ImGui::TableHeadersRow();
         for (const Song& song : mp_ctx.songs)
         {
-            ImGui::TableNextColumn();
             ImGui::PushID(song.id);
+            ImGui::TableNextColumn();
             if (ImGui::Button("Play"))
                 mp_play_song(song.id);;
             if (ImGui::Button("Queue"))
                 mp_queue_song(song.id);
             ImGui::TableNextColumn();
             ImGui::ImageWithBg(ctx.song_textures[song.id], ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImGui::TableNextColumn();
+
+            char length_str[256];
+            int length = static_cast<int>(song.length);
+            snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
+            ImGui::Text("%s", length_str);
+
             ImGui::TableNextColumn();
             ImGui::Text("%s", song.title.c_str());
             int artist_id = mp_get_artist_id_from_song_id(song.id);
@@ -587,13 +604,17 @@ static void draw_playlist_info()
             const Artist* artist = mp_get_artist_from_id(mp_get_artist_id_from_song_id(song_id));
             ImGui::Text("%s", song->title.c_str());
             char album_name[256];
-            snprintf(album_name, sizeof(album_name), "%s", album->name.c_str());
-            if (ImGui::Button(album_name))
-            {
-                ctx.center = SHOW_CENTER_ALBUM;
-                ctx.open_album_id = album->id;
+            if (album) {
+                snprintf(album_name, sizeof(album_name), "%s", album->name.c_str());
+                if (ImGui::Button(album_name))
+                {
+                    ctx.center = SHOW_CENTER_ALBUM;
+                    ctx.open_album_id = album->id;
+                }
             }
-            ImGui::Text("%s", artist->name.c_str());
+            if (artist) {
+                ImGui::Text("%s", artist->name.c_str());
+            }
             ImGui::PopID();
         }
         ImGui::EndTable();

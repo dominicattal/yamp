@@ -50,7 +50,8 @@ static int song_callback(void* data, int num_cols, char** values, char** keys)
     int id = std::atoi(values[0]);
     std::string title = values[1];
     std::string path = values[2];
-    Song& song = mp_ctx.songs.emplace_back(title, path, id);
+    float length = std::atof(values[3]);
+    Song& song = mp_ctx.songs.emplace_back(title, path, length, id);
     //Song& song = mp_ctx.songs.emplace(std::make_pair(id, Song{title, path, id}));
     if (mp_ctx.song_callback)
         mp_ctx.song_callback(&song);
@@ -145,6 +146,7 @@ static void db_init()
 
 void mp_init()
 {
+    mp_ctx.volume = 1.0f;
     mp_ctx.shuffle = true;
     db_init();
     ma_result res;
@@ -173,6 +175,9 @@ void mp_cleanup()
 
 void mp_update()
 {
+    if (mp_ctx.current_song != nullptr) {
+        ma_sound_get_cursor_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_cursor);
+    }
     if (ctx.song_ended) {
         mp_queue_skip();
         ctx.song_ended = false;
@@ -239,14 +244,20 @@ void mp_add_song(const std::string& song_path)
     if (frame)
         album_name = read_text_frame(frame);
 
-    SPDLOG_INFO(track);
-
     sqlite3_stmt* stmt;
     const char* query;
-    query = "INSERT INTO Songs (title, path) VALUES (?1, ?2);";
+    query = "INSERT INTO Songs (title, path, length) VALUES (?1, ?2, ?3);";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, title.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, path.c_str(), -1, SQLITE_TRANSIENT);
+
+    ma_sound sound;
+    float song_length;
+    ma_sound_init_from_file(&ctx.engine, path.c_str(), 0, NULL, NULL, &sound);
+    ma_sound_get_length_in_seconds(&sound, &song_length);
+    ma_sound_uninit(&sound);
+    sqlite3_bind_double(stmt, 3, song_length);
+
     int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (res == SQLITE_CONSTRAINT) {
@@ -261,7 +272,7 @@ void mp_add_song(const std::string& song_path)
     int song_id = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
 
-    Song& song = mp_ctx.songs.emplace_back(title, path, song_id);
+    Song& song = mp_ctx.songs.emplace_back(title, path, song_length, song_id);
     if (mp_ctx.song_callback)
         mp_ctx.song_callback(&song);
 
@@ -456,6 +467,7 @@ void mp_play_song(int song_id)
     config.endCallback = end_song_callback;
     ma_sound_init_ex(&ctx.engine, &config, &ctx.current_song_sound);
     //ma_sound_start(&ctx.current_song_sound);
+    ma_sound_get_length_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_length);
     ctx.current_song_loaded = true;
     mp_ctx.current_song = song;
 }
@@ -500,6 +512,16 @@ void mp_toggle_autoplay()
     mp_ctx.autoplay = !mp_ctx.autoplay;
     if (mp_ctx.autoplay && mp_ctx.current_song == nullptr)
         mp_queue_skip();
+}
+
+void mp_update_volume()
+{
+    ma_sound_set_volume(&ctx.current_song_sound, mp_ctx.volume);
+}
+
+void mp_update_cursor()
+{
+    ma_sound_seek_to_second(&ctx.current_song_sound, mp_ctx.current_song_cursor);
 }
 
 static void add_playlist_songs_to_group_queue(int playlist_id)

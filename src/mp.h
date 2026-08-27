@@ -17,6 +17,7 @@ enum LoopMode {
 struct Song {
     std::string title;
     std::string path;
+    float length;
     int id;
 };
 
@@ -71,7 +72,9 @@ struct FrontCover {
 using SongCallback = std::function<void(Song*)>;
 
 struct MPContext {
+
     const Song* current_song;
+
     std::vector<Song> songs;
     std::vector<Album> albums;
     std::vector<Artist> artists;
@@ -95,6 +98,12 @@ struct MPContext {
     bool group_is_album;
     // album_id if group_is_album == true, playlist_id otherwise
     int group_id;
+
+    float volume;
+
+    // seconds
+    float current_song_cursor;
+    float current_song_length;
 
     // whether to play songs in random order. when this is on, music will play even
     // if the end of the queue is reached
@@ -138,6 +147,8 @@ void mp_pause_or_resume();
 
 void mp_toggle_shuffle();
 void mp_toggle_autoplay();
+void mp_update_volume();
+void mp_update_cursor();
 
 void mp_play_playlist(int playlist_id);
 void mp_play_album(int album_id);
