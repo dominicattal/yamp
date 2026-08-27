@@ -372,6 +372,10 @@ void mp_add_songs(const std::vector<std::string>& song_paths)
 void mp_recursive_add_songs(const std::string& folder_path)
 {
     namespace fs = std::filesystem;
+
+    if (!fs::exists(std::filesystem::path{folder_path}))
+        return;
+
     fs::directory_options options = fs::directory_options::follow_directory_symlink;
     fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
     for (auto const& dir_entry : entries)
@@ -439,14 +443,13 @@ void mp_play_song(int song_id)
 {
     if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
-    //ma_sound_init_from_file(&ctx.engine, song->path.c_str(), 0, NULL, NULL, &ctx.current_song_sound);
     const Song* song = mp_get_song_from_id(song_id);
     ma_sound_config config = ma_sound_config_init();
     config.channelsIn = 1;
     config.pFilePath = song->path.c_str();
     config.endCallback = end_song_callback;
     ma_sound_init_ex(&ctx.engine, &config, &ctx.current_song_sound);
-    ma_sound_start(&ctx.current_song_sound);
+    //ma_sound_start(&ctx.current_song_sound);
     ctx.current_song_loaded = true;
     mp_ctx.current_song = song;
 }
@@ -474,16 +477,23 @@ void mp_pause_or_resume()
 
 void mp_toggle_shuffle()
 {
+    mp_ctx.shuffle = !mp_ctx.shuffle;
     if (mp_ctx.playing_group) {
         if (mp_ctx.shuffle) {
+            std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
+        } else {
             std::sort(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
                     return pair1.track < pair2.track;
                 });
-        } else {
-            std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
         }
     }
-    mp_ctx.shuffle = !mp_ctx.shuffle;
+}
+
+void mp_toggle_autoplay()
+{
+    mp_ctx.autoplay = !mp_ctx.autoplay;
+    if (mp_ctx.autoplay && mp_ctx.current_song == nullptr)
+        mp_queue_skip();
 }
 
 static void add_playlist_songs_to_group_queue(int playlist_id)
@@ -661,6 +671,15 @@ std::vector<SongTrack> mp_get_song_ids_from_playlist_id(int playlist_id)
     return result;
 }
 
+std::vector<int> mp_get_song_ids_from_artist_id(int artist_id)
+{
+    std::vector<int> result{};
+    for (const ArtistSong& artist_song : mp_ctx.artist_songs)
+        if (artist_song.artist_id == artist_id)
+            result.push_back(artist_song.song_id);
+    return result;
+}
+
 std::vector<int> mp_get_album_ids_from_artist_id(int artist_id)
 {
     std::vector<int> result{};
@@ -722,10 +741,8 @@ void mp_queue_skip()
     if (mp_ctx.queue.size() == 0) {
         if (mp_ctx.playing_group) {
             play_next_group_song();
-        } else if (mp_ctx.shuffle) {
-            auto now = std::chrono::steady_clock::now();
-            static std::mt19937 mt{static_cast<std::mt19937::result_type>(now.time_since_epoch().count())};
-            size_t idx = mt() % mp_ctx.songs.size();
+        } else if (mp_ctx.autoplay) {
+            size_t idx = ctx.mt() % mp_ctx.songs.size();
             mp_play_song(mp_ctx.songs[idx].id);
         } else if (ctx.current_song_loaded) {
             mp_ctx.current_song = nullptr;

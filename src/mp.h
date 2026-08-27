@@ -100,6 +100,8 @@ struct MPContext {
     // if the end of the queue is reached
     bool shuffle;
 
+    bool autoplay;
+
     int loop_mode;
 };
 
@@ -135,6 +137,7 @@ void mp_queue_song(int song_id);
 void mp_pause_or_resume();
 
 void mp_toggle_shuffle();
+void mp_toggle_autoplay();
 
 void mp_play_playlist(int playlist_id);
 void mp_play_album(int album_id);
@@ -158,6 +161,7 @@ std::vector<SongTrack> mp_get_song_ids_from_album_id(int album_id);
 int mp_get_num_tracks_in_playlist_id(int playlist_id);
 std::vector<SongTrack> mp_get_song_ids_from_playlist_id(int playlist_id);
 std::vector<int> mp_get_album_ids_from_artist_id(int artist_id);
+std::vector<int> mp_get_song_ids_from_artist_id(int artist_id);
 
 // Skip current song in queue
 void mp_queue_skip();
