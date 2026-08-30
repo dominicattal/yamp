@@ -31,9 +31,19 @@ struct UIContext {
     std::unordered_map<int, GLuint> song_textures;
 
     GLFWwindow* window;
+
     GLuint default_texture;
     int default_texture_width;
     int default_texture_height;
+
+    GLuint play_texture;
+    int play_texture_width;
+    int play_texture_height;
+
+    GLuint queue_texture;
+    int queue_texture_width;
+    int queue_texture_height;
+
     bool show_demo_window;
 
     int right_side;
@@ -68,19 +78,26 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
         return;
 }
 
-static void initialize_default_texture()
+static void initialize_default_texture(GLuint* id, const char* path, int* width, int* height)
 {
-    glGenTextures(1, &ctx.default_texture);
-    glBindTexture(GL_TEXTURE_2D, ctx.default_texture);
+    glGenTextures(1, id);
+    glBindTexture(GL_TEXTURE_2D, *id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    FILE* fptr = fopen("assets/No-album-art.png", "r");
     int nc;
-    unsigned char* data = stbi_load_from_file(fptr, &ctx.default_texture_width, &ctx.default_texture_height, &nc, 4);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ctx.default_texture_width, ctx.default_texture_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    FILE* fptr = fopen(path, "r");
+    unsigned char* data = stbi_load_from_file(fptr, width, height, &nc, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, *width, *height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     stbi_image_free(data);
     fclose(fptr);
+}
+
+static void initialize_default_textures()
+{
+    initialize_default_texture(&ctx.default_texture, "assets/No-album-art.png", &ctx.default_texture_width, &ctx.default_texture_height);
+    initialize_default_texture(&ctx.play_texture, "assets/play.png", &ctx.play_texture_width, &ctx.play_texture_height);
+    initialize_default_texture(&ctx.queue_texture, "assets/add-to-playlist.png", &ctx.queue_texture_width, &ctx.queue_texture_height);
 }
 
 static void cleanup_textures()
@@ -151,7 +168,7 @@ void ui_init()
     glfwSwapInterval(1);
     glfwSetKeyCallback(ctx.window, key_callback);
 
-    initialize_default_texture();
+    initialize_default_textures();
     
     assert(pfd::settings::available() && "Portable File Dialogs are not available on this platform.\n");
     //pfd::settings::verbose(true);
@@ -186,14 +203,8 @@ void ui_cleanup()
     SPDLOG_INFO("UI cleaned up");
 }
 
-static void draw_left_side()
+[[maybe_unused]] static void draw_left_side()
 {
-    ImGuiChildFlags child_flags = ImGuiChildFlags_ResizeX | ImGuiChildFlags_Borders;
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-    float width = 200;
-    //ImGui::SetNextWindowSizeConstraints(ImVec2(200.0f, 0.0f), ImVec2(300.0f, FLT_MAX));
-    ImGui::BeginChild("left_side", ImVec2(width, ImGui::GetContentRegionAvail().y - 300), child_flags, window_flags);
-    //ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, IM_MAX(1.0f, ImGui::GetStyle().ImageBorderSize));
     GLuint texture = (mp_ctx.current_song) ? ctx.song_textures[mp_ctx.current_song->id] : ctx.default_texture;
     ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     //ImGui::PopStyleVar();
@@ -239,7 +250,8 @@ static void draw_left_side()
     const char* loop_enum[] = {"none", "group", "track"};
     ImGui::Combo("combo", &mp_ctx.loop_mode, loop_enum, std::size(loop_enum));
 
-    if (ImGui::Button("Pause/Resume") || ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9))
+    bool key_pressed = !ImGui::GetIO().WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9));
+    if (ImGui::Button("Pause/Resume") || key_pressed)
         mp_pause_or_resume();
 
     if (ImGui::Button("Clear Queue"))
@@ -317,7 +329,6 @@ static void draw_left_side()
         }
         ImGui::EndTable();
     }
-    ImGui::EndChild();
 }
 
 static void draw_all_songs()
@@ -325,9 +336,9 @@ static void draw_all_songs()
     ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
     if (ImGui::BeginTable("All Songs", 5, flags, ImGui::GetContentRegionAvail()))
     {
-        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
-        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
-        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 100);
+        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort);
+        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
@@ -336,12 +347,22 @@ static void draw_all_songs()
         {
             ImGui::PushID(song.id);
             ImGui::TableNextColumn();
-            if (ImGui::Button("Play"))
-                mp_play_song(song.id);;
-            if (ImGui::Button("Queue"))
+            if (ImGui::ImageButton("ABCDE", ctx.queue_texture, ImVec2(32, 32), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 1.0f, 1.0f)))
                 mp_queue_song(song.id);
             ImGui::TableNextColumn();
-            ImGui::ImageWithBg(ctx.song_textures[song.id], ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+            ImVec2 button_pos = ImGui::GetCursorScreenPos();
+            ImVec2 size = ImVec2(50, 50);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            if (ImGui::ImageButton("PlayButton", ctx.song_textures[song.id], size))
+                mp_play_song(song.id);
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::SetCursorScreenPos(button_pos);
+                ImGui::ImageWithBg(ctx.play_texture, size);
+            }
+            ImGui::PopStyleColor();
+
             ImGui::TableNextColumn();
 
             char length_str[256];
@@ -748,7 +769,7 @@ static void draw_artist_info()
     }
 }
 
-static void draw_center_header()
+[[maybe_unused]] static void draw_center()
 {
     if (ImGui::Button("All"))
         ctx.center = SHOW_CENTER_ALL_SONGS;
@@ -763,22 +784,9 @@ static void draw_center_header()
     }
     if (ImGui::IsItemClicked())
         snprintf(search_query, sizeof(search_query), "");
-    //if (ImGui::IsItemDeactivated())
-    //    snprintf(search_query, sizeof(search_query), "");
-}
-
-static void draw_center()
-{
-    //ImGuiChildFlags child_flags = ImGuiChildFlags_ResizeX | ImGuiChildFlags_Borders;
-    //ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-    //int width = ImGui::GetContentRegionAvail().x - 600;
-    ImGuiChildFlags child_flags = ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysAutoResize;
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-    int width = ImGui::GetContentRegionAvail().x;
-    ImGui::BeginChild("center", ImVec2(width, ImGui::GetContentRegionAvail().y), child_flags, window_flags);
-    draw_center_header();
     if (ImGui::IsKeyPressed(ImGuiKey_F2))
         ctx.center = SHOW_CENTER_ALL_SONGS;
+
     if (ctx.center == SHOW_CENTER_ALL_SONGS)
         draw_all_songs();
     else if (ctx.center == SHOW_CENTER_ALBUM)
@@ -789,7 +797,6 @@ static void draw_center()
         draw_artist_info();
     else if (ctx.center == SHOW_CENTER_SEARCH_RESULT)
         draw_search_results();
-    ImGui::EndChild();
 }
 
 void draw_right_side()
@@ -851,9 +858,21 @@ static void draw_imgui()
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("UMP", &window_open, window_flags);
 
-    draw_left_side();
-    ImGui::SameLine();
-    draw_center();
+    if (ImGui::BeginTable("view", 2, ImGuiTableFlags_BordersInnerV))
+    {
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 300);
+        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort);
+
+        ImGui::TableNextColumn();
+        draw_left_side();
+        ImGui::TableNextColumn();
+        draw_center();
+        ImGui::EndTable();
+    }
+
+    //draw_left_side();
+    //ImGui::SameLine();
+    //draw_center();
     //ImGui::SameLine();
     //draw_right_side();
 

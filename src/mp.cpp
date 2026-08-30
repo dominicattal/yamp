@@ -36,7 +36,7 @@ static void execute_file(const char* path)
     std::ifstream in(path);
     in.read(&content[0], size);
 
-    char* error_msg;
+    char* error_msg{};
     sqlite3_exec(ctx.db, content.c_str(), NULL, NULL, &error_msg);
     if (error_msg != NULL) {
         SPDLOG_INFO("SQLite3 error: %s", error_msg);
@@ -131,7 +131,6 @@ static void db_init()
     sqlite3_prepare(ctx.db, query, -1, &stmt, NULL);
     int res = sqlite3_step(stmt);
     if (res != SQLITE_ROW) {
-        puts("failed");
         sqlite3_finalize(stmt);
         return;
     }
@@ -466,7 +465,7 @@ void mp_play_song(int song_id)
     config.pFilePath = song->path.c_str();
     config.endCallback = end_song_callback;
     ma_sound_init_ex(&ctx.engine, &config, &ctx.current_song_sound);
-    //ma_sound_start(&ctx.current_song_sound);
+    ma_sound_start(&ctx.current_song_sound);
     ma_sound_get_length_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_length);
     ctx.current_song_loaded = true;
     mp_ctx.current_song = song;
