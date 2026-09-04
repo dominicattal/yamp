@@ -11,7 +11,7 @@
         "CMAKE_CXX_STANDARD": "23",
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_CXX_FLAGS_INIT": "-Wall -Wextra -Wpedantic -Werror -Wfatal-errors -Og -g3"
+        "CMAKE_CXX_FLAGS_INIT": "-Wall -Wextra -Wpedantic -Werror -Wfatal-errors -Og -g3 -Wno-language-extension-token -Wno-deprecated-declarations"
       }
     }
   ]

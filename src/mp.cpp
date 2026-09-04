@@ -219,7 +219,7 @@ void mp_add_song(const std::string& song_path)
     int track{};
     ID3v2_Tag* tag = ID3v2_read_tag(song_path.c_str());
     if (!tag) {
-        puts("Could not read tag");
+        printf("Could not read tag for %s\n", song_path.c_str());
         return;
     }
 
@@ -389,7 +389,7 @@ void mp_recursive_add_songs(const std::string& folder_path)
     fs::directory_options options = fs::directory_options::follow_directory_symlink;
     fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
     for (auto const& dir_entry : entries)
-        mp_add_song(dir_entry.path());
+        mp_add_song(dir_entry.path().string());
 }
 
 int mp_create_playlist()
