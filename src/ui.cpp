@@ -18,7 +18,8 @@
 
 #define SHOW_RIGHT_NONE 0
 #define SHOW_RIGHT_ALBUM 1
-#define SHOW_RIGHT_PLAYLIST 2
+#define SHOW_RIGHT_SONG 2
+#define SHOW_RIGHT_PLAYLIST 3
 
 #define SHOW_CENTER_NONE 0
 #define SHOW_CENTER_ALL_SONGS 1
@@ -47,6 +48,8 @@ struct UIContext {
     bool show_demo_window;
 
     int right_side;
+    int right_side_song_id;
+
     int center;
     int open_album_id;
     int open_playlist_id;
@@ -389,12 +392,18 @@ static void draw_all_songs()
                 }
             }
             ImGui::TableNextColumn();
-            if (ImGui::Button("Open Album")) {
+            if (ImGui::Button("Open Album")) 
+            {
                 ctx.center = SHOW_CENTER_ALBUM;
                 ctx.open_album_id = mp_get_album_id_from_song_id(song.id);
             }
             if (ImGui::Button("Add To Playlist"))
                 ImGui::OpenPopup("add_to_playlist_popup");
+            if (ImGui::Button("Open Right Side"))
+            {
+                ctx.right_side = SHOW_RIGHT_SONG;
+                ctx.right_side_song_id = song.id;
+            }
             if (ImGui::BeginPopup("add_to_playlist_popup"))
             {
                 for (const Playlist& playlist : mp_ctx.playlists)
@@ -780,7 +789,7 @@ static void draw_artist_info()
     }
 }
 
-[[maybe_unused]] static void draw_center()
+static void draw_center()
 {
     if (ImGui::Button("All"))
         ctx.center = SHOW_CENTER_ALL_SONGS;
@@ -812,40 +821,26 @@ static void draw_artist_info()
 
 void draw_right_side()
 {
-    ImGuiChildFlags child_flags = ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysAutoResize;
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-    ImGui::BeginChild("right_side", ImGui::GetContentRegionAvail(), child_flags, window_flags);
-    if (ctx.right_side == SHOW_RIGHT_ALBUM)
-        draw_album_info();
-    else if (ctx.right_side == SHOW_RIGHT_PLAYLIST)
-        draw_playlist_info();
-    ImGui::EndChild();
-    return;
-    if (ImGui::BeginTable("Playlists", 1, 0) )
+    if (ImGui::Button("Close"))
     {
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableHeadersRow();
-        for (const Playlist& playlist : mp_ctx.playlists)
-        {
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", playlist.name.c_str());
-            //if (ImGui::BeginTable("Nested ALbum Songs", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable))
-            //{
-            //    ImGui::TableSetupColumn("Song");
-            //    ImGui::TableSetupColumn("Track");
-            //    ImGui::TableHeadersRow();
-            //    for (const Song* song : playlist.songs)
-            //    {
-            //        ImGui::TableNextColumn();
-            //        ImGui::Text("%s", song->title.c_str());
-            //        ImGui::TableNextColumn();
-            //        ImGui::Text("%d", 0);
-            //    }
-            //    ImGui::EndTable();
-            //}
-        }
-        ImGui::EndTable();
+        ctx.right_side = SHOW_RIGHT_NONE;
+        return;
     }
+    const Song* song = mp_get_song_from_id(ctx.right_side_song_id);
+    const int artist_id = mp_get_artist_id_from_song_id(song->id);
+    const Artist* artist = mp_get_artist_from_id(artist_id);
+    const int album_id = mp_get_album_id_from_song_id(song->id);
+    const Album* album = mp_get_album_from_id(album_id);
+    ImGui::ImageWithBg(ctx.song_textures[song->id], ImVec2(300, 300));
+    ImGui::Text("Title: %s", song->title.c_str());
+    ImGui::Text("Artist: %s", artist->name.c_str());
+    ImGui::Text("Album: %s", album->name.c_str());
+    ImGui::Text("Comment: TBD");
+    ImGui::Text("Date: TBD");
+    ImGui::Text("Track Number: TBD");
+    ImGui::Text("Genre: TBD");
+    ImGui::Text("Album Artist: TBD");
+    ImGui::Text("ISRC: TBD");
 }
 
 static void draw_imgui()
@@ -869,7 +864,8 @@ static void draw_imgui()
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("UMP", &window_open, window_flags);
 
-    if (ImGui::BeginTable("view", 2, ImGuiTableFlags_BordersInnerV))
+    bool right_side_open = ctx.right_side != SHOW_RIGHT_NONE;
+    if (ImGui::BeginTable("view", 2 + right_side_open, ImGuiTableFlags_BordersInnerV))
     {
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 300);
         ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort);
@@ -878,6 +874,11 @@ static void draw_imgui()
         draw_left_side();
         ImGui::TableNextColumn();
         draw_center();
+        if (right_side_open)
+        {
+            ImGui::TableNextColumn();
+            draw_right_side();
+        }
         ImGui::EndTable();
     }
 
