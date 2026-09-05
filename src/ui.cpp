@@ -510,6 +510,10 @@ static void draw_album_info()
             mp_play_album(album->id);
         if (ImGui::Button("Add To Playlist"))
             ImGui::OpenPopup("add_to_playlist_popup");
+        char length_str[256];
+        int length = static_cast<int>(album->length);
+        snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
+        ImGui::Text("%s", length_str);
         if (ImGui::BeginPopup("add_to_playlist_popup"))
         {
             for (const Playlist& playlist : mp_ctx.playlists)
@@ -573,22 +577,24 @@ static void draw_playlist_info()
         ImGui::Text("%s", playlist->name.c_str());
         ImGui::SetWindowFontScale(1.0f); 
         static char playlist_name[256];
-        if (ImGui::Button("Change Name"))
-        {
+        if (ImGui::Button("Change Name")) {
             std::strncpy(playlist_name, playlist->name.c_str(), sizeof(playlist_name));
             ImGui::OpenPopup("change_playlist_name");
         }
+
         if (ImGui::Button("Queue"))
-        {
             for (auto [song_id, track] : tracks)
                 mp_queue_song(song_id);
-        }
+
         if (ImGui::Button("Play"))
-        {
             mp_play_playlist(playlist->id);
-        }
-        if (ImGui::BeginPopup("change_playlist_name"))
-        {
+
+        char length_str[256];
+        int length = static_cast<int>(playlist->length);
+        snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
+        ImGui::Text("%s", length_str);
+
+        if (ImGui::BeginPopup("change_playlist_name")) {
             ImGui::Text("Edit name:");
             ImGui::InputText("##edit", playlist_name, IM_COUNTOF(playlist_name));
             if (ImGui::Button("Save") || ImGui::IsKeyPressed(ImGuiKey_Enter))

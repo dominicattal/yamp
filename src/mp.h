@@ -29,11 +29,13 @@ struct Artist {
 struct Album {
     std::string name;
     int id;
+    float length;
 };
 
 struct Playlist {
     std::string name;
     int id;
+    float length;
 };
 
 struct AlbumSong {
@@ -176,6 +178,9 @@ int mp_get_num_tracks_in_playlist_id(int playlist_id);
 std::vector<SongTrack> mp_get_song_ids_from_playlist_id(int playlist_id);
 std::vector<int> mp_get_album_ids_from_artist_id(int artist_id);
 std::vector<int> mp_get_song_ids_from_artist_id(int artist_id);
+
+void mp_update_album_length(int album_id);
+void mp_update_playlist_length(int playlist_id);
 
 // Skip current song in queue
 void mp_queue_skip();
