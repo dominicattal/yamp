@@ -508,6 +508,15 @@ void mp_toggle_shuffle()
 
 void mp_toggle_autoplay()
 {
+    if (mp_ctx.autoplay) {
+        mp_ctx.autoplay_queue.clear();
+    } else {
+        for (int i = 0; i < 10; i++) {
+            size_t idx = ctx.mt() % mp_ctx.songs.size();
+            const Song* song = mp_get_song_from_id(idx);
+            mp_ctx.autoplay_queue.push_back(song);
+        }
+    }
     mp_ctx.autoplay = !mp_ctx.autoplay;
     if (mp_ctx.autoplay && mp_ctx.current_song == nullptr)
         mp_queue_skip();
@@ -769,8 +778,11 @@ void mp_queue_skip()
         if (mp_ctx.playing_group) {
             play_next_group_song();
         } else if (mp_ctx.autoplay) {
+            const Song* song = mp_ctx.autoplay_queue.front();
+            mp_ctx.autoplay_queue.pop_front();
             size_t idx = ctx.mt() % mp_ctx.songs.size();
-            mp_play_song(mp_ctx.songs[idx].id);
+            mp_ctx.autoplay_queue.push_back(mp_get_song_from_id(idx));
+            mp_play_song(song->id);
         } else if (ctx.current_song_loaded) {
             mp_ctx.current_song = nullptr;
             ma_sound_uninit(&ctx.current_song_sound);

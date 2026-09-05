@@ -300,6 +300,11 @@ void ui_cleanup()
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
         }
+        for (const Song* song : mp_ctx.autoplay_queue)
+        {
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", song->title.c_str());
+        }
         ImGui::EndTable();
     }
 

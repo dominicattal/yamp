@@ -89,6 +89,9 @@ struct MPContext {
     // this stores songs the user explicity queues up
     std::deque<const Song*> queue;
 
+    // this stores songs that come on autoplay
+    std::deque<const Song*> autoplay_queue;
+
     // this stores the order songs should be play in the group
     std::deque<SongTrack> group_queue;
 
