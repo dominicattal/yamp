@@ -597,8 +597,10 @@ FrontCover mp_song_front_cover_load(int song_id)
     if (!tag)
         return front_cover;
     ID3v2_ApicFrame* apic_cover = ID3v2_Tag_get_album_cover_frame(tag);
-    if (!apic_cover)
+    if (!apic_cover) {
+        ID3v2_Tag_free(tag);
         return front_cover;
+    }
     unsigned char* apic_data = (unsigned char*)apic_cover->data->data;
     int picture_size = apic_cover->data->picture_size;
     int num_channels;

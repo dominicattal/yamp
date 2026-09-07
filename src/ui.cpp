@@ -206,7 +206,7 @@ void ui_cleanup()
     SPDLOG_INFO("UI cleaned up");
 }
 
-[[maybe_unused]] static void draw_left_side()
+static void draw_left_side()
 {
     GLuint texture = (mp_ctx.current_song) ? ctx.song_textures[mp_ctx.current_song->id] : ctx.default_texture;
     ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
@@ -833,8 +833,8 @@ void draw_right_side()
     const Album* album = mp_get_album_from_id(album_id);
     ImGui::ImageWithBg(ctx.song_textures[song->id], ImVec2(300, 300));
     ImGui::Text("Title: %s", song->title.c_str());
-    ImGui::Text("Artist: %s", artist->name.c_str());
-    ImGui::Text("Album: %s", album->name.c_str());
+    ImGui::Text("Artist: %s", (artist) ? artist->name.c_str() : "N/A");
+    ImGui::Text("Album: %s", (album) ? album->name.c_str() : "N/A");
     ImGui::Text("Comment: TBD");
     ImGui::Text("Date: TBD");
     ImGui::Text("Track Number: TBD");
