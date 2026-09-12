@@ -25,3 +25,6 @@
 [submodule "vendor/freetype"]
 	path = vendor/freetype
 	url = https://gitlab.freedesktop.org/freetype/freetype.git
+[submodule "vendor/taglib"]
+	path = vendor/taglib
+	url = https://github.com/taglib/taglib.git

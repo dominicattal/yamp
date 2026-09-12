@@ -8,8 +8,10 @@
 #include <cassert>
 #include <miniaudio.h>
 #include <random>
-#include <id3v2lib.h>
 #include <sqlite3.h>
+#include <fileref.h>
+#include <tag.h>
+#include <tstringlist.h>
 #include <utf8.h>
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
@@ -188,79 +190,39 @@ void mp_update()
     }
 }
 
-static std::string read_text_frame(ID3v2_TextFrame* frame)
-{
-    constexpr int ASCII = 0;
-    constexpr int UNICODE_UTF16_WITH_BOM = 1;
-    constexpr int UNICODE_UTF16_WITHOUT_BOM = 2;
-    constexpr int UNICODE_UTF8 = 3;
-    const char* text = frame->data->text;
-    switch (frame->data->encoding) {
-        case ASCII:
-        case UNICODE_UTF8:
-            return text;
-        case UNICODE_UTF16_WITH_BOM: {
-            unsigned int bom = (static_cast<unsigned char>(text[1])<<8) | static_cast<unsigned char>(text[0]);
-            assert(bom == 0xFEFF);
-            std::u16string str(reinterpret_cast<const char16_t*>(text + 2), (frame->data->size - 4) / 2);
-            return utf8::utf16to8(str);
-        }
-        case UNICODE_UTF16_WITHOUT_BOM: {
-            std::u16string str(reinterpret_cast<const char16_t*>(text), (frame->data->size - 2) / 2);
-            return utf8::utf16to8(str);
-        }
-    }
-    SPDLOG_INFO("Unrecognized encoding {}", frame->data->encoding);
-    return "";
-}
-
 void mp_add_song(const std::string& song_path)
 {
-    ID3v2_TextFrame* frame;
-    std::string title{};
-    std::string artist_name{};
-    std::string album_name{};
-    std::string path{song_path};
-    int track{};
-    ID3v2_Tag* tag = ID3v2_read_tag(song_path.c_str());
-    if (!tag) {
-        printf("Could not read tag for %s\n", song_path.c_str());
+    TagLib::FileRef mp3_file_ref(song_path.c_str());
+
+    if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
+        SPDLOG_ERROR("Could not read {}", song_path);
         return;
     }
 
-    frame = ID3v2_Tag_get_title_frame(tag);
-    if (frame) {
-        title = read_text_frame(frame);
-    } else {
-        std::filesystem::path path{song_path};
-        title = path.stem().string();
-    }
-
-    frame = ID3v2_Tag_get_artist_frame(tag);
-    if (frame)
-        artist_name = read_text_frame(frame);
-
-    frame = ID3v2_Tag_get_track_frame(tag);
-    if (frame)
-        track = std::stoi(read_text_frame(frame));
-
-    frame = ID3v2_Tag_get_album_frame(tag);
-    if (frame)
-        album_name = read_text_frame(frame);
+    TagLib::Tag* tag = mp3_file_ref.tag();
+    assert(tag);
+    TagLib::AudioProperties* properties = mp3_file_ref.audioProperties();
+    assert(properties);
+    std::string title = tag->title().to8Bit(true);
+    std::string album_name = tag->album().to8Bit(true);
+    std::string artist_name = tag->artist().to8Bit(true);
+    double song_length = properties->lengthInMilliseconds() / 1000.0;
+    int track = tag->track();
 
     sqlite3_stmt* stmt;
     const char* query;
     query = "INSERT INTO Songs (title, path, length) VALUES (?1, ?2, ?3);";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, title.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, path.c_str(), -1, SQLITE_TRANSIENT);
-
-    ma_sound sound;
-    float song_length;
-    ma_sound_init_from_file(&ctx.engine, path.c_str(), 0, NULL, NULL, &sound);
-    ma_sound_get_length_in_seconds(&sound, &song_length);
-    ma_sound_uninit(&sound);
+    sqlite3_bind_text(stmt, 2, song_path.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_double(stmt, 3, song_length);
+
+    //ma_sound sound;
+    //float song_length;
+    //ma_sound_init_from_file(&ctx.engine, path.c_str(), 0, NULL, NULL, &sound);
+    //ma_sound_get_length_in_seconds(&sound, &song_length);
+    //ma_sound_uninit(&sound);
+    //sqlite3_bind_double(stmt, 3, song_length);
 
     int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -276,7 +238,7 @@ void mp_add_song(const std::string& song_path)
     int song_id = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
 
-    Song& song = mp_ctx.songs.emplace_back(title, path, song_length, song_id);
+    Song& song = mp_ctx.songs.emplace_back(title, song_path, song_length, song_id);
     if (mp_ctx.song_callback)
         mp_ctx.song_callback(&song);
 
@@ -375,8 +337,6 @@ void mp_add_song(const std::string& song_path)
         }
         sqlite3_finalize(stmt);
     }
-
-    ID3v2_Tag_free(tag);
 }
 
 void mp_add_songs(const std::vector<std::string>& song_paths)
@@ -591,23 +551,50 @@ void mp_play_album(int album_id)
 
 FrontCover mp_song_front_cover_load(int song_id)
 {
-    FrontCover front_cover{};
     const Song* song = mp_get_song_from_id(song_id);
-    ID3v2_Tag* tag = ID3v2_read_tag(song->path.c_str());
-    if (!tag)
-        return front_cover;
-    ID3v2_ApicFrame* apic_cover = ID3v2_Tag_get_album_cover_frame(tag);
-    if (!apic_cover) {
-        ID3v2_Tag_free(tag);
+    FrontCover front_cover{};
+    TagLib::FileRef mp3_file_ref(song->path.c_str());
+    if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
+        SPDLOG_ERROR("Could not read {}", song->path);
         return front_cover;
     }
-    unsigned char* apic_data = (unsigned char*)apic_cover->data->data;
-    int picture_size = apic_cover->data->picture_size;
-    int num_channels;
-    unsigned char* raw_data = stbi_load_from_memory(apic_data, picture_size, &front_cover.width, &front_cover.height, &num_channels, 4);
-    front_cover.data = raw_data;
-    ID3v2_Tag_free(tag);
+
+    TagLib::List<TagLib::VariantMap> props = mp3_file_ref.complexProperties("PICTURE");
+    if (props.isEmpty())
+        return front_cover;
+
+    const TagLib::VariantMap& map = props.front();
+    if (map.contains("data")) 
+    {
+        int num_channels;
+        const TagLib::ByteVector data = map["data"].toByteVector();
+        front_cover.data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(data.data()), data.size(), &front_cover.width, &front_cover.height, &num_channels, 4);
+    }
+
     return front_cover;
+}
+
+void mp_song_front_cover_update(int song_id, const std::string& cover_path)
+{
+    const Song* song = mp_get_song_from_id(song_id);
+    std::ifstream img{cover_path.c_str(), std::ios::binary};
+    std::vector<char> bytes{std::istreambuf_iterator<char>(img), std::istreambuf_iterator<char>()};
+    
+    TagLib::FileRef file(song->path.c_str());
+
+    TagLib::VariantMap picture;
+    picture["data"] = TagLib::ByteVector(bytes.data(), bytes.size());
+    picture["mimeType"] = TagLib::String("image/jpeg");
+    picture["pictureType"] = TagLib::String("Front Cover");
+    picture["description"] = TagLib::String("");
+
+    TagLib::List<TagLib::VariantMap> pictures;
+    pictures.append(picture);
+
+    file.setComplexProperties("PICTURE", pictures);
+    file.save();
+
+    mp_ctx.song_callback(song);
 }
 
 std::vector<int> mp_search_songs(const char* search_query)
@@ -631,6 +618,24 @@ void mp_song_front_cover_free(FrontCover* front_cover)
 {
     if (front_cover->data)
         stbi_image_free(front_cover->data);
+}
+
+void mp_song_update(int song_id, const char* title, const char* artist, const char* album, const char* cover_path)
+{
+    Song* song = nullptr;
+    for (Song& test_song : mp_ctx.songs) {
+        if (test_song.id == id) {
+            song = &test_song;
+            break;
+        }
+    }
+    if (song == nullptr)
+        return;
+    (void)title;
+    (void)artist;
+    (void)album;
+    (void)cover_path;
+    SPDLOG_INFO("Updated song {}", song_id);
 }
 
 const Song* mp_get_song_from_id(int id)

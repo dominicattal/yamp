@@ -28,6 +28,8 @@
 #define SHOW_CENTER_ARTIST 4
 #define SHOW_CENTER_SEARCH_RESULT 5
 
+#define STRING_LENGTH 512
+
 struct UIContext {
     std::unordered_map<int, GLuint> song_textures;
 
@@ -48,7 +50,12 @@ struct UIContext {
     bool show_demo_window;
 
     int right_side;
+    GLuint right_side_texture;
     int right_side_song_id;
+    char right_side_song_title[STRING_LENGTH];
+    char right_side_song_artist[STRING_LENGTH];
+    char right_side_song_album[STRING_LENGTH];
+    bool right_side_changed;
 
     int center;
     int open_album_id;
@@ -101,22 +108,27 @@ static void initialize_default_textures()
     initialize_default_texture(&ctx.default_texture, "assets/No-album-art.png", &ctx.default_texture_width, &ctx.default_texture_height);
     initialize_default_texture(&ctx.play_texture, "assets/play.png", &ctx.play_texture_width, &ctx.play_texture_height);
     initialize_default_texture(&ctx.queue_texture, "assets/add-to-playlist.png", &ctx.queue_texture_width, &ctx.queue_texture_height);
+    glGenTextures(1, &ctx.right_side_texture);
 }
 
 static void cleanup_textures()
 {
+    glDeleteTextures(1, &ctx.right_side_texture);
     glDeleteTextures(1, &ctx.default_texture);
     for (auto song_texture : ctx.song_textures)
         glDeleteTextures(1, &song_texture.second);
 }
 
-static void song_callback(Song* song)
+static void song_callback(const Song* song)
 {
     FrontCover front_cover = mp_song_front_cover_load(song->id);
     if (front_cover.data == nullptr) {
         ctx.song_textures[song->id] = ctx.default_texture;
         return;
     }
+
+    if (ctx.song_textures[song->id] != ctx.default_texture)
+        glDeleteTextures(1, &ctx.song_textures[song->id]);
 
     glGenTextures(1, &ctx.song_textures[song->id]);
     glBindTexture(GL_TEXTURE_2D, ctx.song_textures[song->id]);
@@ -126,6 +138,30 @@ static void song_callback(Song* song)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
 
     mp_song_front_cover_free(&front_cover);
+}
+
+static void set_right_side_song_id(int song_id)
+{
+    const Song* song = mp_get_song_from_id(song_id);
+    const Artist* artist = mp_get_artist_from_id(mp_get_artist_id_from_song_id(song_id));
+    const Album* album = mp_get_album_from_id(mp_get_album_id_from_song_id(song_id));
+    ctx.right_side = SHOW_RIGHT_SONG;
+    ctx.right_side_changed = false;
+
+    FrontCover front_cover = mp_song_front_cover_load(song->id);
+    glBindTexture(GL_TEXTURE_2D, ctx.right_side_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
+    mp_song_front_cover_free(&front_cover);
+
+    ctx.right_side_song_id = song_id;
+    ctx.right_side_song_title[0] = '\0';
+    ctx.right_side_song_artist[0] = '\0';
+    ctx.right_side_song_album[0] = '\0';
+    std::strncpy(ctx.right_side_song_title, song->title.c_str(), STRING_LENGTH);
+    if (artist != nullptr)
+        std::strncpy(ctx.right_side_song_artist, artist->name.c_str(), STRING_LENGTH);
+    if (album != nullptr)
+        std::strncpy(ctx.right_side_song_album, album->name.c_str(), STRING_LENGTH);
 }
 
 void ui_init()
@@ -210,23 +246,6 @@ static void draw_left_side()
 {
     GLuint texture = (mp_ctx.current_song) ? ctx.song_textures[mp_ctx.current_song->id] : ctx.default_texture;
     ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-    //ImGui::PopStyleVar();
-    if (ImGui::Button("Add Song", ImVec2(100, 30))) 
-    {
-        const std::string title {"Choose files to read"};
-        const std::string default_path = pfd::path::home();
-        const std::vector<std::string> filters {"All Files", "*"};
-        const pfd::opt options = pfd::opt::multiselect;
-        std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
-        mp_add_songs(song_paths);
-    }
-    if (ImGui::Button("Add Folder", ImVec2(100, 30))) 
-    {
-        const std::string title {"Select Any Directory"};
-        const std::string default_path = pfd::path::home();
-        const std::string folder_path = pfd::select_folder(title, default_path).result();
-        mp_recursive_add_songs(folder_path);
-    }
     if (ImGui::Button("Skip", ImVec2(100, 30)) || (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_S)))
     {
         mp_queue_skip();
@@ -397,13 +416,13 @@ static void draw_all_songs()
                 ctx.center = SHOW_CENTER_ALBUM;
                 ctx.open_album_id = mp_get_album_id_from_song_id(song.id);
             }
+
             if (ImGui::Button("Add To Playlist"))
                 ImGui::OpenPopup("add_to_playlist_popup");
+
             if (ImGui::Button("Open Right Side"))
-            {
-                ctx.right_side = SHOW_RIGHT_SONG;
-                ctx.right_side_song_id = song.id;
-            }
+                set_right_side_song_id(song.id);
+
             if (ImGui::BeginPopup("add_to_playlist_popup"))
             {
                 for (const Playlist& playlist : mp_ctx.playlists)
@@ -791,6 +810,24 @@ static void draw_artist_info()
 
 static void draw_center()
 {
+    if (ImGui::Button("Add Song")) 
+    {
+        const std::string title {"Choose files to read"};
+        const std::string default_path = pfd::path::home();
+        const std::vector<std::string> filters {"All Files", "*"};
+        const pfd::opt options = pfd::opt::multiselect;
+        std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
+        mp_add_songs(song_paths);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Add Folder")) 
+    {
+        const std::string title {"Select Any Directory"};
+        const std::string default_path = pfd::path::home();
+        const std::string folder_path = pfd::select_folder(title, default_path).result();
+        mp_recursive_add_songs(folder_path);
+    }
+    ImGui::SameLine();
     if (ImGui::Button("All"))
         ctx.center = SHOW_CENTER_ALL_SONGS;
     ImGui::SameLine();
@@ -827,20 +864,40 @@ void draw_right_side()
         return;
     }
     const Song* song = mp_get_song_from_id(ctx.right_side_song_id);
-    const int artist_id = mp_get_artist_id_from_song_id(song->id);
-    const Artist* artist = mp_get_artist_from_id(artist_id);
-    const int album_id = mp_get_album_id_from_song_id(song->id);
-    const Album* album = mp_get_album_from_id(album_id);
-    ImGui::ImageWithBg(ctx.song_textures[song->id], ImVec2(300, 300));
-    ImGui::Text("Title: %s", song->title.c_str());
-    ImGui::Text("Artist: %s", (artist) ? artist->name.c_str() : "N/A");
-    ImGui::Text("Album: %s", (album) ? album->name.c_str() : "N/A");
-    ImGui::Text("Comment: TBD");
-    ImGui::Text("Date: TBD");
-    ImGui::Text("Track Number: TBD");
-    ImGui::Text("Genre: TBD");
-    ImGui::Text("Album Artist: TBD");
-    ImGui::Text("ISRC: TBD");
+    if (ImGui::ImageButton("Press", ctx.song_textures[song->id], ImVec2(300, 300)))
+    {
+        const std::string title {"Choose files to read"};
+        const std::string default_path = pfd::path::home();
+        const std::vector<std::string> filters {"All Files", "*"};
+        std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters).result();
+        if (song_paths.size() > 0)
+            mp_song_front_cover_update(song->id, song_paths.front());
+    }
+
+    //ImGui::PushItemFlag(ImGuiItemFlags_LiveEditOnInput, false);
+    ImGuiInputTextFlags flags = ImGuiInputTextFlags_None;
+
+    ImGui::Text("Title: ");
+    ImGui::SameLine();
+    ctx.right_side_changed |= ImGui::InputText("aa", ctx.right_side_song_title, STRING_LENGTH, flags);
+
+    ImGui::Text("Artist: ");
+    ImGui::SameLine();
+    ctx.right_side_changed |= ImGui::InputText("bb", ctx.right_side_song_artist, STRING_LENGTH, flags);
+
+    ImGui::Text("Album: ");
+    ImGui::SameLine();
+    ctx.right_side_changed |= ImGui::InputText("cc", ctx.right_side_song_album, STRING_LENGTH, flags);
+
+    if (ImGui::Button("Save"))
+    {
+        mp_song_update(song->id, ctx.right_side_song_title, ctx.right_side_song_artist, ctx.right_side_song_album, nullptr);
+    }
+    if (ctx.right_side_changed)
+    {
+        ImGui::SameLine();
+        ImGui::Text("Unsaved Changes");
+    }
 }
 
 static void draw_imgui()

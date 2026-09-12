@@ -5,11 +5,12 @@ project(yamp)
 add_subdirectory(vendor/glfw)
 add_subdirectory(vendor/miniaudio)
 add_subdirectory(vendor/portable-file-dialogs)
-add_subdirectory(vendor/id3v2lib)
 add_subdirectory(vendor/spdlog)
 add_subdirectory(vendor/utfcpp)
 add_subdirectory(vendor/freetype)
 find_package(OpenGL REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(TagLib 2.3.2 REQUIRED)
 
 add_executable(yamp
     ${CMAKE_HOME_DIRECTORY}/src/main.cpp
@@ -40,4 +41,4 @@ PRIVATE
 target_compile_definitions(yamp PRIVATE IMGUI_ENABLE_FREETYPE)
 target_compile_definitions(yamp PRIVATE IMGUI_USE_WCHAR32)
 
-target_link_libraries(yamp PRIVATE glfw portable_file_dialogs miniaudio id3v2lib spdlog utf8cpp freetype)
+target_link_libraries(yamp PRIVATE glfw portable_file_dialogs miniaudio spdlog utf8cpp freetype TagLib::tag)

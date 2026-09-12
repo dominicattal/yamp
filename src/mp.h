@@ -71,7 +71,7 @@ struct FrontCover {
     int height;
 };
 
-using SongCallback = std::function<void(Song*)>;
+using SongCallback = std::function<void(const Song*)>;
 
 struct MPContext {
 
@@ -160,7 +160,9 @@ void mp_play_album(int album_id);
 
 // Load song cover art from memory
 FrontCover mp_song_front_cover_load(int song_id);
+void mp_song_front_cover_update(int song_id, const std::string& cover_path);
 void mp_song_front_cover_free(FrontCover* data);
+void mp_song_update(int song_id, const char* title, const char* artist, const char* album, const char* cover_path);
 
 // Search for songs based on query
 std::vector<int> mp_search_songs(const char* search_query);
