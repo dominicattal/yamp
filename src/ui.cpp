@@ -16,36 +16,38 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#define SHOW_RIGHT_NONE 0
-#define SHOW_RIGHT_ALBUM 1
-#define SHOW_RIGHT_SONG 2
-#define SHOW_RIGHT_PLAYLIST 3
-
-#define SHOW_CENTER_NONE 0
-#define SHOW_CENTER_ALL_SONGS 1
-#define SHOW_CENTER_ALBUM 2
-#define SHOW_CENTER_PLAYLIST 3
-#define SHOW_CENTER_ARTIST 4
-#define SHOW_CENTER_SEARCH_RESULT 5
-
 #define STRING_LENGTH 512
 
-struct UIContext {
-    std::unordered_map<int, GLuint> song_textures;
+enum ViewEnum {
+    SHOW_RIGHT_NONE,
+    SHOW_RIGHT_ALBUM,
+    SHOW_RIGHT_SONG,
+    SHOW_RIGHT_PLAYLIST,
+    SHOW_CENTER_NONE,
+    SHOW_CENTER_ALL_SONGS,
+    SHOW_CENTER_ALBUM,
+    SHOW_CENTER_PLAYLIST,
+    SHOW_CENTER_ARTIST,
+    SHOW_CENTER_SEARCH_RESULT
+};
 
+struct GLTexture {
+    GLuint id;
+    int width;
+    int height;
+};
+
+struct UIContext {
     GLFWwindow* window;
 
-    GLuint default_texture;
-    int default_texture_width;
-    int default_texture_height;
+    struct TextureInfo {
+        std::unordered_map<int, GLTexture> song_map;
+        GLTexture default_album_art;
+        GLTexture play_button;
+        GLTexture queue_button;
+    } textures;
 
-    GLuint play_texture;
-    int play_texture_width;
-    int play_texture_height;
-
-    GLuint queue_texture;
-    int queue_texture_width;
-    int queue_texture_height;
+    std::unordered_map<int, GLuint> song_textures;
 
     bool show_demo_window;
 
@@ -105,35 +107,37 @@ static void initialize_default_texture(GLuint* id, const char* path, int* width,
 
 static void initialize_default_textures()
 {
-    initialize_default_texture(&ctx.default_texture, "assets/No-album-art.png", &ctx.default_texture_width, &ctx.default_texture_height);
-    initialize_default_texture(&ctx.play_texture, "assets/play.png", &ctx.play_texture_width, &ctx.play_texture_height);
-    initialize_default_texture(&ctx.queue_texture, "assets/add-to-playlist.png", &ctx.queue_texture_width, &ctx.queue_texture_height);
+    initialize_default_texture(&ctx.textures.default_album_art.id, "assets/No-album-art.png", &ctx.textures.default_album_art.width, &ctx.textures.default_album_art.height);
+    initialize_default_texture(&ctx.textures.play_button.id, "assets/play.png", &ctx.textures.play_button.width, &ctx.textures.play_button.height);
+    initialize_default_texture(&ctx.textures.queue_button.id, "assets/add-to-playlist.png", &ctx.textures.queue_button.width, &ctx.textures.queue_button.height);
     glGenTextures(1, &ctx.right_side_texture);
 }
 
 static void cleanup_textures()
 {
     glDeleteTextures(1, &ctx.right_side_texture);
-    glDeleteTextures(1, &ctx.default_texture);
-    for (auto song_texture : ctx.song_textures)
-        glDeleteTextures(1, &song_texture.second);
+    glDeleteTextures(1, &ctx.textures.default_album_art.id);
+    for (auto song_texture : ctx.textures.song_map)
+        glDeleteTextures(1, &song_texture.second.id);
 }
 
 static void song_callback(const Song* song)
 {
     FrontCover front_cover = mp_song_front_cover_load(song->id);
     if (front_cover.data == nullptr) {
-        ctx.song_textures[song->id] = ctx.default_texture;
+        ctx.textures.song_map[song->id].id = ctx.textures.default_album_art.id;
         return;
     }
 
-    if (ctx.song_textures[song->id] != ctx.default_texture)
-        glDeleteTextures(1, &ctx.song_textures[song->id]);
+    if (ctx.textures.song_map[song->id].id != ctx.textures.default_album_art.id)
+        glDeleteTextures(1, &ctx.textures.song_map[song->id].id);
 
-    glGenTextures(1, &ctx.song_textures[song->id]);
-    glBindTexture(GL_TEXTURE_2D, ctx.song_textures[song->id]);
+    glGenTextures(1, &ctx.textures.song_map[song->id].id);
+    glBindTexture(GL_TEXTURE_2D, ctx.textures.song_map[song->id].id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    ctx.textures.song_map[song->id].width = front_cover.width;
+    ctx.textures.song_map[song->id].height = front_cover.height;
 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
 
@@ -244,7 +248,7 @@ void ui_cleanup()
 
 static void draw_left_side()
 {
-    GLuint texture = (mp_ctx.current_song) ? ctx.song_textures[mp_ctx.current_song->id] : ctx.default_texture;
+    GLuint texture = (mp_ctx.current_song) ? ctx.textures.song_map[mp_ctx.current_song->id].id : ctx.textures.default_album_art.id;
     ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     if (ImGui::Button("Skip", ImVec2(100, 30)) || (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_S)))
     {
@@ -374,19 +378,19 @@ static void draw_all_songs()
         {
             ImGui::PushID(song.id);
             ImGui::TableNextColumn();
-            if (ImGui::ImageButton("ABCDE", ctx.queue_texture, ImVec2(32, 32), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 1.0f, 1.0f)))
+            if (ImGui::ImageButton("ABCDE", ctx.textures.queue_button.id, ImVec2(32, 32), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 1.0f, 1.0f)))
                 mp_queue_song(song.id);
             ImGui::TableNextColumn();
 
             ImVec2 button_pos = ImGui::GetCursorScreenPos();
             ImVec2 size = ImVec2(64, 64);
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-            if (ImGui::ImageButton("PlayButton", ctx.song_textures[song.id], size))
+            if (ImGui::ImageButton("PlayButton", ctx.textures.song_map[song.id].id, size))
                 mp_play_song(song.id);
             if (ImGui::IsItemHovered())
             {
                 ImGui::SetCursorScreenPos(button_pos);
-                ImGui::ImageWithBg(ctx.play_texture, size);
+                ImGui::ImageWithBg(ctx.textures.play_button.id, size);
             }
             ImGui::PopStyleColor();
 
@@ -464,7 +468,7 @@ static void draw_search_results()
             if (ImGui::Button("Queue"))
                 mp_queue_song(song_id);
             ImGui::TableNextColumn();
-            ImGui::ImageWithBg(ctx.song_textures[song_id], ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImGui::ImageWithBg(ctx.textures.song_map[song_id].id, ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImGui::TableNextColumn();
             const Song* song = mp_get_song_from_id(song_id);
             ImGui::Text("%s", song->title.c_str());
@@ -514,7 +518,7 @@ static void draw_album_info()
     int artist_id = mp_get_artist_id_from_album_id(ctx.open_album_id);
     const Artist* artist = mp_get_artist_from_id(artist_id);
 
-    ImGui::ImageWithBg(ctx.song_textures[tracks[0].song_id], ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(ctx.textures.song_map[tracks[0].song_id].id, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::SameLine();
     {
         ImGui::BeginChild("album_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
@@ -593,7 +597,7 @@ static void draw_playlist_info()
 
     const Playlist* playlist = mp_get_playlist_from_id(ctx.open_playlist_id);
 
-    GLuint texture = (tracks.size() > 0) ? ctx.song_textures[tracks[0].song_id] : ctx.default_texture;
+    GLuint texture = (tracks.size() > 0) ? ctx.textures.song_map[tracks[0].song_id].id : ctx.textures.default_album_art.id;
 
     ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::SameLine();
@@ -710,7 +714,7 @@ static void draw_artist_info()
             if (ImGui::Button("Queue"))
                 mp_queue_song(song_id);
             ImGui::TableNextColumn();
-            ImGui::ImageWithBg(ctx.song_textures[song_id], ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImGui::ImageWithBg(ctx.textures.song_map[song_id].id, ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
             int artist_id = mp_get_artist_id_from_song_id(song_id);
@@ -862,7 +866,7 @@ void draw_right_side()
         return;
     }
     const Song* song = mp_get_song_from_id(ctx.right_side_song_id);
-    if (ImGui::ImageButton("Press", ctx.song_textures[song->id], ImVec2(300, 300)))
+    if (ImGui::ImageButton("Press", ctx.textures.song_map[song->id].id, ImVec2(300, 300)))
     {
         const std::string title {"Choose files to read"};
         const std::string default_path = pfd::path::home();
