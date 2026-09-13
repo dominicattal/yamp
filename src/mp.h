@@ -167,10 +167,10 @@ void mp_song_update(int song_id, const char* title, const char* artist, const ch
 // Search for songs based on query
 std::vector<int> mp_search_songs(const char* search_query);
 
-const Song* mp_get_song_from_id(int id);
-const Album* mp_get_album_from_id(int id);
-const Artist* mp_get_artist_from_id(int id);
-const Playlist* mp_get_playlist_from_id(int id);
+Song* mp_get_song_from_id(int id);
+Album* mp_get_album_from_id(int id);
+Artist* mp_get_artist_from_id(int id);
+Playlist* mp_get_playlist_from_id(int id);
 
 int mp_get_album_id_from_song_id(int song_id);
 int mp_get_artist_id_from_song_id(int song_id);

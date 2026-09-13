@@ -402,9 +402,7 @@ static void draw_all_songs()
             int artist_id = mp_get_artist_id_from_song_id(song.id);
             if (artist_id != -1) {
                 const Artist* artist = mp_get_artist_from_id(artist_id);
-                char artist_str[256];
-                snprintf(artist_str, sizeof(artist_str), "%s", artist->name.c_str());
-                if (ImGui::Button(artist_str))
+                if (ImGui::Button(artist->name.c_str()))
                 {
                     ctx.center = SHOW_CENTER_ARTIST;
                     ctx.open_artist_id = artist_id;
@@ -892,6 +890,7 @@ void draw_right_side()
     if (ImGui::Button("Save"))
     {
         mp_song_update(song->id, ctx.right_side_song_title, ctx.right_side_song_artist, ctx.right_side_song_album, nullptr);
+        ctx.right_side_changed = false;
     }
     if (ctx.right_side_changed)
     {
