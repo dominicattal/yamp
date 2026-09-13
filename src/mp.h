@@ -71,16 +71,18 @@ struct FrontCover {
     int height;
 };
 
-using SongCallback = std::function<void(const Song*)>;
+using SongCallback = std::function<void(std::shared_ptr<Song>)>;
 
 struct MPContext {
 
-    const Song* current_song;
+    std::shared_ptr<Song> current_song;
 
-    std::vector<Song> songs;
+    std::unordered_map<int, std::weak_ptr<Song>> songs;
+    //std::vector<Song> songs;
     std::vector<Album> albums;
     std::vector<Artist> artists;
     std::vector<Playlist> playlists;
+
     std::vector<AlbumSong> album_songs;
     std::vector<ArtistSong> artist_songs;
     std::vector<ArtistAlbum> artist_albums;
@@ -89,10 +91,10 @@ struct MPContext {
     SongCallback song_callback;
 
     // this stores songs the user explicity queues up
-    std::deque<const Song*> queue;
+    std::deque<std::shared_ptr<Song>> queue;
 
     // this stores songs that come on autoplay
-    std::deque<const Song*> autoplay_queue;
+    std::deque<std::shared_ptr<Song>> autoplay_queue;
 
     // this stores the order songs should be play in the group
     std::deque<SongTrack> group_queue;
@@ -167,7 +169,7 @@ void mp_song_update(int song_id, const char* title, const char* artist, const ch
 // Search for songs based on query
 std::vector<int> mp_search_songs(const char* search_query);
 
-Song* mp_get_song_from_id(int id);
+std::shared_ptr<Song> mp_get_song_from_id(int id);
 Album* mp_get_album_from_id(int id);
 Artist* mp_get_artist_from_id(int id);
 Playlist* mp_get_playlist_from_id(int id);

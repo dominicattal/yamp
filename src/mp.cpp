@@ -45,11 +45,12 @@ static void db_create_playlist_song(int playlist_id, int song_id, int track);
 static void db_create_artist_album(int artist_id, int album_id);
 
 // Read
-static int db_get_song(const char* song_path);
-static int db_get_album(const char* name);
-static int db_get_artist(const char* name);
-static int db_get_playlist(const char* name);
-[[maybe_unused]] static int db_get_artist_from_song(int song_id);
+static int db_get_song_id(const char* song_path);
+static int db_get_album_id(const char* name);
+static int db_get_artist_id(const char* name);
+static int db_get_playlist_id(const char* name);
+static std::shared_ptr<Song> db_get_song_info(int song_id);
+[[maybe_unused]] static int db_get_artist_id_from_song_id(int song_id);
 [[maybe_unused]] static int db_count_songs_with_artist(int artist_id);
 [[maybe_unused]] static int db_count_albums_with_artist(int artist_id);
 [[maybe_unused]] static int db_count_songs_in_album(int album_id);
@@ -70,7 +71,7 @@ static void db_delete_artist(int artist_id);
 // DB DEFINITIONS
 // -----------------------
 
-[[maybe_unused]] static int db_get_artist_from_song(int song_id)
+[[maybe_unused]] static int db_get_artist_id_from_song_id(int song_id)
 {
     sqlite3_stmt* stmt;
     const char* query = "SELECT artist_id FROM AritstSong WHERE song_id=?1";
@@ -121,7 +122,7 @@ static void db_delete_artist(int artist_id);
     return count;
 }
 
-static int db_get_song(const char* song_path)
+static int db_get_song_id(const char* song_path)
 {
     sqlite3_stmt* stmt;
     const char* query = "SELECT id FROM Songs WHERE path=?1";
@@ -133,7 +134,23 @@ static int db_get_song(const char* song_path)
     return song_id;
 }
 
-static int db_get_artist(const char* name)
+static std::shared_ptr<Song> db_get_song_info(int song_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT title, path, length FROM Songs WHERE id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, song_id);
+    int res = sqlite3_step(stmt);
+    assert(res == SQLITE_ROW);
+    const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    const char* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    const double length = sqlite3_column_double(stmt, 2);
+    std::shared_ptr<Song> song = std::make_shared<Song>(title, path, length, song_id);
+    sqlite3_finalize(stmt);
+    return song;
+}
+
+static int db_get_artist_id(const char* name)
 {
     sqlite3_stmt* stmt;
     const char* query = "SELECT id FROM Artists WHERE name=?1";
@@ -233,11 +250,11 @@ static void db_update_song_artist(int song_id, const char* artist)
             db_delete_artist(artist_id);
     }
 
-    artist_id = db_get_artist(artist);
+    artist_id = db_get_artist_id(artist);
     if (artist_id == -1)
     {
         db_create_artist(artist);
-        artist_id = db_get_artist(artist);
+        artist_id = db_get_artist_id(artist);
     }
     db_create_artist_song(artist_id, song_id);
 }
@@ -262,7 +279,7 @@ static void db_update_song_artist(int song_id, const char* artist)
     sqlite3_finalize(stmt);
 }
 
-static int db_get_album(const char* name)
+static int db_get_album_id(const char* name)
 {
     sqlite3_stmt* stmt;
     const char* query = "SELECT id FROM Albums WHERE name=?1";
@@ -296,7 +313,7 @@ static void db_create_album_song(int album_id, int song_id, int track)
     sqlite3_finalize(stmt);
 }
 
-static int db_get_playlist(const char* name)
+static int db_get_playlist_id(const char* name)
 {
     sqlite3_stmt* stmt;
     const char* query = "SELECT id FROM Playlists WHERE name=?1";
@@ -367,20 +384,6 @@ static void db_create_artist_album(int artist_id, int album_id)
 // -----------------------
 // DB API END
 // -----------------------
-
-static int song_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)keys;
-    int id = std::atoi(values[0]);
-    std::string title = values[1];
-    std::string path = values[2];
-    float length = std::atof(values[3]);
-    Song& song = mp_ctx.songs.emplace_back(title, path, length, id);
-    //Song& song = mp_ctx.songs.emplace(std::make_pair(id, Song{title, path, id}));
-    if (mp_ctx.song_callback)
-        mp_ctx.song_callback(&song);
-    return 0;
-}
 
 static int album_callback(void* data, int num_cols, char** values, char** keys)
 {
@@ -493,7 +496,7 @@ void mp_init()
     if (res != MA_SUCCESS)
         exit(1);
 
-    sqlite3_exec(ctx.db, "SELECT * FROM Songs", song_callback, NULL, NULL);
+    //sqlite3_exec(ctx.db, "SELECT * FROM Songs", song_callback, NULL, NULL);
     sqlite3_exec(ctx.db, "SELECT * FROM Albums", album_callback, NULL, NULL);
     sqlite3_exec(ctx.db, "SELECT * FROM Artists", artist_callback, NULL, NULL);
     sqlite3_exec(ctx.db, "SELECT * FROM Playlists", playlist_callback, NULL, NULL);
@@ -547,7 +550,7 @@ void mp_add_song(const std::string& song_path)
     double song_length = properties->lengthInMilliseconds() / 1000.0;
     int track = tag->track();
 
-    int song_id = db_get_song(song_path.c_str());
+    int song_id = db_get_song_id(song_path.c_str());
     if (song_id != -1)
     {
         SPDLOG_WARN("Song id %d already exists", song_id);
@@ -555,10 +558,7 @@ void mp_add_song(const std::string& song_path)
     }
 
     db_create_song(title.c_str(), song_path.c_str(), song_length);
-    song_id = db_get_song(song_path.c_str());
-    Song& song = mp_ctx.songs.emplace_back(title, song_path, song_length, song_id);
-    if (mp_ctx.song_callback)
-        mp_ctx.song_callback(&song);
+    song_id = db_get_song_id(song_path.c_str());
 
     SPDLOG_INFO("Created song {} {}", song_id, title);
 
@@ -566,11 +566,11 @@ void mp_add_song(const std::string& song_path)
 
     if (album_name.size() > 0) 
     {
-        album_id = db_get_album(album_name.c_str());
+        album_id = db_get_album_id(album_name.c_str());
         if (album_id == -1) 
         {
             db_create_album(album_name.c_str());
-            album_id = db_get_album(album_name.c_str());
+            album_id = db_get_album_id(album_name.c_str());
             mp_ctx.albums.emplace_back(album_name, album_id);
         }
         db_create_album_song(album_id, song_id, track);
@@ -580,11 +580,11 @@ void mp_add_song(const std::string& song_path)
 
     if (artist_name.size() > 0) 
     {
-        artist_id = db_get_artist(artist_name.c_str());
+        artist_id = db_get_artist_id(artist_name.c_str());
         if (artist_id == -1)
         {
             db_create_artist(artist_name.c_str());
-            artist_id = db_get_artist(artist_name.c_str());
+            artist_id = db_get_artist_id(artist_name.c_str());
             mp_ctx.artists.emplace_back(artist_name, artist_id);
         }
         db_create_artist_song(artist_id, song_id);
@@ -623,7 +623,7 @@ int mp_create_playlist()
     const char* playlist_name = "Unnamed Playlist";
 
     db_create_playlist(playlist_name);
-    int playlist_id = db_get_playlist(playlist_name);
+    int playlist_id = db_get_playlist_id(playlist_name);
 
     mp_ctx.playlists.emplace_back(playlist_name, playlist_id);
 
@@ -661,7 +661,7 @@ void mp_play_song(int song_id)
 {
     if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
-    const Song* song = mp_get_song_from_id(song_id);
+    std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
     ma_sound_config config = ma_sound_config_init();
     config.channelsIn = 1;
     config.pFilePath = song->path.c_str();
@@ -675,7 +675,7 @@ void mp_play_song(int song_id)
 
 void mp_queue_song(int song_id)
 {
-    const Song* song = mp_get_song_from_id(song_id);
+    std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
     mp_ctx.queue.push_back(song);
     if (mp_ctx.queue.size() == 1 && !ctx.current_song_loaded)
         mp_queue_skip();
@@ -715,7 +715,7 @@ void mp_toggle_autoplay()
     } else {
         for (int i = 0; i < 10; i++) {
             size_t idx = ctx.mt() % mp_ctx.songs.size();
-            const Song* song = mp_get_song_from_id(idx);
+            std::shared_ptr<Song> song = mp_get_song_from_id(idx);
             mp_ctx.autoplay_queue.push_back(song);
         }
     }
@@ -787,7 +787,7 @@ void mp_play_album(int album_id)
 
 FrontCover mp_song_front_cover_load(int song_id)
 {
-    const Song* song = mp_get_song_from_id(song_id);
+    std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
     FrontCover front_cover{};
     TagLib::FileRef mp3_file_ref(song->path.c_str());
     if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
@@ -812,7 +812,7 @@ FrontCover mp_song_front_cover_load(int song_id)
 
 void mp_song_front_cover_update(int song_id, const std::string& cover_path)
 {
-    const Song* song = mp_get_song_from_id(song_id);
+    std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
     std::ifstream img{cover_path.c_str(), std::ios::binary};
     std::vector<char> bytes{std::istreambuf_iterator<char>(img), std::istreambuf_iterator<char>()};
     
@@ -876,12 +876,14 @@ void mp_song_update(int song_id, const char* title, const char* artist, const ch
     return;
 }
 
-Song* mp_get_song_from_id(int id)
+std::shared_ptr<Song> mp_get_song_from_id(int id)
 {
-    for (Song& song : mp_ctx.songs)
-        if (song.id == id)
-            return &song;
-    return nullptr;
+    if (mp_ctx.songs.find(id) != mp_ctx.songs.end() && !mp_ctx.songs[id].expired())
+        return mp_ctx.songs[id].lock();
+
+    std::shared_ptr<Song> song_info = db_get_song_info(id);
+    mp_ctx.songs[id] = song_info;
+    return song_info;
 }
 
 Album* mp_get_album_from_id(int id)
@@ -969,7 +971,7 @@ void mp_update_album_length(int album_id)
     album->length = 0;
     for (const AlbumSong& album_song : mp_ctx.album_songs) {
         if (album_song.album_id == album_id) {
-            const Song* song = mp_get_song_from_id(album_song.song_id);
+            std::shared_ptr<Song> song = mp_get_song_from_id(album_song.song_id);
             album->length += song->length;
         }
     }
@@ -983,7 +985,7 @@ void mp_update_playlist_length(int playlist_id)
     playlist->length = 0;
     for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs) {
         if (playlist_song.playlist_id == playlist_id) {
-            const Song* song = mp_get_song_from_id(playlist_song.song_id);
+            std::shared_ptr<Song> song = mp_get_song_from_id(playlist_song.song_id);
             playlist->length += song->length;
         }
     }
@@ -1044,7 +1046,7 @@ static void play_next_group_song()
         }
     }
     SongTrack song_track = mp_ctx.group_queue.front();
-    const Song* song = mp_get_song_from_id(song_track.song_id);
+    std::shared_ptr<Song> song = mp_get_song_from_id(song_track.song_id);
     mp_ctx.group_queue.pop_front();
     mp_play_song(song->id);
 }
@@ -1060,7 +1062,7 @@ void mp_queue_skip()
         if (mp_ctx.playing_group) {
             play_next_group_song();
         } else if (mp_ctx.autoplay) {
-            const Song* song = mp_ctx.autoplay_queue.front();
+            std::shared_ptr<Song> song = mp_ctx.autoplay_queue.front();
             mp_ctx.autoplay_queue.pop_front();
             size_t idx = ctx.mt() % mp_ctx.songs.size();
             mp_ctx.autoplay_queue.push_back(mp_get_song_from_id(idx));
@@ -1071,7 +1073,7 @@ void mp_queue_skip()
             ctx.current_song_loaded = false;
         }
     } else {
-        const Song* song = mp_ctx.queue.front();
+        std::shared_ptr<Song> song = mp_ctx.queue.front();
         mp_ctx.queue.pop_front();
         mp_play_song(song->id);
     }

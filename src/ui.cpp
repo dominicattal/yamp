@@ -121,7 +121,7 @@ static void cleanup_textures()
         glDeleteTextures(1, &song_texture.second.id);
 }
 
-static void song_callback(const Song* song)
+static void song_callback(std::shared_ptr<Song> song)
 {
     FrontCover front_cover = mp_song_front_cover_load(song->id);
     if (front_cover.data == nullptr) {
@@ -144,9 +144,9 @@ static void song_callback(const Song* song)
     mp_song_front_cover_free(&front_cover);
 }
 
-static void set_right_side_song_id(int song_id)
+[[maybe_unused]] static void set_right_side_song_id(int song_id)
 {
-    const Song* song = mp_get_song_from_id(song_id);
+    std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
     const Artist* artist = mp_get_artist_from_id(mp_get_artist_id_from_song_id(song_id));
     const Album* album = mp_get_album_from_id(mp_get_album_id_from_song_id(song_id));
     ctx.right_side = SHOW_RIGHT_SONG;
@@ -315,18 +315,18 @@ static void draw_left_side()
     {
         ImGui::TableSetupColumn("Queue", ImGuiTableColumnFlags_NoSort);
         ImGui::TableHeadersRow();
-        for (const Song* song : mp_ctx.queue)
+        for (std::shared_ptr<Song> song : mp_ctx.queue)
         {
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
         }
         for (auto [song_id, track] : mp_ctx.group_queue)
         {
-            const Song* song = mp_get_song_from_id(song_id);
+            std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
         }
-        for (const Song* song : mp_ctx.autoplay_queue)
+        for (std::shared_ptr<Song> song : mp_ctx.autoplay_queue)
         {
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
@@ -364,6 +364,7 @@ static void draw_left_side()
 
 static void draw_all_songs()
 {
+/*
     ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
     if (ImGui::BeginTable("All Songs", 5, flags, ImGui::GetContentRegionAvail()))
     {
@@ -446,6 +447,7 @@ static void draw_all_songs()
         }
         ImGui::EndTable();
     }
+*/
 }
 
 static void draw_search_results()
@@ -470,7 +472,7 @@ static void draw_search_results()
             ImGui::TableNextColumn();
             ImGui::ImageWithBg(ctx.textures.song_map[song_id].id, ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImGui::TableNextColumn();
-            const Song* song = mp_get_song_from_id(song_id);
+            std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
             ImGui::Text("%s", song->title.c_str());
             int artist_id = mp_get_artist_id_from_song_id(song_id);
             if (artist_id != -1) {
@@ -583,7 +585,7 @@ static void draw_album_info()
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
-            const Song* song = mp_get_song_from_id(song_id);
+            std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
             ImGui::Text("%s", song->title.c_str());
             ImGui::PopID();
         }
@@ -661,7 +663,7 @@ static void draw_playlist_info()
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
-            const Song* song = mp_get_song_from_id(song_id);
+            std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
             const Album* album = mp_get_album_from_id(mp_get_album_id_from_song_id(song_id));
             const Artist* artist = mp_get_artist_from_id(mp_get_artist_id_from_song_id(song_id));
             ImGui::Text("%s", song->title.c_str());
@@ -706,7 +708,7 @@ static void draw_artist_info()
         //ImGui::TableHeadersRow();
         for (int song_id : song_ids)
         {
-            const Song* song = mp_get_song_from_id(song_id);
+            std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
             ImGui::TableNextColumn();
             ImGui::PushID(song_id);
             if (ImGui::Button("Play"))
@@ -865,7 +867,7 @@ void draw_right_side()
         ctx.right_side = SHOW_RIGHT_NONE;
         return;
     }
-    const Song* song = mp_get_song_from_id(ctx.right_side_song_id);
+    std::shared_ptr<Song> song = mp_get_song_from_id(ctx.right_side_song_id);
     if (ImGui::ImageButton("Press", ctx.textures.song_map[song->id].id, ImVec2(300, 300)))
     {
         const std::string title {"Choose files to read"};
