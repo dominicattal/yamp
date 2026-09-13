@@ -379,7 +379,7 @@ static void draw_all_songs()
             ImGui::TableNextColumn();
 
             ImVec2 button_pos = ImGui::GetCursorScreenPos();
-            ImVec2 size = ImVec2(50, 50);
+            ImVec2 size = ImVec2(64, 64);
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
             if (ImGui::ImageButton("PlayButton", ctx.song_textures[song.id], size))
                 mp_play_song(song.id);
