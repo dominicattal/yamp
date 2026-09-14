@@ -833,9 +833,8 @@ void mp_song_front_cover_update(int song_id, const std::string& cover_path)
     mp_ctx.song_callback(song);
 }
 
-std::vector<int> mp_search_songs(const char* search_query)
+const std::vector<std::shared_ptr<Song>>& mp_search_songs(const char* search_query)
 {
-    std::vector<int> result{};
     sqlite3_stmt* stmt;
     constexpr int limit = 50;
     const char* query = "SELECT id FROM Songs WHERE title LIKE ?1 LIMIT ?2";
@@ -844,10 +843,15 @@ std::vector<int> mp_search_songs(const char* search_query)
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 2, limit);
+    mp_ctx.search_result.clear();
     while (sqlite3_step(stmt) == SQLITE_ROW)
-        result.push_back(sqlite3_column_int(stmt, 0));
+    {
+        int song_id = sqlite3_column_int(stmt, 0);
+        std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
+        mp_ctx.search_result.push_back(song);
+    }
     sqlite3_finalize(stmt);
-    return result;
+    return mp_ctx.search_result;
 }
 
 void mp_song_front_cover_free(FrontCover* front_cover)

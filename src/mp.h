@@ -99,6 +99,9 @@ struct MPContext {
     // this stores the order songs should be play in the group
     std::deque<SongTrack> group_queue;
 
+    // this stores the songs from the most recent search
+    std::vector<std::shared_ptr<Song>> search_result;
+
     // whether mp is playing a group (playlist or album) or not.
     bool playing_group;
     // true if group is album, false otherwise
@@ -167,7 +170,7 @@ void mp_song_front_cover_free(FrontCover* data);
 void mp_song_update(int song_id, const char* title, const char* artist, const char* album, const char* cover_path);
 
 // Search for songs based on query
-std::vector<int> mp_search_songs(const char* search_query);
+const std::vector<std::shared_ptr<Song>>& mp_search_songs(const char* search_query);
 
 std::shared_ptr<Song> mp_get_song_from_id(int id);
 Album* mp_get_album_from_id(int id);
