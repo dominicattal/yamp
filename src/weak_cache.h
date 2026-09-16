@@ -13,24 +13,24 @@ template<class val_t>
 void reset_callback(WeakCache<val_t>* weak_cache, int key);
 
 template<class val_t>
-class SharedPtr
+class WeakCacheRef
 {
 public:
-    SharedPtr(WeakCache<val_t>* weak_cache, int key, std::shared_ptr<val_t> ptr)
+    WeakCacheRef(WeakCache<val_t>* weak_cache, int key, std::shared_ptr<val_t> ptr)
         : m_weak_cache{weak_cache}, m_key{key}, m_ptr{std::move(ptr)}
     {
     }
-    SharedPtr(const SharedPtr& other)
+    WeakCacheRef(const WeakCacheRef& other)
         : m_weak_cache{other.m_weak_cache}, m_key{other.m_key}, m_ptr{other.m_ptr}
     {
     }
-    SharedPtr(SharedPtr&& other)
+    WeakCacheRef(WeakCacheRef&& other)
         : m_weak_cache{other.m_weak_cache}, m_key{other.m_key}, m_ptr{std::move(other.m_ptr)}
     {
         other.m_weak_cache = nullptr;
         other.m_key = 0;
     }
-    SharedPtr& operator=(const SharedPtr& other)
+    WeakCacheRef& operator=(const WeakCacheRef& other)
     {
         if (this == &other)
             return *this;
@@ -43,7 +43,7 @@ public:
         m_ptr = other.m_ptr;
         return *this;
     }
-    SharedPtr& operator=(SharedPtr&& other)
+    WeakCacheRef& operator=(WeakCacheRef&& other)
     {
         if (this == &other)
             return *this;
@@ -58,7 +58,11 @@ public:
         other.m_key = 0;
         return *this;
     }
-    ~SharedPtr()
+    val_t& operator->()
+    {
+        return *m_ptr;
+    }
+    ~WeakCacheRef()
     {
         release();
     }
@@ -83,15 +87,15 @@ public:
         : m_callback{callback}
     {
     }
-    SharedPtr<val_t> get(int key)
+    WeakCacheRef<val_t> get(int key)
     {
         if (auto it = m_map.find(key); it != m_map.end())
             if (auto ptr = it->second.lock())
-                return SharedPtr<val_t>{this, key, std::move(ptr)};
+                return WeakCacheRef<val_t>{this, key, std::move(ptr)};
 
         std::shared_ptr<val_t> ptr = m_callback(key);
         m_map[key] = ptr;
-        return SharedPtr<val_t>{this, key, std::move(ptr)};
+        return WeakCacheRef<val_t>{this, key, std::move(ptr)};
     }
 
 private:
