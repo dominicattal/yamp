@@ -1,6 +1,7 @@
 #ifndef MP_H
 #define MP_H
 
+#include "weak_cache.h"
 #include <string>
 #include <string_view>
 #include <vector>
@@ -71,13 +72,13 @@ struct FrontCover {
     int height;
 };
 
-using SongCallback = std::function<void(std::shared_ptr<Song>)>;
+using SongCallback = std::function<void(std::shared_ptr<Song> song)>;
 
 struct MPContext {
 
-    std::shared_ptr<Song> current_song;
+    WeakCacheRef<Song> current_song;
 
-    std::unordered_map<int, std::weak_ptr<Song>> songs;
+    WeakCache<Song> songs;
     //std::vector<Song> songs;
     std::vector<Album> albums;
     std::vector<Artist> artists;
@@ -88,19 +89,20 @@ struct MPContext {
     std::vector<ArtistAlbum> artist_albums;
     std::vector<PlaylistSong> playlist_songs;
 
-    SongCallback song_callback;
+    SongCallback song_constructor_callback;
+    SongCallback song_destructor_callback;
 
     // this stores songs the user explicity queues up
-    std::deque<std::shared_ptr<Song>> queue;
+    std::deque<WeakCacheRef<Song>> queue;
 
     // this stores songs that come on autoplay
-    std::deque<std::shared_ptr<Song>> autoplay_queue;
+    std::deque<WeakCacheRef<Song>> autoplay_queue;
 
     // this stores the order songs should be play in the group
     std::deque<SongTrack> group_queue;
 
     // this stores the songs from the most recent search
-    std::vector<std::shared_ptr<Song>> search_result;
+    std::vector<WeakCacheRef<Song>> search_result;
 
     // whether mp is playing a group (playlist or album) or not.
     bool playing_group;
@@ -170,9 +172,9 @@ void mp_song_front_cover_free(FrontCover* data);
 void mp_song_update(int song_id, const char* title, const char* artist, const char* album, const char* cover_path);
 
 // Search for songs based on query
-const std::vector<std::shared_ptr<Song>>& mp_search_songs(const char* search_query);
+const std::vector<WeakCacheRef<Song>>& mp_search_songs(const char* search_query);
 
-std::shared_ptr<Song> mp_get_song_from_id(int id);
+WeakCacheRef<Song> mp_get_song_from_id(int id);
 Album* mp_get_album_from_id(int id);
 Artist* mp_get_artist_from_id(int id);
 Playlist* mp_get_playlist_from_id(int id);

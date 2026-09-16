@@ -119,7 +119,7 @@ static void cleanup_textures()
         glDeleteTextures(1, &song_texture.second.id);
 }
 
-static void song_callback(std::shared_ptr<Song> song)
+static void song_constructor_callback(WeakCacheRef<Song> song)
 {
     FrontCover front_cover = mp_song_front_cover_load(song->id);
     if (front_cover.data == nullptr) {
@@ -142,9 +142,13 @@ static void song_callback(std::shared_ptr<Song> song)
     mp_song_front_cover_free(&front_cover);
 }
 
+static void song_destructor_callback(WeakCacheRef<Song> song)
+{
+}
+
 [[maybe_unused]] static void set_right_side_song_id(int song_id)
 {
-    std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
+    WeakCacheRef<Song> song = mp_get_song_from_id(song_id);
     const Artist* artist = mp_get_artist_from_id(mp_get_artist_id_from_song_id(song_id));
     const Album* album = mp_get_album_from_id(mp_get_album_id_from_song_id(song_id));
     ctx.right_side = SHOW_RIGHT_SONG;
@@ -228,7 +232,8 @@ void ui_init()
     const char* glsl_version = nullptr;
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    mp_ctx.song_callback = song_callback;
+    mp_ctx.song_constructor_callback = song_constructor_callback;
+    mp_ctx.song_destructor_callback = song_destructor_callback;
 }
 
 void ui_cleanup()
@@ -313,18 +318,18 @@ static void draw_left_side()
     {
         ImGui::TableSetupColumn("Queue", ImGuiTableColumnFlags_NoSort);
         ImGui::TableHeadersRow();
-        for (std::shared_ptr<Song> song : mp_ctx.queue)
+        for (WeakCacheRef<Song> & song : mp_ctx.queue)
         {
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
         }
         for (auto [song_id, track] : mp_ctx.group_queue)
         {
-            std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
+            WeakCacheRef<Song> song = mp_get_song_from_id(song_id);
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
         }
-        for (std::shared_ptr<Song> song : mp_ctx.autoplay_queue)
+        for (WeakCacheRef<Song> song : mp_ctx.autoplay_queue)
         {
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
@@ -459,7 +464,7 @@ static void draw_search_results()
         ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
         //ImGui::TableHeadersRow();
-        for (std::shared_ptr<Song> song : mp_ctx.search_result)
+        for (WeakCacheRef<Song> song : mp_ctx.search_result)
         {
             ImGui::TableNextColumn();
             ImGui::PushID(song->id);
@@ -582,7 +587,7 @@ static void draw_album_info()
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
-            std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
+            WeakCacheRef<Song> song = mp_get_song_from_id(song_id);
             ImGui::Text("%s", song->title.c_str());
             ImGui::PopID();
         }
@@ -660,7 +665,7 @@ static void draw_playlist_info()
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
-            std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
+            WeakCacheRef<Song> song = mp_get_song_from_id(song_id);
             const Album* album = mp_get_album_from_id(mp_get_album_id_from_song_id(song_id));
             const Artist* artist = mp_get_artist_from_id(mp_get_artist_id_from_song_id(song_id));
             ImGui::Text("%s", song->title.c_str());
@@ -705,7 +710,7 @@ static void draw_artist_info()
         //ImGui::TableHeadersRow();
         for (int song_id : song_ids)
         {
-            std::shared_ptr<Song> song = mp_get_song_from_id(song_id);
+            WeakCacheRef<Song> song = mp_get_song_from_id(song_id);
             ImGui::TableNextColumn();
             ImGui::PushID(song_id);
             if (ImGui::Button("Play"))
@@ -864,7 +869,7 @@ void draw_right_side()
         ctx.right_side = SHOW_RIGHT_NONE;
         return;
     }
-    std::shared_ptr<Song> song = mp_get_song_from_id(ctx.right_side_song_id);
+    WeakCacheRef<Song> song = mp_get_song_from_id(ctx.right_side_song_id);
     if (ImGui::ImageButton("Press", ctx.textures.song_map[song->id].id, ImVec2(300, 300)))
     {
         const std::string title {"Choose files to read"};
