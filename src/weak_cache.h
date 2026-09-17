@@ -16,6 +16,14 @@ template<class val_t>
 class WeakCacheRef
 {
 public:
+    WeakCacheRef()
+        : m_weak_cache{}, m_key{}, m_ptr{}
+    {
+    }
+    WeakCacheRef(std::nullptr_t)
+        : m_weak_cache{}, m_key{}, m_ptr{}
+    {
+    }
     WeakCacheRef(WeakCache<val_t>* weak_cache, int key, std::shared_ptr<val_t> ptr)
         : m_weak_cache{weak_cache}, m_key{key}, m_ptr{std::move(ptr)}
     {
@@ -43,6 +51,15 @@ public:
         m_ptr = other.m_ptr;
         return *this;
     }
+    WeakCacheRef& operator=(std::nullptr_t)
+    {
+        release();
+
+        m_weak_cache = nullptr;
+        m_key = 0;
+        m_ptr = 0;
+        return *this;
+    }
     WeakCacheRef& operator=(WeakCacheRef&& other)
     {
         if (this == &other)
@@ -58,9 +75,20 @@ public:
         other.m_key = 0;
         return *this;
     }
-    val_t& operator->()
+
+    operator bool() { return m_ptr != nullptr; }
+
+    bool operator==(std::nullptr_t)
     {
-        return *m_ptr;
+        return m_weak_cache == nullptr;
+    }
+    std::shared_ptr<val_t> get()
+    {
+        return m_ptr;
+    }
+    std::shared_ptr<val_t> operator->()
+    {
+        return m_ptr;
     }
     ~WeakCacheRef()
     {
@@ -71,7 +99,8 @@ private:
     void release()
     {
         m_ptr.reset();
-        reset_callback(m_weak_cache, m_key);
+        if (m_weak_cache)
+            reset_callback(m_weak_cache, m_key);
     }
     WeakCache<val_t>* m_weak_cache;
     int m_key;
@@ -81,10 +110,12 @@ private:
 template<class val_t>
 class WeakCache
 {
-    using Callback = std::function<std::shared_ptr<val_t>(int)>;
 public:
-    WeakCache(Callback callback)
-        : m_callback{callback}
+    using ConstructorCallback = std::function<std::shared_ptr<val_t>(int)>;
+    using DestructorCallback = std::function<void(std::shared_ptr<val_t>)>;
+
+    WeakCache()
+        : m_constructor_callback{}, m_destructor_callback{}, m_map{}
     {
     }
     WeakCacheRef<val_t> get(int key)
@@ -93,13 +124,22 @@ public:
             if (auto ptr = it->second.lock())
                 return WeakCacheRef<val_t>{this, key, std::move(ptr)};
 
-        std::shared_ptr<val_t> ptr = m_callback(key);
+        std::shared_ptr<val_t> ptr = m_constructor_callback(key);
         m_map[key] = ptr;
         return WeakCacheRef<val_t>{this, key, std::move(ptr)};
     }
+    void set_constructor_callback(ConstructorCallback callback)
+    {
+        m_constructor_callback = callback;
+    }
+    void set_destructor_callback(DestructorCallback callback)
+    {
+        m_destructor_callback = callback;
+    }
 
 private:
-    Callback m_callback;
+    ConstructorCallback m_constructor_callback;
+    DestructorCallback m_destructor_callback;
     std::unordered_map<int, std::weak_ptr<val_t>> m_map;
 
     friend void reset_callback<val_t>(WeakCache<val_t>* weak_cache, int key);

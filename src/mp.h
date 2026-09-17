@@ -76,9 +76,9 @@ using SongCallback = std::function<void(std::shared_ptr<Song> song)>;
 
 struct MPContext {
 
-    WeakCacheRef<Song> current_song;
-
     WeakCache<Song> songs;
+
+    WeakCacheRef<Song> current_song;
     //std::vector<Song> songs;
     std::vector<Album> albums;
     std::vector<Artist> artists;
@@ -166,7 +166,7 @@ void mp_play_playlist(int playlist_id);
 void mp_play_album(int album_id);
 
 // Load song cover art from memory
-FrontCover mp_song_front_cover_load(int song_id);
+FrontCover mp_song_front_cover_load(std::shared_ptr<Song> song);
 void mp_song_front_cover_update(int song_id, const std::string& cover_path);
 void mp_song_front_cover_free(FrontCover* data);
 void mp_song_update(int song_id, const char* title, const char* artist, const char* album, const char* cover_path);

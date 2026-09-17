@@ -488,18 +488,19 @@ static void db_init()
 void mp_init()
 {
     mp_ctx.songs.set_constructor_callback(
-            [](int song_id) -> std::shared_ptr<Song>
-             {
-                std::shared_ptr<Song> song = db_get_song_info(song_id);
-                if (mp_ctx.song_constructor_callback)
-                    mp_ctx.song_constructor_callback(song);
-                return song;
-            });
+        [](int song_id) -> std::shared_ptr<Song>
+         {
+            std::shared_ptr<Song> song = db_get_song_info(song_id);
+            if (mp_ctx.song_constructor_callback)
+                mp_ctx.song_constructor_callback(song);
+            return song;
+        });
     mp_ctx.songs.set_destructor_callback(
         [](std::shared_ptr<Song> song) -> void
         {
-            if (mp_ctx.song_destructor_callback)
-                mp_ctx.song_destructor_callback(song);
+        (void)song;
+            //if (mp_ctx.song_destructor_callback)
+            //    mp_ctx.song_destructor_callback(song);
         });
 
     ctx.mt.seed(std::chrono::steady_clock::now().time_since_epoch().count());
@@ -521,10 +522,10 @@ void mp_init()
     sqlite3_exec(ctx.db, "SELECT * FROM ArtistSong", artist_song_callback, NULL, NULL);
     sqlite3_exec(ctx.db, "SELECT * FROM PlaylistSong", playlist_song_callback, NULL, NULL);
 
-    for (Album& album : mp_ctx.albums)
-        mp_update_album_length(album.id);
-    for (Playlist& playlist : mp_ctx.playlists)
-        mp_update_playlist_length(playlist.id);
+    //for (Album& album : mp_ctx.albums)
+    //    mp_update_album_length(album.id);
+    //for (Playlist& playlist : mp_ctx.playlists)
+    //    mp_update_playlist_length(playlist.id);
 }
 
 void mp_cleanup()
@@ -801,9 +802,8 @@ void mp_play_album(int album_id)
     mp_queue_skip();
 }
 
-FrontCover mp_song_front_cover_load(int song_id)
+FrontCover mp_song_front_cover_load(std::shared_ptr<Song> song)
 {
-    WeakCacheRef<Song> song = mp_get_song_from_id(song_id);
     FrontCover front_cover{};
     TagLib::FileRef mp3_file_ref(song->path.c_str());
     if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
@@ -846,7 +846,7 @@ void mp_song_front_cover_update(int song_id, const std::string& cover_path)
     file.setComplexProperties("PICTURE", pictures);
     file.save();
 
-    mp_ctx.song_callback(song);
+    //mp_ctx.song_callback(song);
 }
 
 const std::vector<WeakCacheRef<Song>>& mp_search_songs(const char* search_query)

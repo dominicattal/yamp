@@ -119,9 +119,9 @@ static void cleanup_textures()
         glDeleteTextures(1, &song_texture.second.id);
 }
 
-static void song_constructor_callback(WeakCacheRef<Song> song)
+static void song_constructor_callback(std::shared_ptr<Song> song)
 {
-    FrontCover front_cover = mp_song_front_cover_load(song->id);
+    FrontCover front_cover = mp_song_front_cover_load(song);
     if (front_cover.data == nullptr) {
         ctx.textures.song_map[song->id].id = ctx.textures.default_album_art.id;
         return;
@@ -142,8 +142,9 @@ static void song_constructor_callback(WeakCacheRef<Song> song)
     mp_song_front_cover_free(&front_cover);
 }
 
-static void song_destructor_callback(WeakCacheRef<Song> song)
+static void song_destructor_callback(std::shared_ptr<Song> song)
 {
+    (void)song;
 }
 
 [[maybe_unused]] static void set_right_side_song_id(int song_id)
@@ -154,7 +155,7 @@ static void song_destructor_callback(WeakCacheRef<Song> song)
     ctx.right_side = SHOW_RIGHT_SONG;
     ctx.right_side_changed = false;
 
-    FrontCover front_cover = mp_song_front_cover_load(song->id);
+    FrontCover front_cover = mp_song_front_cover_load(song.get());
     glBindTexture(GL_TEXTURE_2D, ctx.right_side_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
     mp_song_front_cover_free(&front_cover);
@@ -464,7 +465,7 @@ static void draw_search_results()
         ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
         //ImGui::TableHeadersRow();
-        for (WeakCacheRef<Song> song : mp_ctx.search_result)
+        for (WeakCacheRef<Song>& song : mp_ctx.search_result)
         {
             ImGui::TableNextColumn();
             ImGui::PushID(song->id);
