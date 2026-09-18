@@ -1,7 +1,7 @@
 #ifndef MP_H
 #define MP_H
 
-#include "weak_cache.h"
+#include "lru_cache.h"
 #include <string>
 #include <string_view>
 #include <vector>
@@ -72,13 +72,14 @@ struct FrontCover {
     int height;
 };
 
-using SongCallback = std::function<void(std::shared_ptr<Song> song)>;
+using SongCallback = std::function<void(Song* song)>;
 
 struct MPContext {
 
-    WeakCache<Song> songs;
+    LruCache<Song> songs;
 
-    WeakCacheRef<Song> current_song;
+    LruCacheRef<Song> current_song;
+
     //std::vector<Song> songs;
     std::vector<Album> albums;
     std::vector<Artist> artists;
@@ -93,16 +94,16 @@ struct MPContext {
     SongCallback song_destructor_callback;
 
     // this stores songs the user explicity queues up
-    std::deque<WeakCacheRef<Song>> queue;
+    std::deque<LruCacheRef<Song>> queue;
 
     // this stores songs that come on autoplay
-    std::deque<WeakCacheRef<Song>> autoplay_queue;
+    std::deque<LruCacheRef<Song>> autoplay_queue;
 
     // this stores the order songs should be play in the group
     std::deque<SongTrack> group_queue;
 
     // this stores the songs from the most recent search
-    std::vector<WeakCacheRef<Song>> search_result;
+    std::vector<LruCacheRef<Song>> search_result;
 
     // whether mp is playing a group (playlist or album) or not.
     bool playing_group;
@@ -166,15 +167,15 @@ void mp_play_playlist(int playlist_id);
 void mp_play_album(int album_id);
 
 // Load song cover art from memory
-FrontCover mp_song_front_cover_load(std::shared_ptr<Song> song);
+FrontCover mp_song_front_cover_load(Song* song);
 void mp_song_front_cover_update(int song_id, const std::string& cover_path);
 void mp_song_front_cover_free(FrontCover* data);
 void mp_song_update(int song_id, const char* title, const char* artist, const char* album, const char* cover_path);
 
 // Search for songs based on query
-const std::vector<WeakCacheRef<Song>>& mp_search_songs(const char* search_query);
+const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query);
 
-WeakCacheRef<Song> mp_get_song_from_id(int id);
+LruCacheRef<Song> mp_get_song_from_id(int id);
 Album* mp_get_album_from_id(int id);
 Artist* mp_get_artist_from_id(int id);
 Playlist* mp_get_playlist_from_id(int id);
