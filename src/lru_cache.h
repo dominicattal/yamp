@@ -1,7 +1,6 @@
 #ifndef LRU_CACHE
 #define LRU_CACHE
 
-#include <iostream>
 #include <cassert>
 #include <functional>
 #include <mutex>
@@ -52,9 +51,6 @@ public:
     {
         if (this == &other)
             return *this;
-
-        if (m_key != other.m_key || m_lru_cache != other.m_lru_cache)
-            release();
 
         m_lru_cache = other.m_lru_cache;
         m_key = other.m_key;
@@ -110,9 +106,9 @@ public:
 private:
     void release()
     {
-        m_ptr = nullptr;
         if (m_lru_cache)
             reset_callback(m_lru_cache, this);
+        m_ptr = nullptr;
         m_lru_cache = nullptr;
     }
 
@@ -147,7 +143,6 @@ public:
         {
             ++it->second->ref_count;
             m_list.splice(m_list.begin(), m_list, it->second);
-            std::cout << "getting ref for " << key << "\n";
             return LruCacheRef<val_t>{this, key, std::addressof(it->second->val)};
         }
         return nullptr;
@@ -156,14 +151,12 @@ public:
     {
         std::lock_guard<std::mutex> lock{m_mutex};
         assert(m_map.find(key) == m_map.end());
-        std::cout << "creating key " << key << "\n";
         m_list.emplace_front(1, key, std::move(val));
         m_map[key] = m_list.begin();
         if (m_list.size() > m_max_size)
         {
             if (auto it = std::prev(m_list.end()); it->ref_count == 0)
             {
-                std::cout << "AAA deleting key " << it->key << " from cache\n";
                 m_map.erase(m_map.find(it->key));
                 m_list.erase(it);
             }
@@ -191,12 +184,10 @@ void reset_callback(LruCache<val_t>* cache, LruCacheRef<val_t>* cache_ref)
     auto it = cache->m_map.find(cache_ref->m_key);
     assert(it != cache->m_map.end());
     assert(it->second->ref_count > 0);
-    std::cout << "reset callback on key " << cache_ref->m_key << " with ref count " << it->second->ref_count-1 << "\n";
     if (--it->second->ref_count == 0)
     {
         if (cache->m_list.size() > cache->m_max_size)
         {
-            std::cout << "BBB deleting key " << cache_ref->m_key << " from cache\n";
             if (cache->m_destructor_callback)
                 cache->m_destructor_callback(cache_ref->m_ptr);
             cache->m_list.erase(it->second);

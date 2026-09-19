@@ -17,6 +17,8 @@
 #include <stb_image.h>
 
 #define STRING_LENGTH 512
+#define LARGE_COVER_ART_SIZE 256
+#define SMALL_COVER_ART_SIZE 64
 
 enum ViewEnum {
     SHOW_RIGHT_NONE,
@@ -48,6 +50,10 @@ struct UIContext {
     } textures;
 
     std::unordered_map<int, GLuint> song_textures;
+    std::mutex load_queue_lock;
+    std::vector<std::pair<int, std::string>> load_queue;
+    std::mutex unload_queue_lock;
+    std::vector<int> unload_queue;
 
     bool show_demo_window;
 
@@ -119,32 +125,46 @@ static void cleanup_textures()
         glDeleteTextures(1, &song_texture.second.id);
 }
 
-static void song_constructor_callback(Song* song)
-{
-    FrontCover front_cover = mp_song_front_cover_load(song);
-    if (front_cover.data == nullptr) {
-        ctx.textures.song_map[song->id].id = ctx.textures.default_album_art.id;
-        return;
-    }
-
-    if (ctx.textures.song_map[song->id].id != ctx.textures.default_album_art.id)
-        glDeleteTextures(1, &ctx.textures.song_map[song->id].id);
-
-    glGenTextures(1, &ctx.textures.song_map[song->id].id);
-    glBindTexture(GL_TEXTURE_2D, ctx.textures.song_map[song->id].id);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    ctx.textures.song_map[song->id].width = front_cover.width;
-    ctx.textures.song_map[song->id].height = front_cover.height;
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
-
-    mp_song_front_cover_free(&front_cover);
-}
-
-static void song_destructor_callback(Song* song)
+[[maybe_unused]] static void song_constructor_callback(Song* song)
 {
     (void)song;
+}
+
+static void update_textures()
+{
+    for (auto& [song_id, path] : ctx.load_queue)
+    {
+        SPDLOG_INFO("AAA {}", song_id);
+        FrontCover front_cover = mp_song_front_cover_load(path);
+        if (front_cover.data == nullptr) {
+            ctx.textures.song_map[song_id].id = ctx.textures.default_album_art.id;
+            return;
+        }
+
+        if (ctx.textures.song_map[song_id].id != ctx.textures.default_album_art.id)
+            glDeleteTextures(1, &ctx.textures.song_map[song_id].id);
+
+        glGenTextures(1, &ctx.textures.song_map[song_id].id);
+        glBindTexture(GL_TEXTURE_2D, ctx.textures.song_map[song_id].id);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        ctx.textures.song_map[song_id].width = front_cover.width;
+        ctx.textures.song_map[song_id].height = front_cover.height;
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
+
+        mp_song_front_cover_free(&front_cover);
+        SPDLOG_INFO("{} {}", song_id, path);
+    }
+    ctx.load_queue.clear();
+    for (int song_id : ctx.unload_queue)
+    {
+        SPDLOG_INFO("BBB {}", song_id);
+        if (auto it = ctx.textures.song_map.find(song_id); it != ctx.textures.song_map.end())
+            ctx.textures.song_map.erase(it);
+    }
+    ctx.unload_queue.clear();
+
 }
 
 [[maybe_unused]] static void set_right_side_song_id(int song_id)
@@ -155,7 +175,7 @@ static void song_destructor_callback(Song* song)
     ctx.right_side = SHOW_RIGHT_SONG;
     ctx.right_side_changed = false;
 
-    FrontCover front_cover = mp_song_front_cover_load(song);
+    FrontCover front_cover = mp_song_front_cover_load(song->path);
     glBindTexture(GL_TEXTURE_2D, ctx.right_side_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
     mp_song_front_cover_free(&front_cover);
@@ -233,8 +253,21 @@ void ui_init()
     const char* glsl_version = nullptr;
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    mp_ctx.song_constructor_callback = song_constructor_callback;
-    mp_ctx.song_destructor_callback = song_destructor_callback;
+    mp_ctx.song_constructor_callback = 
+        [](Song* song) -> void
+        {
+            std::lock_guard lock{ctx.load_queue_lock};
+            ctx.load_queue.push_back(std::make_pair(song->id, song->path));
+        };
+
+    mp_ctx.songs.set_destructor_callback(
+        [](Song* song) -> void
+        {
+            (void)song;
+            SPDLOG_INFO("AAAAAAAAAAAA");
+            std::lock_guard lock{ctx.unload_queue_lock};
+            ctx.unload_queue.push_back(song->id);
+        });
 }
 
 void ui_cleanup()
@@ -253,7 +286,7 @@ void ui_cleanup()
 static void draw_left_side()
 {
     GLuint texture = (mp_ctx.current_song) ? ctx.textures.song_map[mp_ctx.current_song->id].id : ctx.textures.default_album_art.id;
-    ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(texture, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     if (ImGui::Button("Skip", ImVec2(100, 30)) || (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_S)))
     {
         mp_queue_skip();
@@ -459,8 +492,8 @@ static void draw_search_results()
     ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
     if (ImGui::BeginTable("All Songs", 4, flags, ImGui::GetContentRegionAvail()))
     {
-        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
-        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 50);
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 64);
+        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
@@ -474,7 +507,7 @@ static void draw_search_results()
             if (ImGui::Button("Queue"))
                 mp_queue_song(song->id);
             ImGui::TableNextColumn();
-            ImGui::ImageWithBg(ctx.textures.song_map[song->id].id, ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImGui::ImageWithBg(ctx.textures.song_map[song->id].id, ImVec2(SMALL_COVER_ART_SIZE, SMALL_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
             int artist_id = mp_get_artist_id_from_song_id(song->id);
@@ -523,7 +556,7 @@ static void draw_album_info()
     int artist_id = mp_get_artist_id_from_album_id(ctx.open_album_id);
     const Artist* artist = mp_get_artist_from_id(artist_id);
 
-    ImGui::ImageWithBg(ctx.textures.song_map[tracks[0].song_id].id, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(ctx.textures.song_map[tracks[0].song_id].id, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::SameLine();
     {
         ImGui::BeginChild("album_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
@@ -604,7 +637,7 @@ static void draw_playlist_info()
 
     GLuint texture = (tracks.size() > 0) ? ctx.textures.song_map[tracks[0].song_id].id : ctx.textures.default_album_art.id;
 
-    ImGui::ImageWithBg(texture, ImVec2(200, 200), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(texture, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::SameLine();
     {
         ImGui::BeginChild("playlist_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
@@ -975,6 +1008,7 @@ void ui_loop()
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
+        update_textures();
         draw_imgui();
 
         glfwSwapBuffers(ctx.window);

@@ -91,7 +91,6 @@ struct MPContext {
     std::vector<PlaylistSong> playlist_songs;
 
     SongCallback song_constructor_callback;
-    SongCallback song_destructor_callback;
 
     // this stores songs the user explicity queues up
     std::deque<LruCacheRef<Song>> queue;
@@ -167,7 +166,7 @@ void mp_play_playlist(int playlist_id);
 void mp_play_album(int album_id);
 
 // Load song cover art from memory
-FrontCover mp_song_front_cover_load(Song* song);
+FrontCover mp_song_front_cover_load(const std::string& cover_path);
 void mp_song_front_cover_update(int song_id, const std::string& cover_path);
 void mp_song_front_cover_free(FrontCover* data);
 void mp_song_update(int song_id, const char* title, const char* artist, const char* album, const char* cover_path);

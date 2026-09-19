@@ -136,7 +136,6 @@ static int db_get_song_id(const char* song_path)
 
 static Song db_get_song_info(int song_id)
 {
-    SPDLOG_INFO("A");
     sqlite3_stmt* stmt;
     const char* query = "SELECT title, path, length FROM Songs WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
@@ -487,22 +486,6 @@ static void db_init()
 
 void mp_init()
 {
-    //mp_ctx.songs.set_constructor_callback(
-    //    [](int song_id) -> std::shared_ptr<Song>
-    //     {
-    //        std::shared_ptr<Song> song = db_get_song_info(song_id);
-    //        if (mp_ctx.song_constructor_callback)
-    //            mp_ctx.song_constructor_callback(song);
-    //        return song;
-    //    });
-    mp_ctx.songs.set_destructor_callback(
-        [](Song* song) -> void
-        {
-        (void)song;
-            //if (mp_ctx.song_destructor_callback)
-            //    mp_ctx.song_destructor_callback(song);
-        });
-
     ctx.mt.seed(std::chrono::steady_clock::now().time_since_epoch().count());
 
     mp_ctx.volume = 1.0f;
@@ -802,12 +785,12 @@ void mp_play_album(int album_id)
     mp_queue_skip();
 }
 
-FrontCover mp_song_front_cover_load(Song* song)
+FrontCover mp_song_front_cover_load(const std::string& cover_path)
 {
     FrontCover front_cover{};
-    TagLib::FileRef mp3_file_ref(song->path.c_str());
+    TagLib::FileRef mp3_file_ref(cover_path.c_str());
     if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
-        SPDLOG_ERROR("Could not read {}", song->path);
+        SPDLOG_ERROR("Could not read {}", cover_path);
         return front_cover;
     }
 
@@ -859,13 +842,15 @@ const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query)
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 2, limit);
-    mp_ctx.search_result.clear();
+    std::vector<LruCacheRef<Song>> results;
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         int song_id = sqlite3_column_int(stmt, 0);
         LruCacheRef<Song> song = mp_get_song_from_id(song_id);
-        mp_ctx.search_result.push_back(std::move(song));
+        assert(song != nullptr);
+        results.push_back(std::move(song));
     }
+    mp_ctx.search_result = std::move(results);
     sqlite3_finalize(stmt);
     return mp_ctx.search_result;
 }
@@ -900,7 +885,11 @@ LruCacheRef<Song> mp_get_song_from_id(int id)
 {
     LruCacheRef<Song> song = mp_ctx.songs.get(id);
     if (song == nullptr)
-        return mp_ctx.songs.put(id, db_get_song_info(id));
+    {
+        song = mp_ctx.songs.put(id, db_get_song_info(id));
+        if (mp_ctx.song_constructor_callback)
+            mp_ctx.song_constructor_callback(song.get());
+    }
     return song;
 }
 
