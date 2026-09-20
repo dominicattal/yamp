@@ -6,6 +6,8 @@
       "binaryDir": "${sourceDir}/build",
       "generator": "Ninja",
       "cacheVariables": {
+        "GLFW_BUILD_X11": "1",
+        "GLFW_BUILD_WAYLAND": "0",
         "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
         "CMAKE_C_STANDARD": "23",
         "CMAKE_CXX_STANDARD": "23",

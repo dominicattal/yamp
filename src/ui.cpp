@@ -10,6 +10,7 @@
 #include <iostream>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <queue>
 #include <vector>
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 #include <spdlog/spdlog.h>
@@ -17,8 +18,41 @@
 #include <stb_image.h>
 
 #define STRING_LENGTH 512
-#define LARGE_COVER_ART_SIZE 256
-#define SMALL_COVER_ART_SIZE 64
+#define TEXTURE_SIZE_BITS 12
+#define LARGE_COVER_ART_SIZE_BITS 8
+#define SMALL_COVER_ART_SIZE_BITS 6
+#define TEXTURE_SIZE (1<<TEXTURE_SIZE_BITS)
+#define LARGE_COVER_ART_SIZE (1<<LARGE_COVER_ART_SIZE_BITS)
+#define SMALL_COVER_ART_SIZE (1<<SMALL_COVER_ART_SIZE_BITS)
+#define SLOTS_PER_TEXTURE (1<<(TEXTURE_SIZE_BITS<<1)>>(LARGE_COVER_ART_SIZE_BITS<<1))
+
+const char* vertex_shader = R"(
+    #version 430 core
+    layout (location = 0) in vec2 aTexCoords;
+
+    out vec2 TexCoords;
+
+    void main()
+    {
+        gl_Position = vec4(2.0 * (aTexCoords - 0.5), 0.0, 1.0); 
+        TexCoords = aTexCoords;
+    }  
+)";
+
+const char* fragment_shader = R"(
+    #version 430 core
+    out vec4 FragColor;
+      
+    in vec2 TexCoords;
+
+    uniform sampler2D screenTexture;
+
+    void main()
+    { 
+        FragColor = texture(screenTexture, TexCoords);
+        //FragColor = vec4(1.0f, 0.0f, 0.0f, 1.0f);
+    }
+)";
 
 enum ViewEnum {
     SHOW_RIGHT_NONE,
@@ -39,17 +73,33 @@ struct GLTexture {
     int height;
 };
 
+struct GLTexture2 {
+    GLuint id;
+    ImVec2 uv0;
+    ImVec2 uv1;
+};
+
 struct UIContext {
     GLFWwindow* window;
 
     struct TextureInfo {
-        std::unordered_map<int, GLTexture> song_map;
+        // create TEXTURE_SIZE x TEXTURE_SIZE textures that have pages for LARGE_COVER_SIZE x LARGE_COVER_SIZE
+        // images to upload. 
+        GLuint fbo;
+        GLuint fbo_texture;
+        GLuint cover_texture;
+        GLuint shader_program;
+        GLuint vao;
+        GLuint vbo;
+        std::priority_queue<int, std::vector<int>, std::greater<int>> texture_slots;
+        int texture_count;
+        std::vector<GLuint> textures;
+        std::unordered_map<int, int> song_map;
         GLTexture default_album_art;
         GLTexture play_button;
         GLTexture queue_button;
     } textures;
 
-    std::unordered_map<int, GLuint> song_textures;
     std::mutex load_queue_lock;
     std::vector<std::pair<int, std::string>> load_queue;
     std::mutex unload_queue_lock;
@@ -94,6 +144,147 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
         return;
 }
 
+static GLuint compile_shader_source(GLenum type, const char* data)
+{
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &data, NULL);
+    glCompileShader(shader);
+    GLint success{};
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) 
+    {
+        char info_log[512];
+        glGetShaderInfoLog(shader, 512, NULL, info_log);
+        std::cout << info_log << '\n';
+        exit(1);
+    }
+
+    return shader;
+}
+
+static GLuint compile_shader_program()
+{
+    GLuint shader_program = glCreateProgram();
+    GLuint vert_shader = compile_shader_source(GL_VERTEX_SHADER, vertex_shader);
+    GLuint frag_shader = compile_shader_source(GL_FRAGMENT_SHADER, fragment_shader);
+    glAttachShader(shader_program, vert_shader);
+    glAttachShader(shader_program, frag_shader);
+
+    GLint success;
+    glLinkProgram(shader_program);
+    glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
+    assert(success);
+
+    glDetachShader(shader_program, vert_shader);
+    glDetachShader(shader_program, frag_shader);
+    glDeleteShader(vert_shader);
+    glDeleteShader(frag_shader);
+
+    return shader_program;
+}
+
+static GLTexture2 get_texture_from_slot_idx(int slot_idx)
+{
+    const float size = static_cast<float>(LARGE_COVER_ART_SIZE) / TEXTURE_SIZE;
+    const int slots_across = TEXTURE_SIZE / LARGE_COVER_ART_SIZE;
+    const float x_off = static_cast<float>((slot_idx % SLOTS_PER_TEXTURE) % slots_across * LARGE_COVER_ART_SIZE) / TEXTURE_SIZE;
+    const float y_off = static_cast<float>((slot_idx % SLOTS_PER_TEXTURE) / slots_across * LARGE_COVER_ART_SIZE) / TEXTURE_SIZE;
+    return { 
+        .id = ctx.textures.textures[slot_idx / SLOTS_PER_TEXTURE],
+        .uv0 = ImVec2(x_off, y_off),
+        .uv1 = ImVec2(x_off + size, y_off + size),
+    };
+}
+
+static void initialize_texture_fbo()
+{
+    ctx.textures.shader_program = compile_shader_program();
+
+    glUseProgram(ctx.textures.shader_program);
+    glGenVertexArrays(1, &ctx.textures.vao);
+    glBindVertexArray(ctx.textures.vao);
+
+    glGenBuffers(1, &ctx.textures.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, ctx.textures.vbo);
+    const float vertices[] = {
+        0.0f, 0.0f,
+        1.0f, 0.0f,
+        0.0f, 1.0f,
+        1.0f, 1.0f
+    };
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glGenFramebuffers(1, &ctx.textures.fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, ctx.textures.fbo);
+
+    glGenTextures(1, &ctx.textures.fbo_texture);
+    glBindTexture(GL_TEXTURE_2D, ctx.textures.fbo_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ctx.textures.fbo_texture, 0);
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    glGenTextures(1, &ctx.textures.cover_texture);
+    glBindTexture(GL_TEXTURE_2D, ctx.textures.cover_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+}
+
+static int create_texture(unsigned char* data, int width, int height)
+{
+    (void)data; (void)width; (void)height;
+    if (ctx.textures.texture_slots.size() == 0)
+        ctx.textures.texture_slots.push(ctx.textures.texture_count++);
+
+    GLuint id;
+    const int slot_idx = ctx.textures.texture_slots.top();
+    ctx.textures.texture_slots.pop();
+    const size_t texture_idx = slot_idx / SLOTS_PER_TEXTURE;
+    assert(texture_idx <= ctx.textures.textures.size());
+    if (texture_idx == ctx.textures.textures.size())
+    {
+        glGenTextures(1, &id);
+        glBindTexture(GL_TEXTURE_2D, id);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TEXTURE_SIZE, TEXTURE_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        ctx.textures.textures.push_back(id);
+    }
+    id = ctx.textures.textures[texture_idx];
+    glBindFramebuffer(GL_FRAMEBUFFER, ctx.textures.fbo);
+    glViewport(0, 0, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(ctx.textures.shader_program);
+    glBindTexture(GL_TEXTURE_2D, ctx.textures.cover_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glBindVertexArray(ctx.textures.vao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    int window_width, window_height;
+    glfwGetWindowSize(ctx.window, &window_width, &window_height);
+    glViewport(0, 0, window_width, window_height);
+
+    const int slots_across = TEXTURE_SIZE / LARGE_COVER_ART_SIZE;
+    const int x_off = (slot_idx % SLOTS_PER_TEXTURE) % slots_across * LARGE_COVER_ART_SIZE;
+    const int y_off = (slot_idx % SLOTS_PER_TEXTURE) / slots_across * LARGE_COVER_ART_SIZE;
+    glCopyImageSubData(
+        ctx.textures.fbo_texture, GL_TEXTURE_2D, 0, 0, 0, 0,
+        id,                       GL_TEXTURE_2D, 0, x_off, y_off, 0.0f,
+        LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 1);
+
+    return slot_idx;
+}
+
+static void delete_texture(int slot_idx)
+{
+    ctx.textures.texture_slots.push(slot_idx);
+}
+
 static void initialize_default_texture(GLuint* id, const char* path, int* width, int* height)
 {
     glGenTextures(1, id);
@@ -121,8 +312,6 @@ static void cleanup_textures()
 {
     glDeleteTextures(1, &ctx.right_side_texture);
     glDeleteTextures(1, &ctx.textures.default_album_art.id);
-    for (auto song_texture : ctx.textures.song_map)
-        glDeleteTextures(1, &song_texture.second.id);
 }
 
 [[maybe_unused]] static void song_constructor_callback(Song* song)
@@ -132,39 +321,33 @@ static void cleanup_textures()
 
 static void update_textures()
 {
-    for (auto& [song_id, path] : ctx.load_queue)
+    if (ctx.load_queue.size() > 0)
     {
-        SPDLOG_INFO("AAA {}", song_id);
-        FrontCover front_cover = mp_song_front_cover_load(path);
-        if (front_cover.data == nullptr) {
-            ctx.textures.song_map[song_id].id = ctx.textures.default_album_art.id;
-            return;
+        std::lock_guard lock_guard{ctx.load_queue_lock};
+        
+        for (auto& [song_id, path] : ctx.load_queue)
+        {
+            FrontCover front_cover = mp_song_front_cover_load(path);
+            int slot_idx = create_texture(front_cover.data, front_cover.width, front_cover.height);
+            ctx.textures.song_map[song_id] = slot_idx;
+            mp_song_front_cover_free(&front_cover);
         }
-
-        if (ctx.textures.song_map[song_id].id != ctx.textures.default_album_art.id)
-            glDeleteTextures(1, &ctx.textures.song_map[song_id].id);
-
-        glGenTextures(1, &ctx.textures.song_map[song_id].id);
-        glBindTexture(GL_TEXTURE_2D, ctx.textures.song_map[song_id].id);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        ctx.textures.song_map[song_id].width = front_cover.width;
-        ctx.textures.song_map[song_id].height = front_cover.height;
-
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
-
-        mp_song_front_cover_free(&front_cover);
-        SPDLOG_INFO("{} {}", song_id, path);
+        ctx.load_queue.clear();
     }
-    ctx.load_queue.clear();
-    for (int song_id : ctx.unload_queue)
+
+    if (ctx.unload_queue.size() > 0)
     {
-        SPDLOG_INFO("BBB {}", song_id);
-        if (auto it = ctx.textures.song_map.find(song_id); it != ctx.textures.song_map.end())
-            ctx.textures.song_map.erase(it);
-    }
-    ctx.unload_queue.clear();
+        std::lock_guard lock_guard{ctx.load_queue_lock};
 
+        for (int song_id : ctx.unload_queue)
+        {
+            auto it = ctx.textures.song_map.find(song_id); 
+            assert(it != ctx.textures.song_map.end());
+            delete_texture(ctx.textures.song_map[song_id]);
+            ctx.textures.song_map.erase(it);
+        }
+        ctx.unload_queue.clear();
+    }
 }
 
 [[maybe_unused]] static void set_right_side_song_id(int song_id)
@@ -197,30 +380,8 @@ void ui_init()
     if (!glfwInit())
         exit(1);
 
-    // Select GL version + let the backend select a GLSL version
-#if defined(IMGUI_IMPL_OPENGL_ES2)
-    // GL ES 2.0 + GLSL 100 (WebGL 1.0)
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-#elif defined(IMGUI_IMPL_OPENGL_ES3)
-    // GL ES 3.0 + GLSL 300 es (WebGL 2.0)
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-#elif defined(__APPLE__)
-    // GL 3.2 + generally GLSL 150
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
-#else
-    // GL 3.0 + generally GLSL 130
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-    //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
-#endif
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 
     float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
     int window_width = (int)(1280 * main_scale);
@@ -233,6 +394,8 @@ void ui_init()
     gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
     glfwSwapInterval(1);
     glfwSetKeyCallback(ctx.window, key_callback);
+
+    initialize_texture_fbo();
 
     initialize_default_textures();
     
@@ -263,8 +426,6 @@ void ui_init()
     mp_ctx.songs.set_destructor_callback(
         [](Song* song) -> void
         {
-            (void)song;
-            SPDLOG_INFO("AAAAAAAAAAAA");
             std::lock_guard lock{ctx.unload_queue_lock};
             ctx.unload_queue.push_back(song->id);
         });
@@ -273,6 +434,7 @@ void ui_init()
 void ui_cleanup()
 {
     cleanup_textures();
+    glDeleteFramebuffers(1, &ctx.textures.fbo);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -285,8 +447,17 @@ void ui_cleanup()
 
 static void draw_left_side()
 {
-    GLuint texture = (mp_ctx.current_song) ? ctx.textures.song_map[mp_ctx.current_song->id].id : ctx.textures.default_album_art.id;
-    ImGui::ImageWithBg(texture, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    const ImVec2 size = ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
+    if (mp_ctx.current_song != nullptr && ctx.textures.song_map.find(mp_ctx.current_song->id) != ctx.textures.song_map.end())
+    {
+        GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[mp_ctx.current_song->id]);
+        ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    }
+    else
+    {
+        ImGui::ImageWithBg(ctx.textures.default_album_art.id, size);
+    }
+
     if (ImGui::Button("Skip", ImVec2(100, 30)) || (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_S)))
     {
         mp_queue_skip();
@@ -507,7 +678,20 @@ static void draw_search_results()
             if (ImGui::Button("Queue"))
                 mp_queue_song(song->id);
             ImGui::TableNextColumn();
-            ImGui::ImageWithBg(ctx.textures.song_map[song->id].id, ImVec2(SMALL_COVER_ART_SIZE, SMALL_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+            GLTexture2 tex;
+            if (ctx.textures.song_map.find(song->id) != ctx.textures.song_map.end())
+                tex = get_texture_from_slot_idx(ctx.textures.song_map[song->id]);
+            else
+            {
+                tex = {
+                    .id = ctx.textures.default_album_art.id,
+                    .uv0 = ImVec2(0.0f, 0.0f),
+                    .uv1 = ImVec2(1.0f, 1.0f),
+                };
+            }
+            ImGui::ImageWithBg(tex.id, ImVec2(SMALL_COVER_ART_SIZE, SMALL_COVER_ART_SIZE), tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
             int artist_id = mp_get_artist_id_from_song_id(song->id);
@@ -556,7 +740,7 @@ static void draw_album_info()
     int artist_id = mp_get_artist_id_from_album_id(ctx.open_album_id);
     const Artist* artist = mp_get_artist_from_id(artist_id);
 
-    ImGui::ImageWithBg(ctx.textures.song_map[tracks[0].song_id].id, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(ctx.textures.default_album_art.id, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::SameLine();
     {
         ImGui::BeginChild("album_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
@@ -635,7 +819,7 @@ static void draw_playlist_info()
 
     const Playlist* playlist = mp_get_playlist_from_id(ctx.open_playlist_id);
 
-    GLuint texture = (tracks.size() > 0) ? ctx.textures.song_map[tracks[0].song_id].id : ctx.textures.default_album_art.id;
+    GLuint texture = ctx.textures.default_album_art.id;
 
     ImGui::ImageWithBg(texture, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::SameLine();
@@ -752,7 +936,7 @@ static void draw_artist_info()
             if (ImGui::Button("Queue"))
                 mp_queue_song(song_id);
             ImGui::TableNextColumn();
-            ImGui::ImageWithBg(ctx.textures.song_map[song_id].id, ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImGui::ImageWithBg(ctx.textures.default_album_art.id, ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
             int artist_id = mp_get_artist_id_from_song_id(song_id);
@@ -904,7 +1088,7 @@ void draw_right_side()
         return;
     }
     LruCacheRef<Song> song = mp_get_song_from_id(ctx.right_side_song_id);
-    if (ImGui::ImageButton("Press", ctx.textures.song_map[song->id].id, ImVec2(300, 300)))
+    if (ImGui::ImageButton("Press", ctx.textures.default_album_art.id, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE)))
     {
         const std::string title {"Choose files to read"};
         const std::string default_path = pfd::path::home();

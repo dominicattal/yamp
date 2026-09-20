@@ -133,7 +133,7 @@ public:
     using Iterator = typename std::list<LruCacheEntry>::iterator;
 
     LruCache()
-        : m_max_size{3}, m_mutex{}, m_list{}, m_destructor_callback{}, m_map{}
+        : m_max_size{256}, m_mutex{}, m_list{}, m_destructor_callback{}, m_map{}
     {
     }
     LruCacheRef<val_t> get(int key)
