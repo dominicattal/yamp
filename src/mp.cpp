@@ -50,11 +50,9 @@ static int db_get_album_id(const char* name);
 static int db_get_artist_id(const char* name);
 static int db_get_playlist_id(const char* name);
 static Song db_get_song_info(int song_id);
-[[maybe_unused]] static int db_get_artist_id_from_song_id(int song_id);
-[[maybe_unused]] static int db_count_songs_with_artist(int artist_id);
-[[maybe_unused]] static int db_count_albums_with_artist(int artist_id);
-[[maybe_unused]] static int db_count_songs_in_album(int album_id);
-
+static Album db_get_album_info(int album_id);
+static Artist db_get_artist_info(int album_id);
+static Playlist db_get_playlist_info(int album_id);
 static bool db_exists_artist_album(int artist_id, int album_id);
 
 // Update
@@ -71,57 +69,6 @@ static void db_delete_artist(int artist_id);
 // DB DEFINITIONS
 // -----------------------
 
-[[maybe_unused]] static int db_get_artist_id_from_song_id(int song_id)
-{
-    sqlite3_stmt* stmt;
-    const char* query = "SELECT artist_id FROM AritstSong WHERE song_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_int(stmt, 1, song_id);
-    int res = sqlite3_step(stmt);
-    int artist_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
-    sqlite3_finalize(stmt);
-    return artist_id;
-}
-
-[[maybe_unused]] static int db_count_songs_with_artist(int artist_id)
-{
-    sqlite3_stmt* stmt;
-    const char* query = "SELECT COUNT(artist_id) FROM ArtistSong WHERE artist_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_int(stmt, 1, artist_id);
-    int res = sqlite3_step(stmt);
-    assert(res == SQLITE_ROW);
-    int count = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-    return count;
-}
-
-[[maybe_unused]] static int db_count_albums_with_artist(int artist_id)
-{
-    sqlite3_stmt* stmt;
-    const char* query = "SELECT COUNT(artist_id) FROM ArtistAlbum WHERE artist_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_int(stmt, 1, artist_id);
-    int res = sqlite3_step(stmt);
-    assert(res == SQLITE_ROW);
-    int count = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-    return count;
-}
-
-[[maybe_unused]] static int db_count_songs_in_album(int album_id)
-{
-    sqlite3_stmt* stmt;
-    const char* query = "SELECT COUNT(album_id) FROM AlbumSong WHERE album_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_int(stmt, 1, album_id);
-    int res = sqlite3_step(stmt);
-    assert(res == SQLITE_ROW);
-    int count = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-    return count;
-}
-
 static int db_get_song_id(const char* song_path)
 {
     sqlite3_stmt* stmt;
@@ -136,6 +83,9 @@ static int db_get_song_id(const char* song_path)
 
 static Song db_get_song_info(int song_id)
 {
+    Song song{};
+    song.id = song_id;
+
     sqlite3_stmt* stmt;
     const char* query = "SELECT title, path, length FROM Songs WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
@@ -145,9 +95,110 @@ static Song db_get_song_info(int song_id)
     const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
     const char* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
     const float length = static_cast<float>(sqlite3_column_double(stmt, 2));
-    Song song{title, path, length, song_id};
+    song.title = title;
+    song.path = path;
+    song.length = length;
     sqlite3_finalize(stmt);
+
+    query = "SELECT artist_id FROM ArtistSong WHERE song_id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, song_id);
+    res = sqlite3_step(stmt);
+    if (res == SQLITE_ROW)
+        song.artist_id = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+
+    query = "SELECT album_id FROM AlbumSong WHERE song_id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, song_id);
+    res = sqlite3_step(stmt);
+    if (res == SQLITE_ROW)
+        song.album_id = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+
     return song;
+}
+
+static Album db_get_album_info(int album_id)
+{
+    Album album{};
+    album.id = album_id;
+
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT name FROM Albums WHERE id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, album_id);
+    int res = sqlite3_step(stmt);
+    assert(res == SQLITE_ROW);
+    album.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+
+    query = "SELECT song_id, track FROM AlbumSong WHERE album_id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, album_id);
+    while (sqlite3_step(stmt) == SQLITE_ROW)    
+    {
+        const int song_id = sqlite3_column_int(stmt, 0);
+        const int track = sqlite3_column_int(stmt, 1);
+        LruCacheRef<Song> song = mp_get_song_from_id(song_id);
+        album.length += song->length;
+        album.songs.emplace_back(std::move(song), track);
+    }
+    sqlite3_finalize(stmt);
+
+    query = "SELECT artist_id FROM ArtistAlbum WHERE album_id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, album_id);
+    res = sqlite3_step(stmt);
+    if (res == SQLITE_ROW)
+        album.artist_id = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+
+    return album;
+}
+
+static Artist db_get_artist_info(int artist_id)
+{
+    Artist artist{};
+    artist.id = artist_id;
+    
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT name FROM Artists WHERE id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, artist_id);
+    int res = sqlite3_step(stmt);
+    assert(res == SQLITE_ROW);
+    artist.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+
+    return artist;
+}
+
+static Playlist db_get_playlist_info(int playlist_id)
+{
+    Playlist playlist{};
+    playlist.id = playlist_id;
+
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT name FROM Playlists WHERE id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, playlist_id);
+    int res = sqlite3_step(stmt);
+    assert(res == SQLITE_ROW);
+    playlist.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+
+    query = "SELECT song_id, track FROM PlaylistSong WHERE playlist_id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, playlist_id);
+    while (sqlite3_step(stmt) == SQLITE_ROW)    
+    {
+        const int song_id = sqlite3_column_int(stmt, 0);
+        const int track = sqlite3_column_int(stmt, 1);
+        LruCacheRef<Song> song = mp_get_song_from_id(song_id);
+        playlist.length += song->length;
+        playlist.songs.emplace_back(std::move(song), track);
+    }
+    sqlite3_finalize(stmt);
+
+    return playlist;
 }
 
 static int db_get_artist_id(const char* name)
@@ -385,68 +436,6 @@ static void db_create_artist_album(int artist_id, int album_id)
 // DB API END
 // -----------------------
 
-static int album_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)keys;
-    int album_id = std::atoi(values[0]);
-    mp_ctx.albums.emplace_back(values[1], album_id, 0.0f);
-    return 0;
-}
-
-static int artist_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)keys;
-    int artist_id = std::atoi(values[0]);
-    mp_ctx.artists.emplace_back(values[1], artist_id);
-    return 0;
-}
-
-static int playlist_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)keys;
-    int playlist_id = std::atoi(values[0]);
-    mp_ctx.playlists.emplace_back(values[1], playlist_id, 0.0f);
-    return 0;
-}
-
-static int album_song_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)values; (void)keys;
-    int album_id = std::atoi(values[0]);
-    int song_id = std::atoi(values[1]);
-    int track = std::atoi(values[2]);
-    mp_ctx.album_songs.emplace_back(album_id, song_id, track);
-    return 0;
-}
-
-static int artist_song_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)values; (void)keys;
-    int artist_id = std::atoi(values[0]);
-    int song_id = std::atoi(values[1]);
-    mp_ctx.artist_songs.emplace_back(artist_id, song_id);
-    return 0;
-}
-
-static int artist_album_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)values; (void)keys;
-    int artist_id = std::atoi(values[0]);
-    int album_id = std::atoi(values[1]);
-    mp_ctx.artist_albums.emplace_back(artist_id, album_id);
-    return 0;
-}
-
-static int playlist_song_callback(void* data, int num_cols, char** values, char** keys)
-{
-    (void)data; (void)num_cols; (void)values; (void)keys;
-    int playlist_id = std::atoi(values[0]);
-    int song_id = std::atoi(values[1]);
-    int track = std::atoi(values[2]);
-    mp_ctx.playlist_songs.emplace_back(playlist_id, song_id, track);
-    return 0;
-}
-
 static void execute_file(const char* path)
 {
     auto size = std::filesystem::file_size(path);
@@ -495,20 +484,6 @@ void mp_init()
     res = ma_engine_init(NULL, &ctx.engine);
     if (res != MA_SUCCESS)
         exit(1);
-
-    //sqlite3_exec(ctx.db, "SELECT * FROM Songs", song_callback, NULL, NULL);
-    sqlite3_exec(ctx.db, "SELECT * FROM Albums", album_callback, NULL, NULL);
-    sqlite3_exec(ctx.db, "SELECT * FROM Artists", artist_callback, NULL, NULL);
-    sqlite3_exec(ctx.db, "SELECT * FROM Playlists", playlist_callback, NULL, NULL);
-    sqlite3_exec(ctx.db, "SELECT * FROM AlbumSong", album_song_callback, NULL, NULL);
-    sqlite3_exec(ctx.db, "SELECT * FROM ArtistAlbum", artist_album_callback, NULL, NULL);
-    sqlite3_exec(ctx.db, "SELECT * FROM ArtistSong", artist_song_callback, NULL, NULL);
-    sqlite3_exec(ctx.db, "SELECT * FROM PlaylistSong", playlist_song_callback, NULL, NULL);
-
-    //for (Album& album : mp_ctx.albums)
-    //    mp_update_album_length(album.id);
-    //for (Playlist& playlist : mp_ctx.playlists)
-    //    mp_update_playlist_length(playlist.id);
 }
 
 void mp_cleanup()
@@ -568,35 +543,20 @@ void mp_add_song(const std::string& song_path)
     {
         album_id = db_get_album_id(album_name.c_str());
         if (album_id == -1) 
-        {
             db_create_album(album_name.c_str());
-            album_id = db_get_album_id(album_name.c_str());
-            mp_ctx.albums.emplace_back(album_name, album_id);
-        }
         db_create_album_song(album_id, song_id, track);
-        mp_ctx.album_songs.emplace_back(album_id, song_id, track);
-        mp_update_album_length(album_id);
     }
 
     if (artist_name.size() > 0) 
     {
         artist_id = db_get_artist_id(artist_name.c_str());
         if (artist_id == -1)
-        {
             db_create_artist(artist_name.c_str());
-            artist_id = db_get_artist_id(artist_name.c_str());
-            mp_ctx.artists.emplace_back(artist_name, artist_id);
-        }
         db_create_artist_song(artist_id, song_id);
-        mp_ctx.artist_songs.emplace_back(artist_id, song_id);
     }
 
-    if (artist_id > 0 && album_id > 0 && !db_exists_artist_album(artist_id, album_id)) 
-    {
+    if (album_id != 0 && artist_id != 0 && !db_exists_artist_album(artist_id, album_id))
         db_create_artist_album(artist_id, album_id);
-        mp_ctx.artist_albums.emplace_back(artist_id, album_id);
-        SPDLOG_INFO("Associated artist={} album={}", artist_id, album_id);
-    }
 }
 
 void mp_add_songs(const std::vector<std::string>& song_paths)
@@ -625,8 +585,6 @@ int mp_create_playlist()
     db_create_playlist(playlist_name);
     int playlist_id = db_get_playlist_id(playlist_name);
 
-    mp_ctx.playlists.emplace_back(playlist_name, playlist_id);
-
     return playlist_id;
 }
 
@@ -641,14 +599,13 @@ void mp_add_song_id_to_playlist_id(int song_id, int playlist_id)
 {
     int track = mp_get_num_tracks_in_playlist_id(playlist_id) + 1;
     db_create_playlist_song(playlist_id, song_id, track);
-    mp_ctx.playlist_songs.emplace_back(playlist_id, song_id, track);
     mp_update_playlist_length(playlist_id);
 }
 
 void mp_add_album_id_to_playlist_id(int album_id, int playlist_id)
 {
-    for (auto [song_id, track] : mp_get_song_ids_from_album_id(album_id))
-        mp_add_song_id_to_playlist_id(song_id, playlist_id);
+    for (auto & [song, track] : mp_get_song_ids_from_album_id(album_id))
+        mp_add_song_id_to_playlist_id(song->id, playlist_id);
 }
 
 static void end_song_callback(void* user_data, ma_sound* sound)
@@ -734,12 +691,8 @@ void mp_update_cursor()
     ma_sound_seek_to_second(&ctx.current_song_sound, mp_ctx.current_song_cursor);
 }
 
-static void add_playlist_songs_to_group_queue(int playlist_id)
+static void sort_or_shuffle_group_queue()
 {
-    mp_ctx.group_queue.clear();
-    for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs)
-        if (playlist_song.playlist_id == playlist_id)
-            mp_ctx.group_queue.emplace_back(playlist_song.song_id, playlist_song.track);
     if (mp_ctx.shuffle) {
         std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
     } else {
@@ -750,19 +703,22 @@ static void add_playlist_songs_to_group_queue(int playlist_id)
     }
 }
 
+static void add_playlist_songs_to_group_queue(int playlist_id)
+{
+    mp_ctx.group_queue.clear();
+    LruCacheRef<Playlist> playlist = mp_get_playlist_from_id(playlist_id);
+    for (SongTrack& song_track : playlist->songs)
+        mp_ctx.group_queue.push_back(std::move(song_track));
+    sort_or_shuffle_group_queue();
+}
+
 static void add_album_songs_to_group_queue(int album_id)
 {
     mp_ctx.group_queue.clear();
-    for (const AlbumSong& album_song : mp_ctx.album_songs)
-        if (album_song.album_id == album_id)
-            mp_ctx.group_queue.emplace_back(album_song.song_id, album_song.track);
-    if (mp_ctx.shuffle) {
-        std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
-    } else {
-        std::sort(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
-                return pair1.track < pair2.track;
-        });
-    }
+    LruCacheRef<Album> album = mp_get_album_from_id(album_id);
+    for (SongTrack& song_track : album->songs)
+        mp_ctx.group_queue.push_back(std::move(song_track));
+    sort_or_shuffle_group_queue();
 }
 
 void mp_play_playlist(int playlist_id)
@@ -884,8 +840,7 @@ void mp_song_update(int song_id, const char* title, const char* artist, const ch
 LruCacheRef<Song> mp_get_song_from_id(int id)
 {
     LruCacheRef<Song> song = mp_ctx.songs.get(id);
-    if (song == nullptr)
-    {
+    if (song == nullptr) {
         song = mp_ctx.songs.put(id, db_get_song_info(id));
         if (mp_ctx.song_constructor_callback)
             mp_ctx.song_constructor_callback(song.get());
@@ -893,143 +848,40 @@ LruCacheRef<Song> mp_get_song_from_id(int id)
     return song;
 }
 
-Album* mp_get_album_from_id(int id)
+LruCacheRef<Album> mp_get_album_from_id(int id)
 {
-    for (Album& album : mp_ctx.albums)
-        if (album.id == id)
-            return &album;
-    return nullptr;
-}
-
-Artist* mp_get_artist_from_id(int id)
-{
-    for (Artist& artist : mp_ctx.artists)
-        if (artist.id == id)
-            return &artist;
-    return nullptr;
-}
-
-Playlist* mp_get_playlist_from_id(int id)
-{
-    for (Playlist& playlist : mp_ctx.playlists)
-        if (playlist.id == id)
-            return &playlist;
-    return nullptr;
-}
-
-int mp_get_artist_id_from_song_id(int song_id)
-{
-    for (const ArtistSong& artist_song : mp_ctx.artist_songs)
-        if (artist_song.song_id == song_id)
-            return artist_song.artist_id;
-    return -1;
-}
-
-int mp_get_artist_id_from_album_id(int album_id)
-{
-    for (const ArtistAlbum& artist_album : mp_ctx.artist_albums)
-        if (artist_album.album_id == album_id)
-            return artist_album.artist_id;
-    return -1;
-}
-
-std::vector<SongTrack> mp_get_song_ids_from_album_id(int album_id)
-{
-    std::vector<SongTrack> result{};
-    for (const AlbumSong& album_song : mp_ctx.album_songs)
-        if (album_song.album_id == album_id)
-            result.emplace_back(album_song.song_id, album_song.track);
-    std::sort(result.begin(), result.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
-                return pair1.track < pair2.track;
-            });
-    return result;
-}
-
-int mp_get_num_tracks_in_playlist_id(int playlist_id)
-{
-    int count = 0;
-    for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs)
-        if (playlist_song.playlist_id == playlist_id)
-            ++count;
-    return count;
-}
-
-std::vector<SongTrack> mp_get_song_ids_from_playlist_id(int playlist_id)
-{
-    std::vector<SongTrack> result{};
-    for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs) {
-        if (playlist_song.playlist_id == playlist_id)
-            result.emplace_back(playlist_song.song_id, playlist_song.track);
-    }
-    std::sort(result.begin(), result.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
-                return pair1.track < pair2.track;
-            });
-    return result;
-}
-
-void mp_update_album_length(int album_id)
-{
-    Album* album{};
-    for (Album& test_album : mp_ctx.albums)
-        if (test_album.id == album_id)
-            album = &test_album;
+    LruCacheRef<Album> album = mp_ctx.albums.get(id);
     if (album == nullptr)
-        return;
-    album->length = 0;
-    for (const AlbumSong& album_song : mp_ctx.album_songs) {
-        if (album_song.album_id == album_id) {
-            LruCacheRef<Song> song = mp_get_song_from_id(album_song.song_id);
-            album->length += song->length;
-        }
-    }
+        album = mp_ctx.albums.put(id, db_get_album_info(id));
+    return album;
 }
 
-void mp_update_playlist_length(int playlist_id)
+LruCacheRef<Artist> mp_get_artist_from_id(int id)
 {
-    Playlist* playlist = mp_get_playlist_from_id(playlist_id);
+    LruCacheRef<Artist> artist = mp_ctx.artists.get(id);
+    if (artist == nullptr)
+        artist = mp_ctx.artists.put(id, db_get_artist_info(id));
+    return artist;
+}
+
+LruCacheRef<Playlist> mp_get_playlist_from_id(int id)
+{
+    LruCacheRef<Playlist> playlist = mp_ctx.playlists.get(id);
     if (playlist == nullptr)
-        return;
-    playlist->length = 0;
-    for (const PlaylistSong& playlist_song : mp_ctx.playlist_songs) {
-        if (playlist_song.playlist_id == playlist_id) {
-            LruCacheRef<Song> song = mp_get_song_from_id(playlist_song.song_id);
-            playlist->length += song->length;
-        }
-    }
+        playlist = mp_ctx.playlists.put(id, db_get_playlist_info(id));
+    return playlist;
 }
 
 std::vector<int> mp_get_song_ids_from_artist_id(int artist_id)
 {
-    std::vector<int> result{};
-    for (const ArtistSong& artist_song : mp_ctx.artist_songs)
-        if (artist_song.artist_id == artist_id)
-            result.push_back(artist_song.song_id);
-    return result;
+    (void)artist_id;
+    return {};
 }
 
 std::vector<int> mp_get_album_ids_from_artist_id(int artist_id)
 {
-    std::vector<int> result{};
-    for (const ArtistAlbum& artist_album : mp_ctx.artist_albums)
-        if (artist_album.artist_id == artist_id)
-            result.push_back(artist_album.album_id);
-    return result;
-}
-
-int mp_get_album_id_from_song_id(int song_id)
-{
-    for (const AlbumSong& album_song : mp_ctx.album_songs)
-        if (album_song.song_id == song_id)
-            return album_song.album_id;
-    return -1;
-}
-
-int mp_get_album_id_from_artist_id(int artist_id)
-{
-    for (const ArtistAlbum& artist_album : mp_ctx.artist_albums)
-        if (artist_album.artist_id == artist_id)
-            return artist_album.album_id;
-    return -1;
+    (void)artist_id;
+    return {};
 }
 
 static void play_next_group_song()
@@ -1052,10 +904,9 @@ static void play_next_group_song()
             return;
         }
     }
-    SongTrack song_track = mp_ctx.group_queue.front();
-    LruCacheRef<Song> song = mp_get_song_from_id(song_track.song_id);
+    const SongTrack& song_track = mp_ctx.group_queue.front();
     mp_ctx.group_queue.pop_front();
-    mp_play_song(song->id);
+    mp_play_song(song_track.song->id);
 }
 
 void mp_queue_skip()

@@ -18,8 +18,15 @@ enum LoopMode {
 struct Song {
     std::string title;
     std::string path;
-    float length;
     int id;
+    int album_id;
+    int artist_id;
+    float length;
+};
+
+struct SongTrack {
+    LruCacheRef<Song> song;
+    int track;
 };
 
 struct Artist {
@@ -28,42 +35,18 @@ struct Artist {
 };
 
 struct Album {
+    std::vector<SongTrack> songs;
     std::string name;
     int id;
+    int artist_id;
     float length;
 };
 
 struct Playlist {
+    std::vector<SongTrack> songs;
     std::string name;
     int id;
     float length;
-};
-
-struct AlbumSong {
-    int album_id;
-    int song_id;
-    int track;
-};
-
-struct PlaylistSong {
-    int playlist_id;
-    int song_id;
-    int track;
-};
-
-struct ArtistSong {
-    int artist_id;
-    int song_id;
-};
-
-struct ArtistAlbum {
-    int artist_id;
-    int album_id;
-};
-
-struct SongTrack {
-    int song_id;
-    int track;
 };
 
 struct FrontCover {
@@ -77,18 +60,11 @@ using SongCallback = std::function<void(Song* song)>;
 struct MPContext {
 
     LruCache<Song> songs;
+    LruCache<Album> albums;
+    LruCache<Artist> artists;
+    LruCache<Playlist> playlists;
 
     LruCacheRef<Song> current_song;
-
-    //std::vector<Song> songs;
-    std::vector<Album> albums;
-    std::vector<Artist> artists;
-    std::vector<Playlist> playlists;
-
-    std::vector<AlbumSong> album_songs;
-    std::vector<ArtistSong> artist_songs;
-    std::vector<ArtistAlbum> artist_albums;
-    std::vector<PlaylistSong> playlist_songs;
 
     SongCallback song_constructor_callback;
 
@@ -98,7 +74,7 @@ struct MPContext {
     // this stores songs that come on autoplay
     std::deque<LruCacheRef<Song>> autoplay_queue;
 
-    // this stores the order songs should be play in the group
+    // this stores the order songs should be played in the group
     std::deque<SongTrack> group_queue;
 
     // this stores the songs from the most recent search
@@ -175,21 +151,14 @@ void mp_song_update(int song_id, const char* title, const char* artist, const ch
 const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query);
 
 LruCacheRef<Song> mp_get_song_from_id(int id);
-Album* mp_get_album_from_id(int id);
-Artist* mp_get_artist_from_id(int id);
-Playlist* mp_get_playlist_from_id(int id);
+LruCacheRef<Album> mp_get_album_from_id(int id);
+LruCacheRef<Artist> mp_get_artist_from_id(int id);
+LruCacheRef<Playlist> mp_get_playlist_from_id(int id);
 
-int mp_get_album_id_from_song_id(int song_id);
-int mp_get_artist_id_from_song_id(int song_id);
-int mp_get_artist_id_from_album_id(int album_id);
 std::vector<SongTrack> mp_get_song_ids_from_album_id(int album_id);
-int mp_get_num_tracks_in_playlist_id(int playlist_id);
 std::vector<SongTrack> mp_get_song_ids_from_playlist_id(int playlist_id);
 std::vector<int> mp_get_album_ids_from_artist_id(int artist_id);
 std::vector<int> mp_get_song_ids_from_artist_id(int artist_id);
-
-void mp_update_album_length(int album_id);
-void mp_update_playlist_length(int playlist_id);
 
 // Skip current song in queue
 void mp_queue_skip();

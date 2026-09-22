@@ -60,7 +60,6 @@ enum ViewEnum {
     SHOW_RIGHT_SONG,
     SHOW_RIGHT_PLAYLIST,
     SHOW_CENTER_NONE,
-    SHOW_CENTER_ALL_SONGS,
     SHOW_CENTER_ALBUM,
     SHOW_CENTER_PLAYLIST,
     SHOW_CENTER_ARTIST,
@@ -350,30 +349,6 @@ static void update_textures()
     }
 }
 
-[[maybe_unused]] static void set_right_side_song_id(int song_id)
-{
-    LruCacheRef<Song> song = mp_get_song_from_id(song_id);
-    const Artist* artist = mp_get_artist_from_id(mp_get_artist_id_from_song_id(song_id));
-    const Album* album = mp_get_album_from_id(mp_get_album_id_from_song_id(song_id));
-    ctx.right_side = SHOW_RIGHT_SONG;
-    ctx.right_side_changed = false;
-
-    FrontCover front_cover = mp_song_front_cover_load(song->path);
-    glBindTexture(GL_TEXTURE_2D, ctx.right_side_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, front_cover.width, front_cover.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_cover.data);
-    mp_song_front_cover_free(&front_cover);
-
-    ctx.right_side_song_id = song_id;
-    ctx.right_side_song_title[0] = '\0';
-    ctx.right_side_song_artist[0] = '\0';
-    ctx.right_side_song_album[0] = '\0';
-    std::strncpy(ctx.right_side_song_title, song->title.c_str(), STRING_LENGTH);
-    if (artist != nullptr)
-        std::strncpy(ctx.right_side_song_artist, artist->name.c_str(), STRING_LENGTH);
-    if (album != nullptr)
-        std::strncpy(ctx.right_side_song_album, album->name.c_str(), STRING_LENGTH);
-}
-
 void ui_init()
 {
     glfwSetErrorCallback(glfw_error_callback);
@@ -523,14 +498,13 @@ static void draw_left_side()
     {
         ImGui::TableSetupColumn("Queue", ImGuiTableColumnFlags_NoSort);
         ImGui::TableHeadersRow();
-        for (LruCacheRef<Song> & song : mp_ctx.queue)
+        for (const LruCacheRef<Song> & song : mp_ctx.queue)
         {
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
         }
-        for (auto [song_id, track] : mp_ctx.group_queue)
+        for (const auto& [song, track] : mp_ctx.group_queue)
         {
-            LruCacheRef<Song> song = mp_get_song_from_id(song_id);
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
         }
@@ -554,108 +528,20 @@ static void draw_left_side()
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoSort);
         ImGui::TableHeadersRow();
-        for (const Playlist& playlist : mp_ctx.playlists)
-        {
-            ImGui::PushID(playlist.id);
-            ImGui::TableNextColumn();
-            if (ImGui::Button("Show")) {
-                ctx.center = SHOW_CENTER_PLAYLIST;
-                ctx.open_playlist_id = playlist.id;
-            }
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", playlist.name.c_str());
-            ImGui::PopID();
-        }
+        //for (const LruCacheRef<Playlist>& playlist : mp_ctx.playlists)
+        //{
+        //    ImGui::PushID(playlist.id);
+        //    ImGui::TableNextColumn();
+        //    if (ImGui::Button("Show")) {
+        //        ctx.center = SHOW_CENTER_PLAYLIST;
+        //        ctx.open_playlist_id = playlist.id;
+        //    }
+        //    ImGui::TableNextColumn();
+        //    ImGui::Text("%s", playlist.name.c_str());
+        //    ImGui::PopID();
+        //}
         ImGui::EndTable();
     }
-}
-
-static void draw_all_songs()
-{
-/*
-    ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("All Songs", 5, flags, ImGui::GetContentRegionAvail()))
-    {
-        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 100);
-        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort);
-        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_NoSort);
-        ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_NoSort);
-        ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
-        //ImGui::TableSetupScrollFreeze(0, 1);
-        //ImGui::TableHeadersRow();
-        for (const Song& song : mp_ctx.songs)
-        {
-            ImGui::PushID(song.id);
-            ImGui::TableNextColumn();
-            if (ImGui::ImageButton("ABCDE", ctx.textures.queue_button.id, ImVec2(32, 32), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 1.0f, 1.0f)))
-                mp_queue_song(song.id);
-            ImGui::TableNextColumn();
-
-            ImVec2 button_pos = ImGui::GetCursorScreenPos();
-            ImVec2 size = ImVec2(64, 64);
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-            if (ImGui::ImageButton("PlayButton", ctx.textures.song_map[song.id].id, size))
-                mp_play_song(song.id);
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::SetCursorScreenPos(button_pos);
-                ImGui::ImageWithBg(ctx.textures.play_button.id, size);
-            }
-            ImGui::PopStyleColor();
-
-            ImGui::TableNextColumn();
-
-            char length_str[256];
-            int length = static_cast<int>(song.length);
-            snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
-            ImGui::Text("%s", length_str);
-
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", song.title.c_str());
-            int artist_id = mp_get_artist_id_from_song_id(song.id);
-            if (artist_id != -1) {
-                const Artist* artist = mp_get_artist_from_id(artist_id);
-                if (ImGui::Button(artist->name.c_str()))
-                {
-                    ctx.center = SHOW_CENTER_ARTIST;
-                    ctx.open_artist_id = artist_id;
-                }
-            }
-            ImGui::TableNextColumn();
-            if (ImGui::Button("Open Album")) 
-            {
-                ctx.center = SHOW_CENTER_ALBUM;
-                ctx.open_album_id = mp_get_album_id_from_song_id(song.id);
-            }
-
-            if (ImGui::Button("Add To Playlist"))
-                ImGui::OpenPopup("add_to_playlist_popup");
-
-            if (ImGui::Button("Open Right Side"))
-                set_right_side_song_id(song.id);
-
-            if (ImGui::BeginPopup("add_to_playlist_popup"))
-            {
-                for (const Playlist& playlist : mp_ctx.playlists)
-                {
-                    ImGui::PushID(playlist.id);
-                    if (ImGui::Button(playlist.name.c_str()))
-                        mp_add_song_id_to_playlist_id(song.id, playlist.id);
-                    ImGui::PopID();
-                }
-                if (ImGui::Button("Create Playlist"))
-                {
-                    ctx.center = SHOW_CENTER_PLAYLIST;
-                    ctx.open_playlist_id = mp_create_playlist();
-                    mp_add_song_id_to_playlist_id(song.id, ctx.open_playlist_id);
-                }
-                ImGui::EndPopup();
-            }
-            ImGui::PopID();
-        }
-        ImGui::EndTable();
-    }
-*/
 }
 
 static void draw_search_results()
@@ -694,8 +580,8 @@ static void draw_search_results()
 
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
-            int artist_id = mp_get_artist_id_from_song_id(song->id);
-            if (artist_id != -1) {
+            int artist_id = song->artist_id;
+            if (artist_id != 0) {
                 const Artist* artist = mp_get_artist_from_id(artist_id);
                 assert(artist);
                 ImGui::Text("%s", artist->name.c_str());
@@ -709,13 +595,13 @@ static void draw_search_results()
                 ImGui::OpenPopup("add_to_playlist_popup");
             if (ImGui::BeginPopup("add_to_playlist_popup"))
             {
-                for (const Playlist& playlist : mp_ctx.playlists)
-                {
-                    ImGui::PushID(playlist.id);
-                    if (ImGui::Button(playlist.name.c_str()))
-                        mp_add_song_id_to_playlist_id(song->id, playlist.id);
-                    ImGui::PopID();
-                }
+                //for (const Playlist& playlist : mp_ctx.playlists)
+                //{
+                //    ImGui::PushID(playlist.id);
+                //    if (ImGui::Button(playlist.name.c_str()))
+                //        mp_add_song_id_to_playlist_id(song->id, playlist.id);
+                //    ImGui::PopID();
+                //}
                 if (ImGui::Button("Create Playlist"))
                 {
                     ctx.center = SHOW_CENTER_PLAYLIST;
@@ -736,9 +622,8 @@ static void draw_album_info()
     if (tracks.size() == 0)
         return;
 
-    const Album* album = mp_get_album_from_id(ctx.open_album_id);
-    int artist_id = mp_get_artist_id_from_album_id(ctx.open_album_id);
-    const Artist* artist = mp_get_artist_from_id(artist_id);
+    LruCacheRef<Album> album = mp_get_album_from_id(ctx.open_album_id);
+    LruCacheRef<Artist> artist = mp_get_artist_from_id(album->artist_id);
 
     ImGui::ImageWithBg(ctx.textures.default_album_art.id, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::SameLine();
@@ -756,8 +641,8 @@ static void draw_album_info()
         }
         ImGui::SetWindowFontScale(1.0f); 
         if (ImGui::Button("Queue"))
-            for (auto [song_id, track] : tracks)
-                mp_queue_song(song_id);
+            for (const auto& [song, track] : tracks)
+                mp_queue_song(song->id);
         if (ImGui::Button("Play"))
             mp_play_album(album->id);
         if (ImGui::Button("Add To Playlist"))
@@ -768,13 +653,13 @@ static void draw_album_info()
         ImGui::Text("%s", length_str);
         if (ImGui::BeginPopup("add_to_playlist_popup"))
         {
-            for (const Playlist& playlist : mp_ctx.playlists)
-            {
-                ImGui::PushID(playlist.id);
-                if (ImGui::Button(playlist.name.c_str()))
-                    mp_add_album_id_to_playlist_id(album->id, playlist.id);
-                ImGui::PopID();
-            }
+            //for (const Playlist& playlist : mp_ctx.playlists)
+            //{
+            //    ImGui::PushID(playlist.id);
+            //    if (ImGui::Button(playlist.name.c_str()))
+            //        mp_add_album_id_to_playlist_id(album->id, playlist.id);
+            //    ImGui::PopID();
+            //}
             if (ImGui::Button("Create Playlist"))
             {
                 ctx.center = SHOW_CENTER_PLAYLIST;
@@ -793,19 +678,18 @@ static void draw_album_info()
         ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         int id = 0;
-        for (auto [song_id, track] : tracks)
+        for (const auto& [song, track] : tracks)
         {
             ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
             ImGui::TableNextColumn();
             ImGui::PushID(id++);
             if (ImGui::Button("Play"))
-                mp_play_song(song_id);;
+                mp_play_song(song->id);;
             if (ImGui::Button("Queue"))
-                mp_queue_song(song_id);
+                mp_queue_song(song->id);
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
-            LruCacheRef<Song> song = mp_get_song_from_id(song_id);
             ImGui::Text("%s", song->title.c_str());
             ImGui::PopID();
         }
@@ -835,8 +719,8 @@ static void draw_playlist_info()
         }
 
         if (ImGui::Button("Queue"))
-            for (auto [song_id, track] : tracks)
-                mp_queue_song(song_id);
+            for (const auto& [song, track] : tracks)
+                mp_queue_song(song->id);
 
         if (ImGui::Button("Play"))
             mp_play_playlist(playlist->id);
@@ -871,21 +755,20 @@ static void draw_playlist_info()
         ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         int id = 0;
-        for (auto [song_id, track] : tracks)
+        for (const auto& [song, track] : tracks)
         {
             ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
             ImGui::TableNextColumn();
             ImGui::PushID(id++);
             if (ImGui::Button("Play"))
-                mp_play_song(song_id);;
+                mp_play_song(song->id);;
             if (ImGui::Button("Queue"))
-                mp_queue_song(song_id);
+                mp_queue_song(song->id);
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
-            LruCacheRef<Song> song = mp_get_song_from_id(song_id);
-            const Album* album = mp_get_album_from_id(mp_get_album_id_from_song_id(song_id));
-            const Artist* artist = mp_get_artist_from_id(mp_get_artist_id_from_song_id(song_id));
+            LruCacheRef<Album> album = mp_get_album_from_id(mp_get_album_id_from_song_id(song->id));
+            LruCacheRef<Artist> artist = mp_get_artist_from_id(mp_get_artist_id_from_song_id(song->id));
             ImGui::Text("%s", song->title.c_str());
             char album_name[256];
             if (album) {
@@ -959,13 +842,13 @@ static void draw_artist_info()
                 ImGui::OpenPopup("add_to_playlist_popup");
             if (ImGui::BeginPopup("add_to_playlist_popup"))
             {
-                for (const Playlist& playlist : mp_ctx.playlists)
-                {
-                    ImGui::PushID(playlist.id);
-                    if (ImGui::Button(playlist.name.c_str()))
-                        mp_add_song_id_to_playlist_id(song_id, playlist.id);
-                    ImGui::PopID();
-                }
+                //for (const Playlist& playlist : mp_ctx.playlists)
+                //{
+                //    ImGui::PushID(playlist.id);
+                //    if (ImGui::Button(playlist.name.c_str()))
+                //        mp_add_song_id_to_playlist_id(song_id, playlist.id);
+                //    ImGui::PopID();
+                //}
                 if (ImGui::Button("Create Playlist"))
                 {
                     ctx.center = SHOW_CENTER_PLAYLIST;
@@ -1001,8 +884,8 @@ static void draw_artist_info()
             ImGui::SameLine();
             if (ImGui::Button("Queue")) {
                 std::vector<SongTrack> song_tracks = mp_get_song_ids_from_album_id(album_id);
-                for (auto [song_id, track] : song_tracks)
-                    mp_queue_song(song_id);
+                for (const auto& [song, track] : song_tracks)
+                    mp_queue_song(song->id);
             }
             ImGui::SameLine();
             if (ImGui::Button("Play"))
@@ -1011,13 +894,13 @@ static void draw_artist_info()
                 ImGui::OpenPopup("add_to_playlist_popup");
             if (ImGui::BeginPopup("add_to_playlist_popup"))
             {
-                for (const Playlist& playlist : mp_ctx.playlists)
-                {
-                    ImGui::PushID(playlist.id);
-                    if (ImGui::Button(playlist.name.c_str()))
-                        mp_add_album_id_to_playlist_id(album->id, playlist.id);
-                    ImGui::PopID();
-                }
+                //for (const Playlist& playlist : mp_ctx.playlists)
+                //{
+                //    ImGui::PushID(playlist.id);
+                //    if (ImGui::Button(playlist.name.c_str()))
+                //        mp_add_album_id_to_playlist_id(album->id, playlist.id);
+                //    ImGui::PopID();
+                //}
                 if (ImGui::Button("Create Playlist"))
                 {
                     ctx.center = SHOW_CENTER_PLAYLIST;
@@ -1068,9 +951,7 @@ static void draw_center()
     if (ImGui::IsKeyPressed(ImGuiKey_F2))
         ctx.center = SHOW_CENTER_ALL_SONGS;
 
-    if (ctx.center == SHOW_CENTER_ALL_SONGS)
-        draw_all_songs();
-    else if (ctx.center == SHOW_CENTER_ALBUM)
+    if (ctx.center == SHOW_CENTER_ALBUM)
         draw_album_info();
     else if (ctx.center == SHOW_CENTER_PLAYLIST)
         draw_playlist_info();
