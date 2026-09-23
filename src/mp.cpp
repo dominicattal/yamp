@@ -83,9 +83,6 @@ static int db_get_song_id(const char* song_path)
 
 static Song db_get_song_info(int song_id)
 {
-    Song song{};
-    song.id = song_id;
-
     sqlite3_stmt* stmt;
     const char* query = "SELECT title, path, length FROM Songs WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
@@ -95,28 +92,28 @@ static Song db_get_song_info(int song_id)
     const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
     const char* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
     const float length = static_cast<float>(sqlite3_column_double(stmt, 2));
-    song.title = title;
-    song.path = path;
-    song.length = length;
+    Song song{title, path, song_id, length};
     sqlite3_finalize(stmt);
-
-    query = "SELECT artist_id FROM ArtistSong WHERE song_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, song_id);
-    res = sqlite3_step(stmt);
-    if (res == SQLITE_ROW)
-        song.artist_id = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-
-    query = "SELECT album_id FROM AlbumSong WHERE song_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, song_id);
-    res = sqlite3_step(stmt);
-    if (res == SQLITE_ROW)
-        song.album_id = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-
     return song;
+
+    //query = "SELECT artist_id FROM ArtistSong WHERE song_id=?1";
+    //sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    //sqlite3_bind_int(stmt, 1, song_id);
+    //res = sqlite3_step(stmt);
+    //if (res == SQLITE_ROW)
+    //    song.artist_id = sqlite3_column_int(stmt, 0);
+    //sqlite3_finalize(stmt);
+
+    //query = "SELECT album_id FROM AlbumSong WHERE song_id=?1";
+    //sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    //sqlite3_bind_int(stmt, 1, song_id);
+    //res = sqlite3_step(stmt);
+    //if (res == SQLITE_ROW)
+    //    song.album_id = sqlite3_column_int(stmt, 0);
+
+    //sqlite3_finalize(stmt);
+
+    //return song;
 }
 
 static Album db_get_album_info(int album_id)
@@ -132,27 +129,11 @@ static Album db_get_album_info(int album_id)
     assert(res == SQLITE_ROW);
     album.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
 
-    query = "SELECT song_id, track FROM AlbumSong WHERE album_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, album_id);
-    while (sqlite3_step(stmt) == SQLITE_ROW)    
-    {
-        const int song_id = sqlite3_column_int(stmt, 0);
-        const int track = sqlite3_column_int(stmt, 1);
-        LruCacheRef<Song> song = mp_get_song_from_id(song_id);
-        album.length += song->length;
-        album.songs.emplace_back(std::move(song), track);
-    }
-    sqlite3_finalize(stmt);
+    auto songs = mp_get_songs_from_album(album_id);
+    for (SongTrack& song_track : *songs)
+        album.length += song_track.song->length;
 
-    query = "SELECT artist_id FROM ArtistAlbum WHERE album_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, album_id);
-    res = sqlite3_step(stmt);
-    if (res == SQLITE_ROW)
-        album.artist_id = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
-
     return album;
 }
 
@@ -185,19 +166,11 @@ static Playlist db_get_playlist_info(int playlist_id)
     assert(res == SQLITE_ROW);
     playlist.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
 
-    query = "SELECT song_id, track FROM PlaylistSong WHERE playlist_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, playlist_id);
-    while (sqlite3_step(stmt) == SQLITE_ROW)    
-    {
-        const int song_id = sqlite3_column_int(stmt, 0);
-        const int track = sqlite3_column_int(stmt, 1);
-        LruCacheRef<Song> song = mp_get_song_from_id(song_id);
-        playlist.length += song->length;
-        playlist.songs.emplace_back(std::move(song), track);
-    }
-    sqlite3_finalize(stmt);
+    auto songs = mp_get_songs_from_playlist(playlist_id);
+    for (SongTrack& song_track : *songs)
+        playlist.length += song_track.song->length;
 
+    sqlite3_finalize(stmt);
     return playlist;
 }
 
@@ -578,34 +551,41 @@ void mp_recursive_add_songs(const std::string& folder_path)
         mp_add_song(dir_entry.path().string());
 }
 
-int mp_create_playlist()
+LruCacheRef<Playlist> mp_create_playlist()
 {
     const char* playlist_name = "Unnamed Playlist";
-
     db_create_playlist(playlist_name);
     int playlist_id = db_get_playlist_id(playlist_name);
-
-    return playlist_id;
+    return mp_get_playlist(playlist_id);
 }
 
-void mp_rename_playlist_id(int playlist_id, const char* new_playlist_name)
+void mp_rename_playlist(int playlist_id, const char* new_playlist_name)
 {
     db_update_playlist(playlist_id, new_playlist_name);
-    Playlist* playlist = mp_get_playlist_from_id(playlist_id);
+    LruCacheRef<Playlist> playlist = mp_get_playlist(playlist_id);
     playlist->name = new_playlist_name;
 }
 
-void mp_add_song_id_to_playlist_id(int song_id, int playlist_id)
+void mp_add_song_to_playlist(int song_id, int playlist_id)
 {
-    int track = mp_get_num_tracks_in_playlist_id(playlist_id) + 1;
+    auto tracks = mp_get_songs_from_playlist(playlist_id);
+    int track = tracks->size() + 1;
     db_create_playlist_song(playlist_id, song_id, track);
-    mp_update_playlist_length(playlist_id);
+    auto song_tracks = mp_ctx.playlist_songs.get(playlist_id);
+    LruCacheRef<Song> song = mp_get_song(song_id); 
+
+    if (song_tracks != nullptr)
+        song_tracks->emplace_back(std::move(song), track);
+
+    if (auto playlist = mp_ctx.playlists.get(playlist_id); playlist)
+        playlist->length += song->length;
 }
 
-void mp_add_album_id_to_playlist_id(int album_id, int playlist_id)
+void mp_add_album_to_playlist(int album_id, int playlist_id)
 {
-    for (auto & [song, track] : mp_get_song_ids_from_album_id(album_id))
-        mp_add_song_id_to_playlist_id(song->id, playlist_id);
+    auto song_tracks = mp_get_songs_from_album(album_id);
+    for (auto & [song, track] : *song_tracks)
+        mp_add_song_to_playlist(song->id, playlist_id);
 }
 
 static void end_song_callback(void* user_data, ma_sound* sound)
@@ -618,7 +598,7 @@ void mp_play_song(int song_id)
 {
     if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
-    LruCacheRef<Song> song = mp_get_song_from_id(song_id);
+    LruCacheRef<Song> song = mp_get_song(song_id);
     ma_sound_config config = ma_sound_config_init();
     config.channelsIn = 1;
     config.pFilePath = song->path.c_str();
@@ -632,7 +612,7 @@ void mp_play_song(int song_id)
 
 void mp_queue_song(int song_id)
 {
-    LruCacheRef<Song> song = mp_get_song_from_id(song_id);
+    LruCacheRef<Song> song = mp_get_song(song_id);
     mp_ctx.queue.push_back(std::move(song));
     if (mp_ctx.queue.size() == 1 && !ctx.current_song_loaded)
         mp_queue_skip();
@@ -706,18 +686,24 @@ static void sort_or_shuffle_group_queue()
 static void add_playlist_songs_to_group_queue(int playlist_id)
 {
     mp_ctx.group_queue.clear();
-    LruCacheRef<Playlist> playlist = mp_get_playlist_from_id(playlist_id);
-    for (SongTrack& song_track : playlist->songs)
-        mp_ctx.group_queue.push_back(std::move(song_track));
+    auto song_tracks = mp_get_songs_from_playlist(playlist_id);
+    for (SongTrack& song_track : *song_tracks)
+    {
+        LruCacheRef<Song> song = mp_get_song(song_track.song->id);
+        mp_ctx.group_queue.emplace_back(std::move(song), song_track.track);
+    }
     sort_or_shuffle_group_queue();
 }
 
 static void add_album_songs_to_group_queue(int album_id)
 {
     mp_ctx.group_queue.clear();
-    LruCacheRef<Album> album = mp_get_album_from_id(album_id);
-    for (SongTrack& song_track : album->songs)
-        mp_ctx.group_queue.push_back(std::move(song_track));
+    auto song_tracks = mp_get_songs_from_album(album_id);
+    for (SongTrack& song_track : *song_tracks)
+    {
+        LruCacheRef<Song> song = mp_get_song(song_track.song->id);
+        mp_ctx.group_queue.emplace_back(std::move(song), song_track.track);
+    }
     sort_or_shuffle_group_queue();
 }
 
@@ -767,7 +753,7 @@ FrontCover mp_song_front_cover_load(const std::string& cover_path)
 
 void mp_song_front_cover_update(int song_id, const std::string& cover_path)
 {
-    LruCacheRef<Song> song = mp_get_song_from_id(song_id);
+    LruCacheRef<Song> song = mp_get_song(song_id);
     std::ifstream img{cover_path.c_str(), std::ios::binary};
     std::vector<char> bytes{std::istreambuf_iterator<char>(img), std::istreambuf_iterator<char>()};
     
@@ -784,8 +770,6 @@ void mp_song_front_cover_update(int song_id, const std::string& cover_path)
 
     file.setComplexProperties("PICTURE", pictures);
     file.save();
-
-    //mp_ctx.song_callback(song);
 }
 
 const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query)
@@ -798,11 +782,11 @@ const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query)
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 2, limit);
-    std::vector<LruCacheRef<Song>> results;
+    std::vector<LruCacheRef<Song>> results{};
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         int song_id = sqlite3_column_int(stmt, 0);
-        LruCacheRef<Song> song = mp_get_song_from_id(song_id);
+        LruCacheRef<Song> song = mp_get_song(song_id);
         assert(song != nullptr);
         results.push_back(std::move(song));
     }
@@ -837,7 +821,7 @@ void mp_song_update(int song_id, const char* title, const char* artist, const ch
     return;
 }
 
-LruCacheRef<Song> mp_get_song_from_id(int id)
+LruCacheRef<Song> mp_get_song(int id)
 {
     LruCacheRef<Song> song = mp_ctx.songs.get(id);
     if (song == nullptr) {
@@ -848,7 +832,7 @@ LruCacheRef<Song> mp_get_song_from_id(int id)
     return song;
 }
 
-LruCacheRef<Album> mp_get_album_from_id(int id)
+LruCacheRef<Album> mp_get_album(int id)
 {
     LruCacheRef<Album> album = mp_ctx.albums.get(id);
     if (album == nullptr)
@@ -856,7 +840,7 @@ LruCacheRef<Album> mp_get_album_from_id(int id)
     return album;
 }
 
-LruCacheRef<Artist> mp_get_artist_from_id(int id)
+LruCacheRef<Artist> mp_get_artist(int id)
 {
     LruCacheRef<Artist> artist = mp_ctx.artists.get(id);
     if (artist == nullptr)
@@ -864,7 +848,7 @@ LruCacheRef<Artist> mp_get_artist_from_id(int id)
     return artist;
 }
 
-LruCacheRef<Playlist> mp_get_playlist_from_id(int id)
+LruCacheRef<Playlist> mp_get_playlist(int id)
 {
     LruCacheRef<Playlist> playlist = mp_ctx.playlists.get(id);
     if (playlist == nullptr)
@@ -872,13 +856,13 @@ LruCacheRef<Playlist> mp_get_playlist_from_id(int id)
     return playlist;
 }
 
-std::vector<int> mp_get_song_ids_from_artist_id(int artist_id)
+std::vector<int> mp_get_song_from_artist(int artist_id)
 {
     (void)artist_id;
     return {};
 }
 
-std::vector<int> mp_get_album_ids_from_artist_id(int artist_id)
+std::vector<int> mp_get_album_from_artist(int artist_id)
 {
     (void)artist_id;
     return {};
@@ -924,7 +908,7 @@ void mp_queue_skip()
             mp_ctx.autoplay_queue.pop_front();
             //size_t idx = ctx.mt() % mp_ctx.songs.size();
             size_t idx = 1;
-            mp_ctx.autoplay_queue.push_back(mp_get_song_from_id(idx));
+            mp_ctx.autoplay_queue.push_back(mp_get_song(idx));
             mp_play_song(song->id);
         } else if (ctx.current_song_loaded) {
             mp_ctx.current_song = nullptr;
