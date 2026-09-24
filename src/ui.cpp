@@ -614,7 +614,10 @@ static void draw_search_results()
 
 static void draw_album_info()
 {
-    LruCacheRef<std::vector<SongTrack>> tracks = mp_get_songs_from_album(ctx.open_album->id);
+    if (ctx.open_album == nullptr)
+        return;
+
+    LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_album(ctx.open_album->id);
     if (tracks->size() == 0)
         return;
 
@@ -629,9 +632,10 @@ static void draw_album_info()
         ImGui::Text("%s", album->name.c_str());
         ImGui::SetWindowFontScale(2.0f); 
         char artist_buf[256];
-        artist_buf[0] = '\0';
         if (artist)
-            snprintf(artist_buf, sizeof(artist_buf), "%s", artist->name.c_str());
+            snprintf(artist_buf, sizeof(artist_buf), "%s##", artist->name.c_str());
+        else
+            snprintf(artist_buf, sizeof(artist_buf), "##");
         if (ImGui::Button(artist_buf))
         {
             ctx.center = SHOW_CENTER_ARTIST;
@@ -639,8 +643,8 @@ static void draw_album_info()
         }
         ImGui::SetWindowFontScale(1.0f); 
         if (ImGui::Button("Queue"))
-            for (const auto& [song, track] : *tracks)
-                mp_queue_song(song->id);
+            for (const auto& [song_id, track] : *tracks)
+                mp_queue_song(song_id);
         if (ImGui::Button("Play"))
             mp_play_album(album->id);
         if (ImGui::Button("Add To Playlist"))
@@ -676,15 +680,16 @@ static void draw_album_info()
         ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         int id = 0;
-        for (const auto& [song, track] : *tracks)
+        for (const auto& [song_id, track] : *tracks)
         {
+            LruCacheRef<Song> song = mp_get_song(song_id);
             ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
             ImGui::TableNextColumn();
             ImGui::PushID(id++);
             if (ImGui::Button("Play"))
-                mp_play_song(song->id);;
+                mp_play_song(song_id);;
             if (ImGui::Button("Queue"))
-                mp_queue_song(song->id);
+                mp_queue_song(song_id);
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
@@ -697,7 +702,7 @@ static void draw_album_info()
 
 static void draw_playlist_info()
 {
-    LruCacheRef<std::vector<SongTrack>> tracks = mp_get_songs_from_playlist(ctx.open_playlist->id);
+    LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_playlist(ctx.open_playlist->id);
 
     LruCacheRef<Playlist>& playlist = ctx.open_playlist;
 
@@ -717,8 +722,8 @@ static void draw_playlist_info()
         }
 
         if (ImGui::Button("Queue"))
-            for (const auto& [song, track] : *tracks)
-                mp_queue_song(song->id);
+            for (const auto& [song_id, track] : *tracks)
+                mp_queue_song(song_id);
 
         if (ImGui::Button("Play"))
             mp_play_playlist(playlist->id);
@@ -733,7 +738,7 @@ static void draw_playlist_info()
             ImGui::InputText("##edit", playlist_name, IM_COUNTOF(playlist_name));
             if (ImGui::Button("Save") || ImGui::IsKeyPressed(ImGuiKey_Enter))
             {
-                mp_rename_playlist(playlist, playlist_name);
+                mp_rename_playlist(playlist->id, playlist_name);
                 ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
@@ -753,20 +758,21 @@ static void draw_playlist_info()
         ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         int id = 0;
-        for (const auto& [song, track] : *tracks)
+        for (const auto& [song_id, track] : *tracks)
         {
+            LruCacheRef<Song> song = mp_get_song(song_id);
             ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
             ImGui::TableNextColumn();
             ImGui::PushID(id++);
             if (ImGui::Button("Play"))
-                mp_play_song(song->id);;
+                mp_play_song(song_id);;
             if (ImGui::Button("Queue"))
-                mp_queue_song(song->id);
+                mp_queue_song(song_id);
             ImGui::TableNextColumn();
             ImGui::Text("%d", track);
             ImGui::TableNextColumn();
-            LruCacheRef<Album> album = mp_get_album_from_song(song->id);
-            LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
+            LruCacheRef<Album> album = mp_get_album_from_song(song_id);
+            LruCacheRef<Artist> artist = mp_get_artist_from_song(song_id);
             ImGui::Text("%s", song->title.c_str());
             char album_name[256];
             if (album) {
@@ -793,8 +799,8 @@ static void draw_artist_info()
     ImGui::Text("%s", artist->name.c_str());
     ImGui::SetWindowFontScale(1.0f); 
 
-    auto albums = mp_get_albums_from_artist(artist->id);
-    auto songs = mp_get_songs_from_artist(artist->id);
+    LruCacheRef<std::vector<int>> album_ids = mp_get_albums_from_artist(artist->id);
+    LruCacheRef<std::vector<int>> song_ids = mp_get_songs_from_artist(artist->id);
 
     ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
     int width = ImGui::GetContentRegionAvail().x / 2;
@@ -807,20 +813,21 @@ static void draw_artist_info()
         ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
         //ImGui::TableHeadersRow();
-        for (LruCacheRef<Song>& song : *songs)
+        for (int song_id : *song_ids)
         {
+            LruCacheRef<Song> song = mp_get_song(song_id);
             ImGui::TableNextColumn();
-            ImGui::PushID(song->id);
+            ImGui::PushID(song_id);
             if (ImGui::Button("Play"))
-                mp_play_song(song->id);;
+                mp_play_song(song_id);;
             if (ImGui::Button("Queue"))
-                mp_queue_song(song->id);
+                mp_queue_song(song_id);
             ImGui::TableNextColumn();
             ImGui::ImageWithBg(ctx.textures.default_album_art.id, ImVec2(50, 50), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
 
-            LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
+            LruCacheRef<Artist> artist = mp_get_artist_from_song(song_id);
             if (artist != nullptr) {
                 char artist_str[256];
                 snprintf(artist_str, sizeof(artist_str), "%s", artist->name.c_str());
@@ -834,7 +841,7 @@ static void draw_artist_info()
             ImGui::TableNextColumn();
             if (ImGui::Button("Open Album")) {
                 ctx.center = SHOW_CENTER_ALBUM;
-                ctx.open_album = mp_get_album_from_song(song->id);
+                ctx.open_album = mp_get_album_from_song(song_id);
             }
             if (ImGui::Button("Add To Playlist"))
                 ImGui::OpenPopup("add_to_playlist_popup");
@@ -851,7 +858,7 @@ static void draw_artist_info()
                 {
                     ctx.center = SHOW_CENTER_PLAYLIST;
                     ctx.open_playlist = mp_create_playlist();
-                    mp_add_song_to_playlist(song->id, ctx.open_playlist->id);
+                    mp_add_song_to_playlist(song_id, ctx.open_playlist->id);
                 }
                 ImGui::EndPopup();
             }
@@ -865,9 +872,10 @@ static void draw_artist_info()
     {
         ImGui::TableSetupColumn("Tmp", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-        for (LruCacheRef<Album>& album : *albums)
+        for (int album_id : *album_ids)
         {
-            ImGui::PushID(album->id);
+            LruCacheRef<Album> album = mp_get_album(album_id);
+            ImGui::PushID(album_id);
             ImGui::TableNextColumn();
             ImGui::Text("tmp");
             ImGui::TableNextColumn();
@@ -876,17 +884,17 @@ static void draw_artist_info()
             if (ImGui::Button("Open")) 
             {
                 ctx.center = SHOW_CENTER_ALBUM;
-                ctx.open_album = mp_get_album(album->id);
+                ctx.open_album = mp_get_album(album_id);
             }
             ImGui::SameLine();
             if (ImGui::Button("Queue")) {
-                auto song_tracks = mp_get_songs_from_album(album->id);
-                for (const auto& [song, track] : *song_tracks)
-                    mp_queue_song(song->id);
+                auto song_tracks = mp_get_songs_from_album(album_id);
+                for (const auto& [song_id, track] : *song_tracks)
+                    mp_queue_song(song_id);
             }
             ImGui::SameLine();
             if (ImGui::Button("Play"))
-                mp_play_album(album->id);
+                mp_play_album(album_id);
             if (ImGui::Button("Add To Playlist"))
                 ImGui::OpenPopup("add_to_playlist_popup");
             if (ImGui::BeginPopup("add_to_playlist_popup"))

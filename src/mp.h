@@ -27,6 +27,11 @@ struct SongTrack {
     int track;
 };
 
+struct SongTrackID {
+    int song_id;
+    int track;
+};
+
 struct Artist {
     std::string name;
     int id;
@@ -59,12 +64,12 @@ struct MPContext {
     LruCache<Artist> artists;
     LruCache<Playlist> playlists;
 
-    LruCache<LruCacheRef<Artist>> song_artist;
-    LruCache<LruCacheRef<Album>> song_album;
-    LruCache<std::vector<SongTrack>> album_songs;
-    LruCache<std::vector<SongTrack>> playlist_songs;
-    LruCache<std::vector<LruCacheRef<Song>>> artist_songs;
-    LruCache<std::vector<LruCacheRef<Song>>> artist_albums;
+    LruCache<int> song_artist;
+    LruCache<int> song_album;
+    LruCache<std::vector<SongTrackID>> album_songs;
+    LruCache<std::vector<SongTrackID>> playlist_songs;
+    LruCache<std::vector<int>> artist_songs;
+    LruCache<std::vector<int>> artist_albums;
 
     LruCacheRef<Song> current_song;
 
@@ -121,7 +126,7 @@ void mp_recursive_add_songs(const std::string& folder_path);
 
 // Add a playlist to the database. Returns the id of the created playlist.
 LruCacheRef<Playlist> mp_create_playlist();
-void mp_rename_playlist(LruCacheRef<Playlist>& playlist, const char* new_playlist_name);
+void mp_rename_playlist(int playlist_id, const char* new_playlist_name);
 
 // Immediately play a song
 void mp_play_song(int song_id);
@@ -158,10 +163,10 @@ LruCacheRef<Artist>     mp_get_artist_from_song(int song_id);
 LruCacheRef<Album>      mp_get_album_from_song(int song_id);
 LruCacheRef<Artist>     mp_get_artist_from_album(int album_id);
 
-LruCacheRef<std::vector<SongTrack>> mp_get_songs_from_album(int album_id);
-LruCacheRef<std::vector<SongTrack>> mp_get_songs_from_playlist(int palylist_id);
-LruCacheRef<std::vector<LruCacheRef<Song>>> mp_get_songs_from_artist(int artist_id);
-LruCacheRef<std::vector<LruCacheRef<Album>>> mp_get_albums_from_artist(int artist_id);
+LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_album(int album_id);
+LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_playlist(int playlist_id);
+LruCacheRef<std::vector<int>> mp_get_songs_from_artist(int artist_id);
+LruCacheRef<std::vector<int>> mp_get_albums_from_artist(int artist_id);
 
 void mp_add_song_to_playlist(int song_id, int playlist_id);
 void mp_add_album_to_playlist(int album_id, int playlist_id);
