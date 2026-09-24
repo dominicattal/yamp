@@ -61,6 +61,7 @@ static std::vector<SongTrackID> db_get_songs_from_playlist(int playlist_id);
 static std::vector<int> db_get_songs_from_artist(int artist_id);
 static std::vector<int> db_get_albums_from_artist(int artist_id);
 static bool db_exists_artist_album(int artist_id, int album_id);
+static int db_get_random_song();
 
 // Update
 [[maybe_unused]] static void db_update_song(int song_id, const char* new_title, const char* new_song_path, double new_song_length);
@@ -227,7 +228,7 @@ static int db_get_artist_from_album(int album_id)
 static std::vector<SongTrackID> db_get_songs_from_album(int album_id)
 {
     sqlite3_stmt* stmt;
-    const char* query = "SELECT song_id, track FROM AlbumSong WHERE album_id=?1";
+    const char* query = "SELECT song_id, track FROM AlbumSong WHERE album_id=?1 ORDER BY track";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
 
@@ -246,7 +247,7 @@ static std::vector<SongTrackID> db_get_songs_from_album(int album_id)
 static std::vector<SongTrackID> db_get_songs_from_playlist(int playlist_id)
 {
     sqlite3_stmt* stmt;
-    const char* query = "SELECT song_id, track FROM PlaylistSong WHERE playlist_id=?1";
+    const char* query = "SELECT song_id, track FROM PlaylistSong WHERE playlist_id=?1 ORDER BY track";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, playlist_id);
 
@@ -510,6 +511,18 @@ static bool db_exists_artist_album(int artist_id, int album_id)
     int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return res == SQLITE_ROW;
+}
+
+static int db_get_random_song()
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT id FROM Songs ORDER BY random() LIMIT 1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    int res = sqlite3_step(stmt);
+    assert(res == SQLITE_ROW);
+    int song_id = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    return song_id;
 }
 
 static void db_create_artist_album(int artist_id, int album_id)
@@ -779,11 +792,10 @@ void mp_toggle_autoplay()
     if (mp_ctx.autoplay) {
         mp_ctx.autoplay_queue.clear();
     } else {
-        //for (int i = 0; i < 10; i++) {
-        //    size_t idx = ctx.mt() % mp_ctx.songs.size();
-        //    LruCacheRef<Song> song = mp_get_song_from_id(idx);
-        //    mp_ctx.autoplay_queue.push_back(song);
-        //}
+        for (int i = 0; i < 10; i++) {
+            LruCacheRef<Song> song = mp_get_song(db_get_random_song());
+            mp_ctx.autoplay_queue.push_back(std::move(song));
+        }
     }
     mp_ctx.autoplay = !mp_ctx.autoplay;
     if (mp_ctx.autoplay && mp_ctx.current_song == nullptr)
@@ -1077,11 +1089,10 @@ void mp_queue_skip()
         if (mp_ctx.playing_group) {
             play_next_group_song();
         } else if (mp_ctx.autoplay) {
+            assert(mp_ctx.autoplay_queue.size() > 0);
             LruCacheRef<Song> song = std::move(mp_ctx.autoplay_queue.front());
             mp_ctx.autoplay_queue.pop_front();
-            //size_t idx = ctx.mt() % mp_ctx.songs.size();
-            size_t idx = 1;
-            mp_ctx.autoplay_queue.push_back(mp_get_song(idx));
+            mp_ctx.autoplay_queue.push_back(mp_get_song(db_get_random_song()));
             mp_play_song(song->id);
         } else if (ctx.current_song_loaded) {
             mp_ctx.current_song = nullptr;
