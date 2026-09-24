@@ -66,6 +66,7 @@ struct MPContext {
 
     LruCache<int> song_artist;
     LruCache<int> song_album;
+    LruCache<int> album_artist;
     LruCache<std::vector<SongTrackID>> album_songs;
     LruCache<std::vector<SongTrackID>> playlist_songs;
     LruCache<std::vector<int>> artist_songs;
