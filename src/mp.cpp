@@ -936,16 +936,30 @@ void mp_song_front_cover_update(int song_id, const std::string& cover_path)
     file.save();
 }
 
-const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query)
+const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, int page_limit, int page_num)
 {
     sqlite3_stmt* stmt;
-    constexpr int limit = 50;
-    const char* query = "SELECT id FROM Songs WHERE title LIKE ?1 LIMIT ?2";
     char buffer[256];
     snprintf(buffer, sizeof(buffer), "%%%s%%", search_query);
+
+    const char* query;
+
+    // assume that if page > 0, then the caller already knows the number of results
+    if (page_num == 0)
+    {
+        query = "SELECT COUNT(id) FROM Songs WHERE title LIKE ?1"; 
+        sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+        sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt);
+        mp_ctx.num_results = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+    }
+
+    query = "SELECT id FROM Songs WHERE title LIKE ?1 LIMIT ?2 OFFSET ?3";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 2, limit);
+    sqlite3_bind_int(stmt, 2, page_limit);
+    sqlite3_bind_int(stmt, 3, page_limit * page_num);
     std::vector<LruCacheRef<Song>> results{};
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {

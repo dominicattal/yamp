@@ -87,6 +87,7 @@ struct MPContext {
 
     // this stores the songs from the most recent search
     std::vector<LruCacheRef<Song>> search_result;
+    int num_results;
 
     // whether mp is playing a group (playlist or album) or not.
     bool playing_group;
@@ -153,7 +154,7 @@ void mp_song_front_cover_free(FrontCover* data);
 void mp_song_update(int song_id, const char* title, const char* artist, const char* album, const char* cover_path);
 
 // Search for songs based on query
-const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query);
+const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, int page_limit, int page_num);
 
 LruCacheRef<Song>       mp_get_song(int song_id);
 LruCacheRef<Album>      mp_get_album(int album_id);

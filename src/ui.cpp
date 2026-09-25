@@ -994,13 +994,31 @@ static void draw_center()
     ImGui::Text("Search");
     static char search_query[256];
     ImGui::SameLine();
-    if (ImGui::InputTextWithHint("input text (w/ hint)", "Search...", search_query, sizeof(search_query))) 
+    ImGui::SetNextItemWidth(200.0f);
+
+    static int page_num;
+    constexpr int page_limit = 50;
+    if (ImGui::InputTextWithHint("##", "Search...", search_query, sizeof(search_query))) 
     {
-        mp_search_songs(search_query);
+        page_num = 0;
+        mp_search_songs(search_query, page_limit, page_num);
         ctx.center = SHOW_CENTER_SEARCH_RESULT;
     }
     if (ImGui::IsItemClicked())
         snprintf(search_query, sizeof(search_query), "");
+
+    if (ctx.center == SHOW_CENTER_SEARCH_RESULT)
+    {
+        int num_pages = mp_ctx.num_results / page_limit;
+        ImGui::SameLine();
+        if (ImGui::Button("Left") && page_num > 0)
+            mp_search_songs(search_query, page_limit, --page_num);
+        ImGui::SameLine();
+        if (ImGui::Button("Right") && page_num < num_pages)
+            mp_search_songs(search_query, page_limit, ++page_num);
+        ImGui::SameLine();
+        ImGui::Text("%d/%d", page_num + 1, num_pages + 1);
+    }
 
     if (ctx.center == SHOW_CENTER_ALBUM)
         draw_album_info();
