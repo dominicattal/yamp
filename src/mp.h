@@ -169,6 +169,8 @@ LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_playlist(int playlist_id
 LruCacheRef<std::vector<int>> mp_get_songs_from_artist(int artist_id);
 LruCacheRef<std::vector<int>> mp_get_albums_from_artist(int artist_id);
 
+std::vector<LruCacheRef<Playlist>> mp_get_playlists();
+
 void mp_add_song_to_playlist(int song_id, int playlist_id);
 void mp_add_album_to_playlist(int album_id, int playlist_id);
 

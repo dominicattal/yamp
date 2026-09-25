@@ -51,8 +51,8 @@ static int db_get_artist_id(const char* name);
 static int db_get_playlist_id(const char* name);
 static Song db_get_song_info(int song_id);
 static Album db_get_album_info(int album_id);
-static Artist db_get_artist_info(int album_id);
-static Playlist db_get_playlist_info(int album_id);
+static Artist db_get_artist_info(int artist_id);
+static Playlist db_get_playlist_info(int playlist_id);
 static int db_get_album_from_song(int song_id);
 static int db_get_artist_from_song(int song_id);
 static int db_get_artist_from_album(int album_id);
@@ -60,6 +60,7 @@ static std::vector<SongTrackID> db_get_songs_from_album(int album_id);
 static std::vector<SongTrackID> db_get_songs_from_playlist(int playlist_id);
 static std::vector<int> db_get_songs_from_artist(int artist_id);
 static std::vector<int> db_get_albums_from_artist(int artist_id);
+static std::vector<int> db_get_playlists();
 static bool db_exists_artist_album(int artist_id, int album_id);
 static int db_get_random_song();
 
@@ -95,7 +96,7 @@ static Song db_get_song_info(int song_id)
     const char* query = "SELECT title, path, length FROM Songs WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
     const char* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
@@ -133,7 +134,7 @@ static Album db_get_album_info(int album_id)
     const char* query = "SELECT name FROM Albums WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     album.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
 
@@ -156,7 +157,7 @@ static Artist db_get_artist_info(int artist_id)
     const char* query = "SELECT name FROM Artists WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, artist_id);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     artist.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
 
@@ -172,7 +173,7 @@ static Playlist db_get_playlist_info(int playlist_id)
     const char* query = "SELECT name FROM Playlists WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, playlist_id);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     playlist.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
 
@@ -192,7 +193,7 @@ static int db_get_album_from_song(int song_id)
     const char* query = "SELECT album_id FROM AlbumSong WHERE song_id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     int album_id = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
@@ -205,7 +206,7 @@ static int db_get_artist_from_song(int song_id)
     const char* query = "SELECT artist_id FROM ArtistSong WHERE song_id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     int artist_id = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
@@ -218,7 +219,7 @@ static int db_get_artist_from_album(int album_id)
     const char* query = "SELECT artist_id FROM ArtistAlbum WHERE album_id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     int artist_id = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
@@ -291,6 +292,20 @@ static std::vector<int> db_get_albums_from_artist(int artist_id)
 
     sqlite3_finalize(stmt);
     return albums;
+}
+
+static std::vector<int> db_get_playlists()
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT id FROM Playlists";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+
+    std::vector<int> playlists{};
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+        playlists.push_back(sqlite3_column_int(stmt, 0));
+
+    sqlite3_finalize(stmt);
+    return playlists;
 }
 
 static int db_get_artist_id(const char* name)
@@ -518,7 +533,7 @@ static int db_get_random_song()
     sqlite3_stmt* stmt;
     const char* query = "SELECT id FROM Songs ORDER BY random() LIMIT 1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     int song_id = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
@@ -563,7 +578,7 @@ static void db_init()
     sqlite3_stmt* stmt;
     const char* query = "SELECT COUNT(id) FROM Songs";
     sqlite3_prepare(ctx.db, query, -1, &stmt, NULL);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     if (res != SQLITE_ROW) {
         sqlite3_finalize(stmt);
         return;
@@ -705,20 +720,14 @@ void mp_rename_playlist(int playlist_id, const char* new_playlist_name)
 
 void mp_add_song_to_playlist(int song_id, int playlist_id)
 {
-    (void)song_id;
-    (void)playlist_id;
-    return;
-    //LruCacheRef<std::vector<SongTrackID>> song_tracks = mp_get_songs_from_playlist(playlist_id);
-    //int track = tracks->size() + 1;
-    //db_create_playlist_song(playlist_id, song_id, track);
-    //auto song_tracks = mp_ctx.playlist_songs.get(playlist_id);
-    //LruCacheRef<Song> song = mp_get_song(song_id); 
-
-    //if (song_tracks != nullptr)
-    //    song_tracks->emplace_back(std::move(song), track);
-
-    //if (auto playlist = mp_ctx.playlists.get(playlist_id); playlist)
-    //    playlist->length += song->length;
+    LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_playlist(playlist_id);
+    int track = tracks->size() + 1;
+    db_create_playlist_song(playlist_id, song_id, track);
+    tracks->emplace_back(song_id, track);
+    LruCacheRef<Song> song = mp_get_song(song_id);
+    LruCacheRef<Playlist> playlist = mp_ctx.playlists.get(playlist_id);
+    if (playlist != nullptr)
+        playlist->length += song->length;
 }
 
 void mp_add_album_to_playlist(int album_id, int playlist_id)
@@ -1051,6 +1060,15 @@ LruCacheRef<std::vector<int>> mp_get_albums_from_artist(int artist_id)
     if (albums == nullptr)
         albums = mp_ctx.artist_albums.put(artist_id, db_get_albums_from_artist(artist_id));
     return albums;
+}
+
+std::vector<LruCacheRef<Playlist>> mp_get_playlists()
+{
+    std::vector<int> playlist_ids = db_get_playlists();
+    std::vector<LruCacheRef<Playlist>> playlists{};
+    for (int playlist_id : playlist_ids)
+        playlists.emplace_back(mp_get_playlist(playlist_id));
+    return playlists;
 }
 
 static void play_next_group_song()

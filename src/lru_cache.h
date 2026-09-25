@@ -97,13 +97,7 @@ public:
     {
         return m_ptr;
     }
-    
-    ~LruCacheRef()
-    {
-        release();
-    }
 
-private:
     void release()
     {
         if (m_lru_cache)
@@ -111,6 +105,13 @@ private:
         m_ptr = nullptr;
         m_lru_cache = nullptr;
     }
+    
+    ~LruCacheRef()
+    {
+        release();
+    }
+
+private:
 
     LruCache<val_t>* m_lru_cache;
     int m_key;

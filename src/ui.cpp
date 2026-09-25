@@ -118,6 +118,8 @@ struct UIContext {
     LruCacheRef<Album> open_album;
     LruCacheRef<Playlist> open_playlist;
     LruCacheRef<Artist> open_artist;
+
+    std::vector<LruCacheRef<Playlist>> playlists;
 };
 
 static UIContext ctx;
@@ -404,6 +406,8 @@ void ui_init()
             std::lock_guard lock{ctx.unload_queue_lock};
             ctx.unload_queue.push_back(song->id);
         });
+
+    ctx.playlists = mp_get_playlists();
 }
 
 void ui_cleanup()
@@ -416,6 +420,12 @@ void ui_cleanup()
 
     glfwDestroyWindow(ctx.window);
     glfwTerminate();
+
+    // cannot destroy cacheref before cache
+    ctx.open_playlist.release();
+    ctx.open_album.release();
+    ctx.open_artist.release();
+    ctx.playlists.clear();
 
     SPDLOG_INFO("UI cleaned up");
 }
@@ -527,18 +537,18 @@ static void draw_left_side()
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoSort);
         ImGui::TableHeadersRow();
-        //for (const LruCacheRef<Playlist>& playlist : mp_ctx.playlists)
-        //{
-        //    ImGui::PushID(playlist.id);
-        //    ImGui::TableNextColumn();
-        //    if (ImGui::Button("Show")) {
-        //        ctx.center = SHOW_CENTER_PLAYLIST;
-        //        ctx.open_playlist_id = playlist.id;
-        //    }
-        //    ImGui::TableNextColumn();
-        //    ImGui::Text("%s", playlist.name.c_str());
-        //    ImGui::PopID();
-        //}
+        for (const LruCacheRef<Playlist>& playlist : ctx.playlists)
+        {
+            ImGui::PushID(playlist->id);
+            ImGui::TableNextColumn();
+            if (ImGui::Button("Show")) {
+                ctx.center = SHOW_CENTER_PLAYLIST;
+                ctx.open_playlist = mp_get_playlist(playlist->id);
+            }
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", playlist->name.c_str());
+            ImGui::PopID();
+        }
         ImGui::EndTable();
     }
 }
@@ -595,13 +605,13 @@ static void draw_search_results()
                 ImGui::OpenPopup("add_to_playlist_popup");
             if (ImGui::BeginPopup("add_to_playlist_popup"))
             {
-                //for (const Playlist& playlist : mp_ctx.playlists)
-                //{
-                //    ImGui::PushID(playlist.id);
-                //    if (ImGui::Button(playlist.name.c_str()))
-                //        mp_add_song_id_to_playlist_id(song->id, playlist.id);
-                //    ImGui::PopID();
-                //}
+                for (const LruCacheRef<Playlist>& playlist : ctx.playlists)
+                {
+                    ImGui::PushID(playlist->id);
+                    if (ImGui::Button(playlist->name.c_str()))
+                        mp_add_song_to_playlist(song->id, playlist->id);
+                    ImGui::PopID();
+                }
                 if (ImGui::Button("Create Playlist"))
                 {
                     ctx.center = SHOW_CENTER_PLAYLIST;
@@ -670,13 +680,13 @@ static void draw_album_info()
         ImGui::Text("%s", length_str);
         if (ImGui::BeginPopup("add_to_playlist_popup"))
         {
-            //for (const LruCacheRef<Playlist& playlist : mp_ctx.playlists)
-            //{
-            //    ImGui::PushID(playlist.id);
-            //    if (ImGui::Button(playlist.name.c_str()))
-            //        mp_add_album_id_to_playlist_id(album->id, playlist.id);
-            //    ImGui::PopID();
-            //}
+            for (const LruCacheRef<Playlist>& playlist : ctx.playlists)
+            {
+                ImGui::PushID(playlist->id);
+                if (ImGui::Button(playlist->name.c_str()))
+                    mp_add_album_to_playlist(album->id, playlist->id);
+                ImGui::PopID();
+            }
             if (ImGui::Button("Create Playlist"))
             {
                 ctx.center = SHOW_CENTER_PLAYLIST;
@@ -720,11 +730,21 @@ static void draw_playlist_info()
     LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_playlist(ctx.open_playlist->id);
 
     LruCacheRef<Playlist>& playlist = ctx.open_playlist;
+    LruCacheRef<Song> first_song = mp_get_song(tracks->front().song_id);
 
-    GLuint texture = ctx.textures.default_album_art.id;
+    const ImVec2 size = ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
+    if (ctx.textures.song_map.find(first_song->id) != ctx.textures.song_map.end())
+    {
+        GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[first_song->id]);
+        ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    }
+    else
+    {
+        ImGui::ImageWithBg(ctx.textures.default_album_art.id, size);
+    }
 
-    ImGui::ImageWithBg(texture, ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::SameLine();
+
     {
         ImGui::BeginChild("playlist_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
         ImGui::SetWindowFontScale(4.0f); 
