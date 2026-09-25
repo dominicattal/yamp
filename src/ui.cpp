@@ -530,6 +530,7 @@ static void draw_left_side()
     {
         ctx.center = SHOW_CENTER_PLAYLIST;
         ctx.open_playlist = mp_create_playlist();
+        ctx.playlists.push_back(mp_get_playlist(ctx.open_playlist->id));
     }
 
     if (ImGui::BeginTable("Playlists", 2, ImGuiTableFlags_None))
@@ -617,6 +618,7 @@ static void draw_search_results()
                     ctx.center = SHOW_CENTER_PLAYLIST;
                     ctx.open_playlist = mp_create_playlist();
                     mp_add_song_to_playlist(song->id, ctx.open_playlist->id);
+                    ctx.playlists.push_back(mp_get_playlist(ctx.open_playlist->id));
                 }
                 ImGui::EndPopup();
             }
@@ -728,15 +730,21 @@ static void draw_album_info()
 static void draw_playlist_info()
 {
     LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_playlist(ctx.open_playlist->id);
-
     LruCacheRef<Playlist>& playlist = ctx.open_playlist;
-    LruCacheRef<Song> first_song = mp_get_song(tracks->front().song_id);
 
     const ImVec2 size = ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
-    if (ctx.textures.song_map.find(first_song->id) != ctx.textures.song_map.end())
+    if (tracks->size() > 0)
     {
-        GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[first_song->id]);
-        ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        LruCacheRef<Song> first_song = mp_get_song(tracks->front().song_id);
+        if (ctx.textures.song_map.find(first_song->id) != ctx.textures.song_map.end())
+        {
+            GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[first_song->id]);
+            ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        }
+        else
+        {
+            ImGui::ImageWithBg(ctx.textures.default_album_art.id, size);
+        }
     }
     else
     {

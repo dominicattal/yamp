@@ -61,6 +61,7 @@ static std::vector<SongTrackID> db_get_songs_from_playlist(int playlist_id);
 static std::vector<int> db_get_songs_from_artist(int artist_id);
 static std::vector<int> db_get_albums_from_artist(int artist_id);
 static std::vector<int> db_get_playlists();
+static int db_get_num_playlists();
 static bool db_exists_artist_album(int artist_id, int album_id);
 static int db_get_random_song();
 
@@ -306,6 +307,17 @@ static std::vector<int> db_get_playlists()
 
     sqlite3_finalize(stmt);
     return playlists;
+}
+
+static int db_get_num_playlists()
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT COUNT(id) FROM Playlists";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_step(stmt);
+    int num_playlists = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    return num_playlists;
 }
 
 static int db_get_artist_id(const char* name)
@@ -705,9 +717,11 @@ void mp_recursive_add_songs(const std::string& folder_path)
 
 LruCacheRef<Playlist> mp_create_playlist()
 {
-    const char* playlist_name = "Unnamed Playlist";
-    db_create_playlist(playlist_name);
-    int playlist_id = db_get_playlist_id(playlist_name);
+    char default_playlist_name[64];
+    int num_playlists = db_get_num_playlists();
+    snprintf(default_playlist_name, sizeof(default_playlist_name), "Unnamed Playlist (%d)", num_playlists);
+    db_create_playlist(default_playlist_name);
+    int playlist_id = db_get_playlist_id(default_playlist_name);
     return mp_get_playlist(playlist_id);
 }
 
