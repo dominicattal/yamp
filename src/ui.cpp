@@ -99,12 +99,17 @@ struct UIContext {
         GLTexture queue_button;
     } textures;
 
+    struct Debug {
+        double fps;
+    } debug;
+
     std::mutex load_queue_lock;
     std::vector<std::pair<int, std::string>> load_queue;
     std::mutex unload_queue_lock;
     std::vector<int> unload_queue;
 
     bool show_demo_window;
+    bool show_debug_window;
 
     int right_side;
     GLuint right_side_texture;
@@ -141,6 +146,8 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     (void)window;
     if (key == GLFW_KEY_F1 && action == GLFW_PRESS)
         ctx.show_demo_window = !ctx.show_demo_window;
+    if (key == GLFW_KEY_F2 && action == GLFW_PRESS)
+        ctx.show_debug_window = !ctx.show_debug_window;
     if (ui_key_callback(key, scancode, action, mods))
         return;
 }
@@ -380,11 +387,18 @@ void ui_init()
     //pfd::settings::verbose(true);
     IMGUI_CHECKVERSION();
 
-    //static const ImWchar icons_ranges[] = { 0xf000, 0xf3ff, 0 }; // Will not be copied by AddFont* so keep in scope.
+    //const char* font_file_path = "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf";
+    //const char* font_file_path = "/usr/share/fonts/truetype/noto/NotoSansAdlam-Regular.ttf";
+    const char* font_file_path = "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf";
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
+    style.FontSizeBase = 16.0f;
     style.ScaleAllSizes(main_scale);
     style.FontScaleDpi = main_scale;
+
+    ImGuiIO& io = ImGui::GetIO();
+    const ImWchar icons_ranges[] = { 0xf000, 0xf3ff, 0 };
+    io.Fonts->AddFontFromFileTTF(font_file_path, 20.0f, nullptr, icons_ranges);
 
     ImGui::StyleColorsDark();
 
@@ -508,21 +522,24 @@ static void draw_left_side()
     {
         ImGui::TableSetupColumn("Queue", ImGuiTableColumnFlags_NoSort);
         ImGui::TableHeadersRow();
+        auto list_song = [](const char* title, const ImVec4& color) {
+            ImGui::TableNextColumn();
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+            ImGui::Text("• ");
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            ImGui::Text("%s", title);
+        };
+
         for (const LruCacheRef<Song> & song : mp_ctx.queue)
-        {
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", song->title.c_str());
-        }
+            list_song(song->title.c_str(), ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+
         for (const auto& [song, track] : mp_ctx.group_queue)
-        {
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", song->title.c_str());
-        }
+            list_song(song->title.c_str(), ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+        
         for (const LruCacheRef<Song>& song : mp_ctx.autoplay_queue)
-        {
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", song->title.c_str());
-        }
+            list_song(song->title.c_str(), ImVec4(0.0f, 0.0f, 1.0f, 1.0f));
+        
         ImGui::EndTable();
     }
 
@@ -997,7 +1014,7 @@ static void draw_center()
     ImGui::SetNextItemWidth(200.0f);
 
     static int page_num;
-    constexpr int page_limit = 50;
+    constexpr int page_limit = 20;
     if (ImGui::InputTextWithHint("##", "Search...", search_query, sizeof(search_query))) 
     {
         page_num = 0;
@@ -1075,6 +1092,17 @@ void draw_right_side()
     }
 }
 
+void draw_debug_info()
+{
+    ImGui::SetNextWindowPos(ImVec2(200, 200), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Debug", &ctx.show_debug_window))
+    {
+        ImGui::Text("%f", ctx.debug.fps);
+        ImGui::End();
+    }
+}
+
 static void draw_imgui()
 {
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -1083,15 +1111,13 @@ static void draw_imgui()
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    if (ctx.show_demo_window)
-        ImGui::ShowDemoWindow(&ctx.show_demo_window);
-
     static bool window_open = true;
     ImGuiWindowFlags window_flags{};
     window_flags |= ImGuiWindowFlags_NoResize;
     window_flags |= ImGuiWindowFlags_NoMove;
     window_flags |= ImGuiWindowFlags_NoCollapse;
     window_flags |= ImGuiWindowFlags_NoTitleBar;
+    window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("UMP", &window_open, window_flags);
@@ -1122,6 +1148,12 @@ static void draw_imgui()
 
     ImGui::End();
 
+    if (ctx.show_demo_window)
+        ImGui::ShowDemoWindow(&ctx.show_demo_window);
+
+    if (ctx.show_debug_window)
+        draw_debug_info();
+
     // Rendering
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -1131,8 +1163,10 @@ void ui_loop()
 {
     while (!glfwWindowShouldClose(ctx.window))
     {
-        mp_update();
         glfwPollEvents();
+
+        double start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        mp_update();
         if (glfwGetWindowAttrib(ctx.window, GLFW_ICONIFIED) != 0)
             continue;
 
@@ -1144,6 +1178,8 @@ void ui_loop()
 
         update_textures();
         draw_imgui();
+        double end = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        ctx.debug.fps = end - start;
 
         glfwSwapBuffers(ctx.window);
     }
