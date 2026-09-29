@@ -50,7 +50,6 @@ const char* fragment_shader = R"(
     void main()
     { 
         FragColor = texture(screenTexture, TexCoords);
-        //FragColor = vec4(1.0f, 0.0f, 0.0f, 1.0f);
     }
 )";
 
@@ -573,8 +572,19 @@ static void draw_left_side()
 
 static void draw_search_results()
 {
-    ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("All Songs", 4, flags, ImGui::GetContentRegionAvail()))
+    ImGuiTableFlags flags = ImGuiTableFlags_None;
+    flags |= ImGuiTableFlags_Resizable;
+    flags |= ImGuiTableFlags_Hideable;
+    flags |= ImGuiTableFlags_Sortable;
+    flags |= ImGuiTableFlags_SortMulti;
+    flags |= ImGuiTableFlags_RowBg;
+    flags |= ImGuiTableFlags_BordersOuter;
+    flags |= ImGuiTableFlags_BordersV;
+    flags |= ImGuiTableFlags_NoBordersInBody;
+    flags |= ImGuiTableFlags_ScrollY;
+
+    ImVec2 size = ImVec2(ImGui::GetContentRegionAvail().x / 2, ImGui::GetContentRegionAvail().y);
+    if (ImGui::BeginTable("All Songs", 4, flags, size))
     {
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 64);
         ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort);
@@ -643,6 +653,41 @@ static void draw_search_results()
         }
         ImGui::EndTable();
     }
+
+    ImGui::SameLine();
+    size = ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y / 3);
+
+    ImGui::BeginChild("Other Results");
+    {
+        if (ImGui::BeginTable("Albums", 1, flags, size))
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                ImGui::TableNextColumn();
+                ImGui::Text("Hello World");
+            }
+            ImGui::EndTable();
+        }
+        if (ImGui::BeginTable("Artists", 1, flags, size))
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                ImGui::TableNextColumn();
+                ImGui::Text("Hello World");
+            }
+            ImGui::EndTable();
+        }
+        if (ImGui::BeginTable("Playlists", 1, flags, size))
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                ImGui::TableNextColumn();
+                ImGui::Text("Hello World");
+            }
+            ImGui::EndTable();
+        }
+    }
+    ImGui::EndChild();
 }
 
 static void draw_album_info()
