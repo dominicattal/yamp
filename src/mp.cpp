@@ -1105,6 +1105,7 @@ static void play_next_group_song()
     {
         if (mp_ctx.loop_mode == LOOP_NONE) {
             mp_ctx.playing_group = false;
+            mp_queue_skip();
             return;
         }
 
@@ -1116,6 +1117,7 @@ static void play_next_group_song()
         if (mp_ctx.group_queue.size() == 0) {
             SPDLOG_WARN("Tried to play group with no songs");
             mp_ctx.playing_group = false;
+            mp_queue_skip();
             return;
         }
     }
