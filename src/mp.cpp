@@ -1001,6 +1001,8 @@ void mp_song_update(int song_id, const char* title, const char* artist, const ch
 
 LruCacheRef<Song> mp_get_song(int song_id)
 {
+    if (song_id == -1)
+        return nullptr;
     LruCacheRef<Song> song = mp_ctx.songs.get(song_id);
     if (song == nullptr) {
         song = mp_ctx.songs.put(song_id, db_get_song_info(song_id));
@@ -1012,6 +1014,8 @@ LruCacheRef<Song> mp_get_song(int song_id)
 
 LruCacheRef<Album> mp_get_album(int album_id)
 {
+    if (album_id == -1)
+        return nullptr;
     LruCacheRef<Album> album = mp_ctx.albums.get(album_id);
     if (album == nullptr)
         album = mp_ctx.albums.put(album_id, db_get_album_info(album_id));
@@ -1020,6 +1024,8 @@ LruCacheRef<Album> mp_get_album(int album_id)
 
 LruCacheRef<Artist> mp_get_artist(int artist_id)
 {
+    if (artist_id == -1)
+        return nullptr;
     LruCacheRef<Artist> artist = mp_ctx.artists.get(artist_id);
     if (artist == nullptr)
         artist = mp_ctx.artists.put(artist_id, db_get_artist_info(artist_id));
