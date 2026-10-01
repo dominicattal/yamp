@@ -22,7 +22,6 @@ struct MPContextInternal {
     sqlite3* db;
     ma_engine engine;
     ma_sound current_song_sound;
-    bool paused;
     bool current_song_loaded;
     bool song_ended;
 };
@@ -787,11 +786,11 @@ void mp_pause_or_resume()
 {
     if (!ctx.current_song_loaded)
         return;
-    if (ctx.paused) {
-        ctx.paused = false;
+    if (mp_ctx.paused) {
+        mp_ctx.paused = false;
         ma_sound_start(&ctx.current_song_sound);
     } else {
-        ctx.paused = true;
+        mp_ctx.paused = true;
         ma_sound_stop(&ctx.current_song_sound);
     }
 }
@@ -1138,7 +1137,7 @@ void mp_queue_skip()
         mp_play_song(mp_ctx.current_song->id);
         return;
     }
-    ctx.paused = false;
+    mp_ctx.paused = false;
     if (mp_ctx.queue.size() == 0) {
         if (mp_ctx.playing_group) {
             play_next_group_song();

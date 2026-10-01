@@ -106,6 +106,7 @@ struct MPContext {
     // if the end of the queue is reached
     bool shuffle;
 
+    bool paused;
     bool autoplay;
 
     int loop_mode;

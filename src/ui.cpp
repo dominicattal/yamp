@@ -98,6 +98,12 @@ struct UIContext {
         GLTexture default_album_art;
         GLTexture play_button;
         GLTexture queue_button;
+        GLTexture skip_button;
+        GLTexture pause_button;
+        GLTexture repeat_button;
+        GLTexture shuffle_button;
+        GLTexture autoplay_button;
+        GLTexture volume;
     } textures;
 
     struct Debug {
@@ -349,8 +355,14 @@ static void initialize_default_texture(GLuint* id, const char* path, int* width,
 static void initialize_default_textures()
 {
     initialize_default_texture(&ctx.textures.default_album_art.id, "assets/No-album-art.png", &ctx.textures.default_album_art.width, &ctx.textures.default_album_art.height);
-    initialize_default_texture(&ctx.textures.play_button.id, "assets/play.png", &ctx.textures.play_button.width, &ctx.textures.play_button.height);
+    initialize_default_texture(&ctx.textures.play_button.id, "assets/play-button-arrowhead.png", &ctx.textures.play_button.width, &ctx.textures.play_button.height);
     initialize_default_texture(&ctx.textures.queue_button.id, "assets/add-to-playlist.png", &ctx.textures.queue_button.width, &ctx.textures.queue_button.height);
+    initialize_default_texture(&ctx.textures.skip_button.id, "assets/skip.png", &ctx.textures.skip_button.width, &ctx.textures.skip_button.height);
+    initialize_default_texture(&ctx.textures.pause_button.id, "assets/pause.png", &ctx.textures.pause_button.width, &ctx.textures.pause_button.height);
+    initialize_default_texture(&ctx.textures.repeat_button.id, "assets/repeat-edited.png", &ctx.textures.repeat_button.width, &ctx.textures.repeat_button.height);
+    initialize_default_texture(&ctx.textures.shuffle_button.id, "assets/shuffle-edited.png", &ctx.textures.shuffle_button.width, &ctx.textures.shuffle_button.height);
+    initialize_default_texture(&ctx.textures.autoplay_button.id, "assets/autoplay-edited.png", &ctx.textures.autoplay_button.width, &ctx.textures.autoplay_button.height);
+    initialize_default_texture(&ctx.textures.volume.id, "assets/volume-up-edited.png", &ctx.textures.volume.width, &ctx.textures.volume.height);
     glGenTextures(1, &ctx.right_side_texture);
 }
 
@@ -484,6 +496,8 @@ void ui_cleanup()
 
 static void draw_left_side()
 {
+    float avail_width = ImGui::GetContentRegionAvail().x;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_width - LARGE_COVER_ART_SIZE) / 2.0f);
     const ImVec2 size = ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
     if (mp_ctx.current_song != nullptr && ctx.textures.song_map.find(mp_ctx.current_song->id) != ctx.textures.song_map.end())
     {
@@ -495,38 +509,74 @@ static void draw_left_side()
         ImGui::ImageWithBg(ctx.textures.default_album_art.id, size);
     }
 
-    if (ImGui::Button("Skip", ImVec2(100, 30)) || (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_S)))
-    {
-        mp_queue_skip();
-    }
-
-    bool shuffle_copy = mp_ctx.shuffle;
-    if (ImGui::Checkbox("Shuffle", &shuffle_copy))
-        mp_toggle_shuffle();
-
-    bool autoplay = mp_ctx.autoplay;
-    if (ImGui::Checkbox("Autoplay", &autoplay))
-        mp_toggle_autoplay();
-
-    if (ImGui::SliderFloat("Volume", &mp_ctx.volume, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_None))
-        mp_update_volume();
-
     char cursor_str[256];
     int cursor = static_cast<int>(mp_ctx.current_song_cursor);
     int length = static_cast<int>(mp_ctx.current_song_length);
     snprintf(cursor_str, sizeof(cursor_str), "%d:%02d / %d:%02d", cursor / 60, cursor % 60, length / 60, length % 60);
-    if (ImGui::SliderFloat("Cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, cursor_str, ImGuiSliderFlags_None))
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    if (ImGui::SliderFloat("##Cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, cursor_str, ImGuiSliderFlags_None))
         mp_update_cursor();
 
-    const char* loop_enum[] = {"none", "group", "track"};
-    ImGui::Combo("combo", &mp_ctx.loop_mode, loop_enum, std::size(loop_enum));
-
-    bool key_pressed = !ImGui::GetIO().WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9));
-    if (ImGui::Button("Pause/Resume") || key_pressed)
-        mp_pause_or_resume();
+    ImGui::Image(ctx.textures.volume.id, ImVec2(20, 20));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    if (ImGui::SliderFloat("##Volume", &mp_ctx.volume, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_None))
+        mp_update_volume();
 
     if (ImGui::Button("Clear Queue"))
         mp_queue_clear();
+
+    bool key_pressed = !ImGui::GetIO().WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9));
+    GLTexture tex = (mp_ctx.paused) ? ctx.textures.play_button : ctx.textures.pause_button;
+    if (ImGui::ImageButton("Pause/Resume Button", tex.id, ImVec2(32, 32)) || key_pressed)
+        mp_pause_or_resume();
+    ImGui::SameLine();
+    if (ImGui::ImageButton("Rewind Button", ctx.textures.skip_button.id, ImVec2(32, 32), ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
+        mp_queue_skip();
+    ImGui::SameLine();
+    if (ImGui::ImageButton("Skip Button", ctx.textures.skip_button.id, ImVec2(32, 32)))
+        mp_queue_skip();
+
+    ImGui::SameLine();
+    {
+        ImVec2 size = ImVec2(32, 32);
+        ImVec2 uv0 = ImVec2(0,0);
+        ImVec2 uv1 = ImVec2(1,1);
+        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        if (mp_ctx.loop_mode == LOOP_GROUP)
+            tint.x = 1.0f;
+        else if (mp_ctx.loop_mode == LOOP_TRACK)
+            tint.y = 1.0f;
+        if (ImGui::ImageButton("Repeat Button", ctx.textures.repeat_button.id, size, uv0, uv1, bg, tint))
+            mp_ctx.loop_mode = (mp_ctx.loop_mode + 1) % 3;
+    }
+
+    ImGui::SameLine();
+    {
+        ImVec2 size = ImVec2(32, 32);
+        ImVec2 uv0 = ImVec2(0,0);
+        ImVec2 uv1 = ImVec2(1,1);
+        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        if (mp_ctx.shuffle)
+            tint.x = 1.0f;
+        if (ImGui::ImageButton("Shuffle Button", ctx.textures.shuffle_button.id, size, uv0, uv1, bg, tint))
+            mp_toggle_shuffle();
+    }
+
+    ImGui::SameLine();
+    {
+        ImVec2 size = ImVec2(32, 32);
+        ImVec2 uv0 = ImVec2(0,0);
+        ImVec2 uv1 = ImVec2(1,1);
+        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        if (mp_ctx.autoplay)
+            tint.x = 1.0f;
+        if (ImGui::ImageButton("Autoplay Button", ctx.textures.autoplay_button.id, size, uv0, uv1, bg, tint))
+            mp_toggle_autoplay();
+    }
 
     if (!mp_ctx.current_song) {
         ImGui::Text("No song playing");
@@ -600,24 +650,27 @@ static void draw_search_results()
     flags |= ImGuiTableFlags_ScrollY;
 
     ImVec2 size = ImVec2(ImGui::GetContentRegionAvail().x / 2, ImGui::GetContentRegionAvail().y);
-    if (ImGui::BeginTable("All Songs", 4, flags, size))
+    if (ImGui::BeginTable("All Songs", 5, flags, size))
     {
-        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 64);
-        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort);
+        ImGui::TableSetupColumn("##Play Button", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 32);
+        ImGui::TableSetupColumn("##Queue Button", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 32);
+        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 64);
         ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
         //ImGui::TableHeadersRow();
         for (LruCacheRef<Song>& song : mp_ctx.search_result)
         {
-            ImGui::TableNextColumn();
             ImGui::PushID(song->id);
-            if (ImGui::Button("Play"))
-                mp_play_song(song->id);;
-            if (ImGui::Button("Queue"))
-                mp_queue_song(song->id);
-            ImGui::TableNextColumn();
 
+            ImGui::TableNextColumn();
+            if (ImGui::ImageButton("Play", ctx.textures.play_button.id, ImVec2(32, 32)))
+                mp_play_song(song->id);;
+            ImGui::TableNextColumn();
+            if (ImGui::ImageButton("Queue", ctx.textures.queue_button.id, ImVec2(32, 32)))
+                mp_queue_song(song->id);
+
+            ImGui::TableNextColumn();
             GLTexture2 tex;
             if (ctx.textures.song_map.find(song->id) != ctx.textures.song_map.end())
                 tex = get_texture_from_slot_idx(ctx.textures.song_map[song->id]);
@@ -771,27 +824,65 @@ static void draw_album_info()
         ImGui::EndChild();
     }
 
-    if (ImGui::BeginTable("Nested ALbum Songs", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable))
+    ImGuiTableFlags flags = ImGuiTableFlags_None;
+    flags |= ImGuiTableFlags_Resizable;
+    flags |= ImGuiTableFlags_Hideable;
+    flags |= ImGuiTableFlags_ScrollY;
+    flags |= ImGuiTableFlags_BordersV;
+    flags |= ImGuiTableFlags_RowBg;
+    flags |= ImGuiTableFlags_BordersOuter;
+    flags |= ImGuiTableFlags_NoBordersInBody;
+
+    constexpr int track_col_width = 50; 
+
+    if (ImGui::BeginTable("Nested Album Songs", 5, flags))
     {
-        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 75);
-        ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthFixed, 50);
-        ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("##Play Button", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 32);
+        ImGui::TableSetupColumn("##Queue Button", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 32);
+        ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, track_col_width);
+        ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Length", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         int id = 0;
         for (const auto& [song_id, track] : *tracks)
         {
             LruCacheRef<Song> song = mp_get_song(song_id);
+            ImGui::PushID(id++);
             ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
             ImGui::TableNextColumn();
-            ImGui::PushID(id++);
-            if (ImGui::Button("Play"))
-                mp_play_song(song_id);;
-            if (ImGui::Button("Queue"))
-                mp_queue_song(song_id);
+            if (ImGui::ImageButton("Play", ctx.textures.play_button.id, ImVec2(32, 32)))
+                mp_play_song(song->id);;
             ImGui::TableNextColumn();
-            ImGui::Text("%d", track);
+            if (ImGui::ImageButton("Queue", ctx.textures.queue_button.id, ImVec2(32, 32)))
+                mp_queue_song(song->id);
+
+            ImGui::TableNextColumn();
+            {
+                std::string track_str = std::to_string(track);
+                ImVec2 avail = ImGui::GetContentRegionAvail();
+                ImVec2 size = ImGui::CalcTextSize(track_str.c_str());
+                float pos_x = ImGui::GetCursorPosX() + (avail.x - size.x) / 2.0f;
+                ImGui::SetCursorPosX(pos_x);
+                ImGui::Text("%s", track_str.c_str());
+            }
+
             ImGui::TableNextColumn();
             ImGui::Text("%s", song->title.c_str());
+            LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
+            if (artist != nullptr && ImGui::Button(artist->name.c_str()))
+                set_center_view_artist(std::move(artist));
+
+            ImGui::TableNextColumn();
+            {
+                const int length = static_cast<int>(song->length);
+                std::string length_str = std::format("{}:{:02}", length / 60, length % 60);
+                ImVec2 avail = ImGui::GetContentRegionAvail();
+                ImVec2 size = ImGui::CalcTextSize(length_str.c_str());
+                float pos_x = ImGui::GetCursorPosX() + avail.x - size.x;
+                ImGui::SetCursorPosX(pos_x);
+                ImGui::Text("%s", length_str.c_str());
+            }
+
             ImGui::PopID();
         }
         ImGui::EndTable();
