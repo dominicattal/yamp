@@ -103,6 +103,7 @@ struct UIContext {
         GLTexture repeat_button;
         GLTexture shuffle_button;
         GLTexture autoplay_button;
+        GLTexture show_queue_button;
         GLTexture volume;
     } textures;
 
@@ -363,6 +364,7 @@ static void initialize_default_textures()
     initialize_default_texture(&ctx.textures.shuffle_button.id, "assets/shuffle-edited.png", &ctx.textures.shuffle_button.width, &ctx.textures.shuffle_button.height);
     initialize_default_texture(&ctx.textures.autoplay_button.id, "assets/autoplay-edited.png", &ctx.textures.autoplay_button.width, &ctx.textures.autoplay_button.height);
     initialize_default_texture(&ctx.textures.volume.id, "assets/volume-up-edited.png", &ctx.textures.volume.width, &ctx.textures.volume.height);
+    initialize_default_texture(&ctx.textures.show_queue_button.id, "assets/show-queue.png", &ctx.textures.show_queue_button.width, &ctx.textures.show_queue_button.height);
     glGenTextures(1, &ctx.right_side_texture);
 }
 
@@ -445,6 +447,7 @@ void ui_init()
     style.FontSizeBase = 16.0f;
     style.ScaleAllSizes(main_scale);
     style.FontScaleDpi = main_scale;
+    style.WindowBorderSize = 0.0f;
 
     ImGuiIO& io = ImGui::GetIO();
     const ImWchar icons_ranges[] = { 0xf000, 0xf3ff, 0 };
@@ -494,7 +497,7 @@ void ui_cleanup()
     SPDLOG_INFO("UI cleaned up");
 }
 
-static void draw_left_side()
+[[maybe_unused]] static void draw_left_side()
 {
     float avail_width = ImGui::GetContentRegionAvail().x;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_width - LARGE_COVER_ART_SIZE) / 2.0f);
@@ -1321,7 +1324,140 @@ void draw_right_side()
     }
 }
 
-void draw_debug_info()
+static void draw_player(const ImVec2 size)
+{
+    (void)size;
+    ImGui::SetCursorPos(ImVec2(14, 14));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    const ImVec2 album_art_size = ImVec2(100, 100);
+    if (mp_ctx.current_song != nullptr && ctx.textures.song_map.find(mp_ctx.current_song->id) != ctx.textures.song_map.end())
+    {
+        GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[mp_ctx.current_song->id]);
+        ImGui::ImageWithBg(tex.id, album_art_size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    }
+    else
+    {
+        ImGui::ImageWithBg(ctx.textures.default_album_art.id, album_art_size);
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleVar();
+
+    const char* song_text = (mp_ctx.current_song == nullptr)
+        ? "No Song Playing"
+        : mp_ctx.current_song->title.c_str();
+    const char* artist_text = "Artist";
+    const char* album_text = "Album";
+
+    float offset = 25.0f;
+    constexpr float padding = 3.0f;
+    ImGui::SetWindowFontScale(1.0f); 
+    ImGui::SetCursorPos(ImVec2(132, offset));
+    ImGui::Text("%s", song_text);
+    offset += ImGui::CalcTextSize(song_text).y + padding;
+    ImGui::SetWindowFontScale(1.0f); 
+    ImGui::SetCursorPos(ImVec2(132, offset));
+    ImGui::Text("%s", artist_text);
+    offset += ImGui::CalcTextSize(artist_text).y + padding;
+    ImGui::SetCursorPos(ImVec2(132, offset));
+    ImGui::Text("%s", album_text);
+
+    float cursor_width = 450.0f;
+    char cursor_str[256];
+    int cursor = static_cast<int>(mp_ctx.current_song_cursor);
+    int length = static_cast<int>(mp_ctx.current_song_length);
+    snprintf(cursor_str, sizeof(cursor_str), "%d:%02d / %d:%02d", cursor / 60, cursor % 60, length / 60, length % 60);
+    ImGui::SetCursorPos(ImVec2((size.x - cursor_width) / 2.0f, 20.0f));
+    ImGui::SetNextItemWidth(cursor_width);
+    if (ImGui::SliderFloat("##Cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, cursor_str, ImGuiSliderFlags_None))
+        mp_update_cursor();
+
+    const ImVec2 button_size = ImVec2(32.0f, 32.0f);
+    const float spacing = 16.0f;
+    const float width = 32 * 6 + spacing * 5;
+    const float advance = 32 + spacing;
+    float cursor_x = (size.x - width) / 2.0f;
+    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
+    bool key_pressed = !ImGui::GetIO().WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9));
+    GLTexture tex = (mp_ctx.paused) ? ctx.textures.play_button : ctx.textures.pause_button;
+    if (ImGui::ImageButton("Pause/Resume Button", tex.id, ImVec2(32, 32)) || key_pressed)
+        mp_pause_or_resume();
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
+    if (ImGui::ImageButton("Rewind Button", ctx.textures.skip_button.id, button_size, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
+        mp_queue_skip();
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
+    if (ImGui::ImageButton("Skip Button", ctx.textures.skip_button.id, button_size))
+        mp_queue_skip();
+
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
+    {
+        ImVec2 uv0 = ImVec2(0,0);
+        ImVec2 uv1 = ImVec2(1,1);
+        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        if (mp_ctx.loop_mode == LOOP_GROUP)
+            tint.x = 1.0f;
+        else if (mp_ctx.loop_mode == LOOP_TRACK)
+            tint.y = 1.0f;
+        if (ImGui::ImageButton("Repeat Button", ctx.textures.repeat_button.id, button_size, uv0, uv1, bg, tint))
+            mp_ctx.loop_mode = (mp_ctx.loop_mode + 1) % 3;
+    }
+
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
+    {
+        ImVec2 uv0 = ImVec2(0,0);
+        ImVec2 uv1 = ImVec2(1,1);
+        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        if (mp_ctx.shuffle)
+            tint.x = 1.0f;
+        if (ImGui::ImageButton("Shuffle Button", ctx.textures.shuffle_button.id, button_size, uv0, uv1, bg, tint))
+            mp_toggle_shuffle();
+    }
+
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
+    {
+        ImVec2 uv0 = ImVec2(0,0);
+        ImVec2 uv1 = ImVec2(1,1);
+        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        if (mp_ctx.autoplay)
+            tint.x = 1.0f;
+        if (ImGui::ImageButton("Autoplay Button", ctx.textures.autoplay_button.id, button_size, uv0, uv1, bg, tint))
+            mp_toggle_autoplay();
+    }
+
+    {
+        float right_edge_spacing = 10.0f;
+        float icon_spacing = 4.0f;
+        float volume_slider_size = 150.0f;
+        float volume_icon_size = 20.0f;
+        ImGui::SetCursorPos(ImVec2(size.x - volume_slider_size - volume_icon_size - right_edge_spacing - icon_spacing, 20.0f));
+        ImGui::Image(ctx.textures.volume.id, ImVec2(volume_icon_size, volume_icon_size));
+        ImGui::SetCursorPos(ImVec2(size.x - volume_slider_size - right_edge_spacing, 20.0f));
+        ImGui::SetNextItemWidth(volume_slider_size);
+        if (ImGui::SliderFloat("##Volume", &mp_ctx.volume, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_None))
+            mp_update_volume();
+
+        ImVec2 uv0 = ImVec2(0,0);
+        ImVec2 uv1 = ImVec2(1,1);
+        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        constexpr float magic_spacing_constant = 8.0f;
+        ImGui::SetCursorPos(ImVec2(size.x - button_size.x - right_edge_spacing - magic_spacing_constant, 50.0f));
+        ImGui::ImageButton("Show Queue Button", ctx.textures.show_queue_button.id, button_size, uv0, uv1, bg, tint);
+        ImGui::SetCursorPos(ImVec2(size.x - 2 * button_size.x - right_edge_spacing - spacing - magic_spacing_constant, 50.0f));
+        if (ImGui::ImageButton("Clear Queue Button", ctx.textures.default_album_art.id, button_size, uv0, uv1, bg, tint))
+            mp_queue_clear();
+    }
+}
+
+static void draw_debug_info()
 {
     ImGui::SetNextWindowPos(ImVec2(200, 200), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiCond_FirstUseEver);
@@ -1340,40 +1476,59 @@ static void draw_imgui()
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    static bool window_open = true;
     ImGuiWindowFlags window_flags{};
     window_flags |= ImGuiWindowFlags_NoResize;
     window_flags |= ImGuiWindowFlags_NoMove;
     window_flags |= ImGuiWindowFlags_NoCollapse;
     window_flags |= ImGuiWindowFlags_NoTitleBar;
     window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
+    window_flags |= ImGuiWindowFlags_NoScrollbar;
+    window_flags |= ImGuiWindowFlags_NoScrollWithMouse;
+
+    const ImVec2& display_size = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+    ImGui::SetNextWindowSize(display_size);
+    static bool window_open = true;
     ImGui::Begin("UMP", &window_open, window_flags);
 
-    bool right_side_open = ctx.right_side != SHOW_RIGHT_NONE;
-    if (ImGui::BeginTable("view", 2 + right_side_open, ImGuiTableFlags_BordersInnerV))
-    {
-        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 300);
-        ImGui::TableSetupColumn("Cover", ImGuiTableColumnFlags_NoSort);
+    static bool player_open = true;
+    float player_height = (player_open) ? 128.0f : 0.0f;
+    float interface_height = display_size.y - player_height;
 
-        ImGui::TableNextColumn();
-        draw_left_side();
-        ImGui::TableNextColumn();
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(display_size.x, interface_height));
+    ImGui::BeginChild("##Interface", ImVec2(0.0f, interface_height));
+    if (ImGui::BeginTable("view", 3, ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerV))
+    {
+        ImGui::TableSetupColumn("left", ImGuiTableColumnFlags_WidthFixed, 300);
+        ImGui::TableSetupColumn("center", ImGuiTableColumnFlags_NoSort);
+        ImGui::TableSetupColumn("right", ImGuiTableColumnFlags_WidthFixed, 300);
+        ImGui::TableNextRow();
+
+        ImGui::TableSetColumnIndex(0);
+        ImGui::Text("Left Side");
+        //draw_left_side();
+        ImGui::TableSetColumnIndex(1);
         draw_center();
-        if (right_side_open)
-        {
-            ImGui::TableNextColumn();
-            draw_right_side();
-        }
+        ImGui::TableSetColumnIndex(2);
+        ImGui::Text("Right Side");
+        //draw_right_side();
+
         ImGui::EndTable();
     }
+    ImGui::EndChild();
 
-    //draw_left_side();
-    //ImGui::SameLine();
-    //draw_center();
-    //ImGui::SameLine();
-    //draw_right_side();
+    if (player_open)
+    {
+        ImGui::SetCursorPos(ImVec2(0.0f, interface_height));
+        ImGui::Separator();
+        ImGui::SetNextWindowPos(ImVec2(0.0f, interface_height));
+        ImGui::SetNextWindowSize(ImVec2(display_size.x, player_height));
+        const ImVec2 size = ImVec2(display_size.x, player_height);
+        ImGui::BeginChild("##Child", size);
+        draw_player(size);
+        ImGui::EndChild();
+    }
 
     ImGui::End();
 
