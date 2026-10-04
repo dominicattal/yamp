@@ -787,13 +787,18 @@ static void draw_album_info()
 
     LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_album(ctx.open_album->id);
     if (tracks->size() == 0)
+    {
+        ImGui::Text("No tracks found in album %s", ctx.open_album->name.c_str());
         return;
+    }
 
     LruCacheRef<Album> album = mp_get_album(ctx.open_album->id);
     LruCacheRef<Artist> artist = mp_get_artist_from_album(ctx.open_album->id);
     LruCacheRef<Song> first_song = mp_get_song(tracks->front().song_id);
 
-    const ImVec2 size = ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10.0f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
+    const ImVec2 size = ImVec2(210, 210);
     if (ctx.textures.song_map.find(first_song->id) != ctx.textures.song_map.end())
     {
         GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[first_song->id]);
@@ -807,9 +812,9 @@ static void draw_album_info()
     ImGui::SameLine();
     {
         ImGui::BeginChild("album_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
-        ImGui::SetWindowFontScale(4.0f); 
-        ImGui::Text("%s", album->name.c_str());
         ImGui::SetWindowFontScale(2.0f); 
+        ImGui::Text("%s", album->name.c_str());
+        ImGui::SetWindowFontScale(1.5f); 
         char artist_buf[256];
         if (artist)
             snprintf(artist_buf, sizeof(artist_buf), "%s", artist->name.c_str());
@@ -883,10 +888,57 @@ static void draw_album_info()
         ImVec2 mouse_pos = ImGui::GetMousePos();
         ImVec2 play_button_size(18.0f, 18.0f);
         ImGui::SetCursorPos(ImVec2(0.0f, cursor_y));
-        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
-        ImGui::Selectable("##", false, ImGuiSelectableFlags_None, ImVec2(row_width, row_height));
+
+        const ImVec4 selectable_color = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Header, selectable_color);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, selectable_color);
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, selectable_color);
+
+        static int selected = -1;
+        ImGui::Selectable("##", selected == song->id, ImGuiSelectableFlags_None, ImVec2(row_width, row_height));
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+            selected = song->id;
+        if (ImGui::BeginPopupContextItem())
+        {
+            selected = song->id;
+            if (ImGui::Button("Play"))
+            {
+                mp_play_song(song->id);
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::Button("Queue"))
+            {
+                mp_queue_song(song->id);
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::Button("Add to Playlist"))
+                ImGui::OpenPopup("add_to_playlist_popup");
+            if (ImGui::BeginPopup("add_to_playlist_popup"))
+            {
+                for (const LruCacheRef<Playlist>& playlist : ctx.playlists)
+                {
+                    ImGui::PushID(playlist->id);
+                    if (ImGui::Button(playlist->name.c_str()))
+                        mp_add_song_to_playlist(song->id, playlist->id);
+                    ImGui::PopID();
+                }
+                if (ImGui::Button("Create Playlist"))
+                {
+                    LruCacheRef<Playlist> playlist = mp_create_playlist();
+                    ctx.playlists.push_back(mp_get_playlist(playlist->id));
+                    mp_add_song_to_playlist(song_id, playlist->id);
+                    set_center_view_playlist(std::move(playlist));
+                }
+                ImGui::EndPopup();
+            }
+            if (ImGui::Button("Close"))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+        else if (selected == song->id)
+        {
+            selected = -1;
+        }
         ImGui::PopStyleColor(3);
         ImGui::SetCursorPos(ImVec2(track_col_offset + (track_col_width - play_button_size.x) / 2.0f, cursor_y + (row_height - play_button_size.y) / 2.0f));
         ImVec2 screen_pos = ImGui::GetCursorScreenPos();
