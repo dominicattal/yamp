@@ -73,6 +73,8 @@ struct MPContext {
     LruCache<std::vector<int>> artist_albums;
 
     LruCacheRef<Song> current_song;
+    LruCacheRef<Artist> current_song_artist;
+    LruCacheRef<Album> current_song_album;
 
     SongCallback song_constructor_callback;
 

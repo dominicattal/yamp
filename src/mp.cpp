@@ -193,9 +193,8 @@ static int db_get_album_from_song(int song_id)
     const char* query = "SELECT album_id FROM AlbumSong WHERE song_id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
-    [[maybe_unused]] int res = sqlite3_step(stmt);
-    assert(res == SQLITE_ROW);
-    int album_id = sqlite3_column_int(stmt, 0);
+    int res = sqlite3_step(stmt);
+    int album_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
     sqlite3_finalize(stmt);
     return album_id;
 }
@@ -206,9 +205,8 @@ static int db_get_artist_from_song(int song_id)
     const char* query = "SELECT artist_id FROM ArtistSong WHERE song_id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
-    [[maybe_unused]] int res = sqlite3_step(stmt);
-    assert(res == SQLITE_ROW);
-    int artist_id = sqlite3_column_int(stmt, 0);
+    int res = sqlite3_step(stmt);
+    int artist_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
     sqlite3_finalize(stmt);
     return artist_id;
 }
@@ -219,9 +217,8 @@ static int db_get_artist_from_album(int album_id)
     const char* query = "SELECT artist_id FROM ArtistAlbum WHERE album_id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
-    [[maybe_unused]] int res = sqlite3_step(stmt);
-    assert(res == SQLITE_ROW);
-    int artist_id = sqlite3_column_int(stmt, 0);
+    int res = sqlite3_step(stmt);
+    int artist_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
     sqlite3_finalize(stmt);
     return artist_id;
 }
@@ -772,6 +769,8 @@ void mp_play_song(int song_id)
     ma_sound_get_length_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_length);
     ctx.current_song_loaded = true;
     mp_ctx.current_song = std::move(song);
+    mp_ctx.current_song_artist = mp_get_artist_from_song(song_id);
+    mp_ctx.current_song_album = mp_get_album_from_song(song_id);
 }
 
 void mp_queue_song(int song_id)
