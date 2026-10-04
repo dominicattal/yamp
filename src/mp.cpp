@@ -1148,6 +1148,8 @@ void mp_queue_skip()
             mp_play_song(song->id);
         } else if (ctx.current_song_loaded) {
             mp_ctx.current_song = nullptr;
+            mp_ctx.current_song_artist = nullptr;
+            mp_ctx.current_song_album = nullptr;
             ma_sound_uninit(&ctx.current_song_sound);
             ctx.current_song_loaded = false;
         }

@@ -27,6 +27,8 @@
 #define SMALL_COVER_ART_SIZE (1<<SMALL_COVER_ART_SIZE_BITS)
 #define SLOTS_PER_TEXTURE (1<<(TEXTURE_SIZE_BITS<<1)>>(LARGE_COVER_ART_SIZE_BITS<<1))
 
+#define IMGUI_BLANK ImVec4(0.0f, 0.0f, 0.0f, 0.0f)
+
 const char* vertex_shader = R"(
     #version 430 core
     layout (location = 0) in vec2 aTexCoords;
@@ -508,7 +510,7 @@ void ui_cleanup()
     SPDLOG_INFO("UI cleaned up");
 }
 
-static bool text_button(const char* text)
+static bool imgui_text_button(const char* text)
 {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -532,6 +534,23 @@ static bool text_button(const char* text)
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
     return hovered && clicked;
+}
+
+enum Alignment {
+    ALIGN_LEFT,
+    ALIGN_CENTER,
+    ALIGN_RIGHT
+};
+
+static void imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 region_size, Alignment h_align, Alignment v_align)
+{
+    ImVec2 text_size = ImGui::CalcTextSize(text);
+    ImGui::SetCursorPos(ImVec2(
+                region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
+                region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
+    ImGui::Text("%s", text);
+    // Resetting the cursor is unnecessary
+    //ImGui::SetCursorPos(ImVec2(region_start.x + region_size.x, region_start.y));
 }
 
 [[maybe_unused]] static void draw_left_side()
@@ -727,11 +746,11 @@ static void draw_search_results()
             ImGui::Text("%s", song->title.c_str());
 
             LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
-            if (artist != nullptr && text_button(artist->name.c_str()))
+            if (artist != nullptr && imgui_text_button(artist->name.c_str()))
                 set_center_view_artist(std::move(artist));
 
             LruCacheRef<Album> album = mp_get_album_from_song(song->id);
-            if (album != nullptr && text_button(album->name.c_str()))
+            if (album != nullptr && imgui_text_button(album->name.c_str()))
                 set_center_view_album(std::move(album));
 
             ImGui::TableNextColumn();
@@ -796,7 +815,7 @@ static void draw_album_info()
             snprintf(artist_buf, sizeof(artist_buf), "%s", artist->name.c_str());
         else
             snprintf(artist_buf, sizeof(artist_buf), "<No Artist>");
-        if (text_button(artist_buf))
+        if (imgui_text_button(artist_buf))
             set_center_view_artist(std::move(artist));
         ImGui::SetWindowFontScale(1.0f); 
         GLTexture tex = ctx.textures.play_button;
@@ -833,135 +852,92 @@ static void draw_album_info()
         ImGui::EndChild();
     }
 
-    ImGui::BeginChild("playlist_view", ImGui::GetContentRegionAvail());
     constexpr float row_height = 40.0f;
     const float row_width = ImGui::GetContentRegionAvail().x;
+
+    const float track_col_offset = 10.0f;
+    const float title_col_offset = 70.0f;
+    const float length_col_offset = row_width - 100.0f;
+
+    const float track_col_width = title_col_offset - track_col_offset;
+    const float title_col_width = length_col_offset - title_col_offset;
+    const float length_col_width = 50.0f;
+
+    ImVec2 origin = ImGui::GetCursorPos();
+
+    imgui_aligned_text("#", ImVec2(origin.x + track_col_offset, origin.y), ImVec2(track_col_width, row_height), ALIGN_CENTER, ALIGN_CENTER);
+    imgui_aligned_text("Title", ImVec2(origin.x + title_col_offset, origin.y), ImVec2(title_col_width, row_height), ALIGN_LEFT, ALIGN_CENTER);
+    imgui_aligned_text("Length", ImVec2(origin.x + length_col_offset, origin.y), ImVec2(length_col_width, row_height), ALIGN_RIGHT, ALIGN_CENTER);
+
+    ImGui::SetCursorPos(ImVec2(origin.x, origin.y + row_height));
+    ImGui::Separator();
+    ImGui::SetCursorPos(ImVec2(origin.x, origin.y + row_height));
+    ImGui::BeginChild("album_songs", ImGui::GetContentRegionAvail(), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
     ImVec2 cursor_pos = ImGui::GetCursorPos();
-    auto vertically_centered_text = [&cursor_pos](const char* text, float cursor_x)
-        {
-            float text_height = ImGui::CalcTextSize(text).y;
-            ImGui::SetCursorPos(ImVec2(cursor_x, cursor_pos.y + (row_height - text_height) / 2.0f));
-            ImGui::Text("%s", text);
-        };
     for (const auto& [song_id, track] : *tracks)
     {
         LruCacheRef<Song> song = mp_get_song(song_id);
         ImGui::PushID(song_id);
+
+        float cursor_y = cursor_pos.y;
+        ImVec2 mouse_pos = ImGui::GetMousePos();
+        ImVec2 play_button_size(18.0f, 18.0f);
+        ImGui::SetCursorPos(ImVec2(0.0f, cursor_y));
+        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+        ImGui::Selectable("##", false, ImGuiSelectableFlags_None, ImVec2(row_width, row_height));
+        ImGui::PopStyleColor(3);
+        ImGui::SetCursorPos(ImVec2(track_col_offset + (track_col_width - play_button_size.x) / 2.0f, cursor_y + (row_height - play_button_size.y) / 2.0f));
+        ImVec2 screen_pos = ImGui::GetCursorScreenPos();
+        bool hovered = mouse_pos.x >= screen_pos.x 
+            && mouse_pos.x <= screen_pos.x + play_button_size.x
+            && mouse_pos.y >= screen_pos.y 
+            && mouse_pos.y <= screen_pos.y + play_button_size.y;
+        if (!hovered)
         {
-            float cursor_x = 30.0f;
-            float cursor_y = cursor_pos.y;
-            float col_width = 50.0f;
-            ImVec2 mouse_pos = ImGui::GetMousePos();
-            ImVec2 play_button_size(18.0f, 18.0f);
-            ImGui::SetCursorPos(ImVec2(cursor_x + (col_width - play_button_size.x) / 2.0f, cursor_y + (row_height - play_button_size.y) / 2.0f));
-            ImVec2 screen_pos = ImGui::GetCursorScreenPos();
-            bool hovered = mouse_pos.x >= screen_pos.x 
-                && mouse_pos.x <= screen_pos.x + play_button_size.x
-                && mouse_pos.y >= screen_pos.y 
-                && mouse_pos.y <= screen_pos.y + play_button_size.y;
-            if (!hovered)
-            {
-                std::string track_str = std::to_string(track);
-                ImVec2 text_size = ImGui::CalcTextSize(track_str.c_str());
-                ImGui::SetCursorPos(ImVec2(cursor_x + (col_width - text_size.x) / 2.0f, cursor_y + (row_height - text_size.y) / 2.0f));
-                ImGui::Text("%s", track_str.c_str());
-            }
-            else
-            {
-                GLTexture tex = ctx.textures.play_button;
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-                const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
-                const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
-                const ImVec4 bg_col = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-                const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-                if (ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col))
-                    mp_play_song(song_id);
-                ImGui::PopStyleVar();
-                ImGui::PopStyleColor(3);
-            }
+            std::string track_str = std::to_string(track);
+            ImVec2 text_size = ImGui::CalcTextSize(track_str.c_str());
+            ImGui::SetCursorPos(ImVec2(track_col_offset + (track_col_width - text_size.x) / 2.0f, cursor_y + (row_height - text_size.y) / 2.0f));
+            ImGui::Text("%s", track_str.c_str());
         }
-        vertically_centered_text(song->title.c_str(), 80.0f);
+        else
+        {
+            GLTexture tex = ctx.textures.play_button;
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+            const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
+            const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
+            const ImVec4 bg_col = IMGUI_BLANK;
+            const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+            // IDK why ImGui::Image() doesnt work here maybe investigate some other time
+            //ImGui::Image(tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+            ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            {
+                if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+                    mp_queue_song(song_id);
+                else
+                    mp_play_song(song_id);
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+        }
+
+        imgui_aligned_text(song->title.c_str(), ImVec2(cursor_pos.x + title_col_offset, cursor_pos.y), ImVec2(title_col_width, row_height), ALIGN_LEFT, ALIGN_CENTER);
 
         char length_str[256];
         int length = static_cast<int>(song->length);
         snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
-        vertically_centered_text(length_str, row_width - 80.0f);
+        imgui_aligned_text(length_str, ImVec2(cursor_pos.x + length_col_offset, cursor_pos.y), ImVec2(length_col_width, row_height), ALIGN_RIGHT, ALIGN_CENTER);
 
         ImGui::PopID();
         cursor_pos.y += row_height;
+        ImGui::SetCursorPos(ImVec2(0.0f, cursor_y));
     }
     ImGui::EndChild();
-
-    return;
-
-    ImGuiTableFlags flags = ImGuiTableFlags_None;
-    flags |= ImGuiTableFlags_Resizable;
-    flags |= ImGuiTableFlags_Hideable;
-    flags |= ImGuiTableFlags_ScrollY;
-    flags |= ImGuiTableFlags_BordersV;
-    flags |= ImGuiTableFlags_RowBg;
-    flags |= ImGuiTableFlags_BordersOuter;
-    flags |= ImGuiTableFlags_NoBordersInBody;
-
-    constexpr int track_col_width = 50; 
-
-    if (ImGui::BeginTable("Nested Album Songs", 5, flags))
-    {
-        ImGui::TableSetupColumn("##Play Button", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 32);
-        ImGui::TableSetupColumn("##Queue Button", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 32);
-        ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, track_col_width);
-        ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Length", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableHeadersRow();
-        int id = 0;
-        for (const auto& [song_id, track] : *tracks)
-        {
-            LruCacheRef<Song> song = mp_get_song(song_id);
-            ImGui::PushID(id++);
-            ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
-            ImGui::TableNextColumn();
-            if (ImGui::ImageButton("Play", ctx.textures.play_button.id, ImVec2(32, 32)))
-                mp_play_song(song->id);;
-            ImGui::TableNextColumn();
-            if (ImGui::ImageButton("Queue", ctx.textures.queue_button.id, ImVec2(32, 32)))
-                mp_queue_song(song->id);
-
-            ImGui::TableNextColumn();
-            {
-                std::string track_str = std::to_string(track);
-                ImVec2 avail = ImGui::GetContentRegionAvail();
-                ImVec2 size = ImGui::CalcTextSize(track_str.c_str());
-                float pos_x = ImGui::GetCursorPosX() + (avail.x - size.x) / 2.0f;
-                ImGui::SetCursorPosX(pos_x);
-                ImGui::Text("%s", track_str.c_str());
-            }
-
-            ImGui::TableNextColumn();
-            ImGui::SetWindowFontScale(1.2f); 
-            ImGui::Text("%s", song->title.c_str());
-            ImGui::SetWindowFontScale(1.0f); 
-            LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
-            if (artist != nullptr && text_button(artist->name.c_str()))
-                set_center_view_artist(std::move(artist));
-
-            ImGui::TableNextColumn();
-            {
-                const int length = static_cast<int>(song->length);
-                std::string length_str = std::format("{}:{:02}", length / 60, length % 60);
-                ImVec2 avail = ImGui::GetContentRegionAvail();
-                ImVec2 size = ImGui::CalcTextSize(length_str.c_str());
-                float pos_x = ImGui::GetCursorPosX() + avail.x - size.x;
-                ImGui::SetCursorPosX(pos_x);
-                ImGui::Text("%s", length_str.c_str());
-            }
-
-            ImGui::PopID();
-        }
-        ImGui::EndTable();
-    }
 }
 
 static void draw_playlist_info()
@@ -1414,7 +1390,7 @@ void draw_right_side()
             if (artist != nullptr)
             {
                 cursor_pos.y += ImGui::CalcTextSize(artist->name.c_str()).y;
-                if (text_button(artist->name.c_str()))
+                if (imgui_text_button(artist->name.c_str()))
                     set_center_view_artist(std::move(artist));
             }
             ImGui::SetCursorPos(cursor_pos);
@@ -1422,7 +1398,7 @@ void draw_right_side()
             if (album != nullptr)
             {
                 cursor_pos.y += ImGui::CalcTextSize(album->name.c_str()).y;
-                if (text_button(album->name.c_str()))
+                if (imgui_text_button(album->name.c_str()))
                     set_center_view_album(std::move(album));
             }
 
@@ -1498,7 +1474,7 @@ static void draw_player(const ImVec2 size)
     {
         const char* artist_name = mp_ctx.current_song_artist->name.c_str();
         ImGui::SetCursorPos(ImVec2(132, offset));
-        if (text_button(artist_name))
+        if (imgui_text_button(artist_name))
             set_center_view_artist(mp_get_artist(mp_ctx.current_song_artist->id));
         offset += ImGui::CalcTextSize(artist_name).y + padding;
     }
@@ -1506,7 +1482,7 @@ static void draw_player(const ImVec2 size)
     {
         const char* album_name = mp_ctx.current_song_album->name.c_str();
         ImGui::SetCursorPos(ImVec2(132, offset));
-        if (text_button(album_name))
+        if (imgui_text_button(album_name))
             set_center_view_album(mp_get_album(mp_ctx.current_song_album->id));
     }
 
