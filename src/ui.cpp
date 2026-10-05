@@ -91,8 +91,8 @@ struct UIContext {
         std::priority_queue<SlotID, std::vector<SlotID>, std::greater<SlotID>> free_slot_textures;
         // Use to keep track of the number of slots free_slot_textures has handed out
         int num_slots;
-        // Use to map an mp object to a slot
-        std::unordered_map<MPUID, Slot> slot_map;
+        // Use to map a song to a slot
+        std::unordered_map<SongID, Slot> slot_map;
         // Slot for the default album art
         Slot default_album_art_slot;
 
@@ -126,6 +126,9 @@ struct UIContext {
         LruCacheRef<Album> album;
         LruCacheRef<Playlist> playlist;
         LruCacheRef<Artist> artist;
+
+        // For art of the shown type, so album art, playlist art, etc
+        std::optional<Slot> art_slot;
 
         // if type is album or playlist, then write to song_tracks
         // otherwise, write to songs
@@ -238,7 +241,7 @@ static GLTexture get_texture_from_song(SongID song_id)
     return get_texture_default();
 }
 
-static GLTexture get_texture_from_album(AlbumID album_id)
+[[maybe_unused]] static GLTexture get_texture_from_album(AlbumID album_id)
 {
     (void)album_id;
     return get_texture_default();
@@ -248,147 +251,6 @@ static GLTexture get_texture_from_playlist(PlaylistID playlist_id)
 {
     (void)playlist_id;
     return get_texture_default();
-}
-
-static void initialize_texture_fbo()
-{
-    ctx.textures.shader_program = compile_shader_program();
-
-    glUseProgram(ctx.textures.shader_program);
-    glGenVertexArrays(1, &ctx.textures.vao);
-    glBindVertexArray(ctx.textures.vao);
-
-    glGenBuffers(1, &ctx.textures.vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, ctx.textures.vbo);
-    const float vertices[] = {
-        0.0f, 0.0f,
-        1.0f, 0.0f,
-        0.0f, 1.0f,
-        1.0f, 1.0f
-    };
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    glGenTextures(1, &ctx.textures.cover_texture);
-    glBindTexture(GL_TEXTURE_2D, ctx.textures.cover_texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-}
-
-static void push_history_entry(ViewEnum type, int id)
-{
-    std::pair<ViewEnum, int> entry{type, id};
-    if (ctx.view_history.empty() || ctx.view_history.back() != entry) {
-        ctx.view_history.push_back(entry);
-        if (ctx.view_history.size() > HISTORY_MAX_SIZE)
-            ctx.view_history.pop_front();
-    }
-}
-
-static void set_center_view_song(LruCacheRef<Song>&& song)
-{
-    ctx.center.type = SHOW_CENTER_SONG;
-    ctx.center.artist = mp_get_artist_from_song(song->id);
-    ctx.center.playlist = nullptr;
-    ctx.center.album = mp_get_album_from_song(song->id);
-    ctx.center.song = std::move(song);
-    ctx.center.song_tracks.clear();
-    ctx.center.songs.clear();
-    ctx.center.albums.clear();
-
-    push_history_entry(SHOW_CENTER_SONG, ctx.center.song->id);
-}
-
-static void set_center_view_album(LruCacheRef<Album>&& album)
-{
-    ctx.center.type = SHOW_CENTER_ALBUM;
-    ctx.center.song = nullptr;
-    ctx.center.artist = mp_get_artist_from_album(album->id);
-    ctx.center.playlist = nullptr;
-    ctx.center.album = std::move(album);
-    ctx.center.song_tracks.clear();
-    ctx.center.songs.clear();
-    ctx.center.albums.clear();
-
-    LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_album(ctx.center.album->id);
-    for (auto & [song_id, track] : *tracks)
-        ctx.center.song_tracks.emplace_back(mp_get_song(song_id), track);
-
-    push_history_entry(SHOW_CENTER_ALBUM, ctx.center.album->id);
-}
-
-static void set_center_view_playlist(LruCacheRef<Playlist>&& playlist)
-{
-    ctx.center.type = SHOW_CENTER_PLAYLIST;
-    ctx.center.song = nullptr;
-    ctx.center.artist = nullptr;
-    ctx.center.playlist = std::move(playlist);
-    ctx.center.album = nullptr;
-    ctx.center.song_tracks.clear();
-    ctx.center.songs.clear();
-    ctx.center.albums.clear();
-
-    LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_playlist(ctx.center.playlist->id);
-    for (auto & [song_id, track] : *tracks)
-        ctx.center.song_tracks.emplace_back(mp_get_song(song_id), track);
-
-    push_history_entry(SHOW_CENTER_PLAYLIST, ctx.center.playlist->id);
-}
-
-static void set_center_view_artist(LruCacheRef<Artist>&& artist)
-{
-    ctx.center.type = SHOW_CENTER_ARTIST;
-    ctx.center.song = nullptr;
-    ctx.center.artist = std::move(artist);
-    ctx.center.playlist = nullptr;
-    ctx.center.album = nullptr;
-    ctx.center.albums.clear();
-
-    LruCacheRef<std::vector<int>> albums = mp_get_albums_from_artist(ctx.center.artist->id);
-    for (AlbumID album_id : *albums)
-        ctx.center.albums.emplace_back(mp_get_album(album_id));
-
-    push_history_entry(SHOW_CENTER_ARTIST, ctx.center.artist->id);
-}
-
-static void set_center_view_playlists()
-{
-    ctx.center.type = SHOW_CENTER_PLAYLISTS;
-    ctx.center.song = nullptr;
-    ctx.center.artist = nullptr;
-    ctx.center.playlist = nullptr;
-    ctx.center.album = nullptr;
-    ctx.center.albums.clear();
-
-    push_history_entry(SHOW_CENTER_PLAYLISTS, -1);
-}
-
-static void set_center_view_search_result()
-{
-    ctx.center.type = SHOW_CENTER_SEARCH_RESULT;
-    ctx.center.song = nullptr;
-    ctx.center.artist = nullptr;
-    ctx.center.playlist = nullptr;
-    ctx.center.album = nullptr;
-    ctx.center.albums.clear();
-}
-
-static void toggle_right_view_queue()
-{
-    ctx.right.type = (ctx.right.type == SHOW_RIGHT_QUEUE) ? SHOW_RIGHT_NONE : SHOW_RIGHT_QUEUE;
-    ctx.right.song = nullptr;
-}
-
-[[maybe_unused]] static void set_right_view_song_edit(LruCacheRef<Song>&& song)
-{
-    ctx.right.type = SHOW_RIGHT_SONG_EDIT;
-    ctx.right.song = std::move(song);
-    LruCacheRef<Album> album = mp_get_album(mp_get_album_from_song(ctx.right.song->id));
-    LruCacheRef<Artist> artist = mp_get_artist(mp_get_artist_from_song(ctx.right.song->id));
-    snprintf(ctx.right.song_title, sizeof(ctx.right.song_title), "%s", ctx.right.song->title.c_str());
-    snprintf(ctx.right.song_artist, sizeof(ctx.right.song_artist), "%s", artist->name.c_str());
-    snprintf(ctx.right.song_album, sizeof(ctx.right.song_album), "%s", album->name.c_str());
 }
 
 static Slot get_slot()
@@ -430,6 +292,157 @@ static Slot create_texture(const unsigned char* data)
 static void delete_texture(Slot& slot)
 {
     ctx.textures.free_slot_textures.push(slot.idx);
+}
+
+static void initialize_texture_fbo()
+{
+    ctx.textures.shader_program = compile_shader_program();
+
+    glUseProgram(ctx.textures.shader_program);
+    glGenVertexArrays(1, &ctx.textures.vao);
+    glBindVertexArray(ctx.textures.vao);
+
+    glGenBuffers(1, &ctx.textures.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, ctx.textures.vbo);
+    const float vertices[] = {
+        0.0f, 0.0f,
+        1.0f, 0.0f,
+        0.0f, 1.0f,
+        1.0f, 1.0f
+    };
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glGenTextures(1, &ctx.textures.cover_texture);
+    glBindTexture(GL_TEXTURE_2D, ctx.textures.cover_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+}
+
+static void push_history_entry(ViewEnum type, int id)
+{
+    std::pair<ViewEnum, int> entry{type, id};
+    if (ctx.view_history.empty() || ctx.view_history.back() != entry) {
+        ctx.view_history.push_back(entry);
+        if (ctx.view_history.size() > HISTORY_MAX_SIZE)
+            ctx.view_history.pop_front();
+    }
+}
+
+static void reset_center_view()
+{
+    ctx.center.song_tracks.clear();
+    ctx.center.songs.clear();
+    ctx.center.albums.clear();
+    if (ctx.center.art_slot)
+        delete_texture(ctx.center.art_slot.value());
+    ctx.center.art_slot.reset();
+}
+
+static void set_center_view_song(LruCacheRef<Song>&& song)
+{
+    reset_center_view();
+    ctx.center.type = SHOW_CENTER_SONG;
+    ctx.center.artist = mp_get_artist_from_song(song->id);
+    ctx.center.playlist = nullptr;
+    ctx.center.album = mp_get_album_from_song(song->id);
+    ctx.center.song = std::move(song);
+
+    push_history_entry(SHOW_CENTER_SONG, ctx.center.song->id);
+}
+
+static void set_center_view_album(LruCacheRef<Album>&& album)
+{
+    reset_center_view();
+    ctx.center.type = SHOW_CENTER_ALBUM;
+    ctx.center.song = nullptr;
+    ctx.center.artist = mp_get_artist_from_album(album->id);
+    ctx.center.playlist = nullptr;
+    ctx.center.album = std::move(album);
+
+    Art album_art = mp_get_album_art(ctx.center.album->id);
+    if (album_art.data == nullptr)
+        ctx.center.art_slot = ctx.textures.default_album_art_slot;
+    else
+        ctx.center.art_slot = create_texture(album_art.data);
+
+    LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_album(ctx.center.album->id);
+    for (auto & [song_id, track] : *tracks)
+        ctx.center.song_tracks.emplace_back(mp_get_song(song_id), track);
+
+    push_history_entry(SHOW_CENTER_ALBUM, ctx.center.album->id);
+}
+
+static void set_center_view_playlist(LruCacheRef<Playlist>&& playlist)
+{
+    reset_center_view();
+    ctx.center.type = SHOW_CENTER_PLAYLIST;
+    ctx.center.song = nullptr;
+    ctx.center.artist = nullptr;
+    ctx.center.playlist = std::move(playlist);
+    ctx.center.album = nullptr;
+
+    LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_playlist(ctx.center.playlist->id);
+    for (auto & [song_id, track] : *tracks)
+        ctx.center.song_tracks.emplace_back(mp_get_song(song_id), track);
+
+    push_history_entry(SHOW_CENTER_PLAYLIST, ctx.center.playlist->id);
+}
+
+static void set_center_view_artist(LruCacheRef<Artist>&& artist)
+{
+    reset_center_view();
+    ctx.center.type = SHOW_CENTER_ARTIST;
+    ctx.center.song = nullptr;
+    ctx.center.artist = std::move(artist);
+    ctx.center.playlist = nullptr;
+    ctx.center.album = nullptr;
+
+    LruCacheRef<std::vector<int>> albums = mp_get_albums_from_artist(ctx.center.artist->id);
+    for (AlbumID album_id : *albums)
+        ctx.center.albums.emplace_back(mp_get_album(album_id));
+
+    push_history_entry(SHOW_CENTER_ARTIST, ctx.center.artist->id);
+}
+
+static void set_center_view_playlists()
+{
+    reset_center_view();
+    ctx.center.type = SHOW_CENTER_PLAYLISTS;
+    ctx.center.song = nullptr;
+    ctx.center.artist = nullptr;
+    ctx.center.playlist = nullptr;
+    ctx.center.album = nullptr;
+
+    push_history_entry(SHOW_CENTER_PLAYLISTS, -1);
+}
+
+static void set_center_view_search_result()
+{
+    reset_center_view();
+    ctx.center.type = SHOW_CENTER_SEARCH_RESULT;
+    ctx.center.song = nullptr;
+    ctx.center.artist = nullptr;
+    ctx.center.playlist = nullptr;
+    ctx.center.album = nullptr;
+}
+
+static void toggle_right_view_queue()
+{
+    ctx.right.type = (ctx.right.type == SHOW_RIGHT_QUEUE) ? SHOW_RIGHT_NONE : SHOW_RIGHT_QUEUE;
+    ctx.right.song = nullptr;
+}
+
+[[maybe_unused]] static void set_right_view_song_edit(LruCacheRef<Song>&& song)
+{
+    ctx.right.type = SHOW_RIGHT_SONG_EDIT;
+    ctx.right.song = std::move(song);
+    LruCacheRef<Album> album = mp_get_album(mp_get_album_from_song(ctx.right.song->id));
+    LruCacheRef<Artist> artist = mp_get_artist(mp_get_artist_from_song(ctx.right.song->id));
+    snprintf(ctx.right.song_title, sizeof(ctx.right.song_title), "%s", ctx.right.song->title.c_str());
+    snprintf(ctx.right.song_artist, sizeof(ctx.right.song_artist), "%s", artist->name.c_str());
+    snprintf(ctx.right.song_album, sizeof(ctx.right.song_album), "%s", album->name.c_str());
 }
 
 static void initialize_default_texture(GLuint* id, const char* path)
@@ -844,7 +857,7 @@ static void draw_album_info()
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10.0f);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
     const ImVec2 size = ImVec2(210, 210);
-    GLTexture tex = get_texture_from_album(album->id);
+    GLTexture tex = get_texture_from_slot(ctx.center.art_slot.value());
     ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 
     ImGui::SameLine();

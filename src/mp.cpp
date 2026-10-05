@@ -35,7 +35,7 @@ static MPContextInternal ctx;
 
 // Create
 static void db_create_song(const char* title, const char* song_path, double song_length, const uint8_t* art, int art_size);
-static void db_create_album(const char* name);
+static void db_create_album(const char* name, const uint8_t* art, int art_size);
 static void db_create_artist(const char* name);
 static void db_create_playlist(const char* name);
 static void db_create_artist_song(int artist_id, SongID song_id);
@@ -85,7 +85,7 @@ static SongID db_get_song_id(const char* song_path)
     sqlite3_stmt* stmt;
     const char* query = "SELECT id FROM Songs WHERE path=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, song_path, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, song_path, -1, SQLITE_STATIC);
     int res = sqlite3_step(stmt);
     SongID song_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : INVALID_ID;
     sqlite3_finalize(stmt);
@@ -320,7 +320,7 @@ static ArtistID db_get_artist_id(const char* name)
     sqlite3_stmt* stmt;
     const char* query = "SELECT id FROM Artists WHERE name=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
     int res = sqlite3_step(stmt);
     ArtistID artist_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : INVALID_ID;
     sqlite3_finalize(stmt);
@@ -332,7 +332,7 @@ static void db_create_artist(const char* name)
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Artists (name) VALUES (?1)";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
@@ -342,8 +342,8 @@ static void db_create_song(const char* title, const char* song_path, double song
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Songs (title, path, length, cover) VALUES (?1, ?2, ?3, ?4);";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, title, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, song_path, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, title, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, song_path, -1, SQLITE_STATIC);
     sqlite3_bind_double(stmt, 3, song_length);
     sqlite3_bind_blob(stmt, 4, art, art_size, SQLITE_STATIC);
     int res = sqlite3_step(stmt);
@@ -357,8 +357,8 @@ static void db_update_song(SongID song_id, const char* new_title, const char* ne
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Songs SET title=?1, path=?2, length=?3 WHERE id=?4";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, new_title, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, new_song_path, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, new_title, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, new_song_path, -1, SQLITE_STATIC);
     sqlite3_bind_double(stmt, 3, new_song_length);
     sqlite3_bind_int(stmt, 4, song_id);
     sqlite3_step(stmt);
@@ -450,19 +450,20 @@ static AlbumID db_get_album_id(const char* name)
     sqlite3_stmt* stmt;
     const char* query = "SELECT id FROM Albums WHERE name=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
     int res = sqlite3_step(stmt);
     AlbumID album_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : INVALID_ID;
     sqlite3_finalize(stmt);
     return album_id;
 }
 
-static void db_create_album(const char* name)
+static void db_create_album(const char* name, const uint8_t* art, int art_size)
 {
     sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO Albums (name) VALUES (?1)";
+    const char* query = "INSERT INTO Albums (name, cover) VALUES (?1, ?2)";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 2, art, art_size, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
@@ -484,7 +485,7 @@ static PlaylistID db_get_playlist_id(const char* name)
     sqlite3_stmt* stmt;
     const char* query = "SELECT id FROM Playlists WHERE name=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
     int res = sqlite3_step(stmt);
     PlaylistID playlist_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : INVALID_ID;
     sqlite3_finalize(stmt);
@@ -496,7 +497,7 @@ static void db_create_playlist(const char* name)
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Playlists (name) VALUES (?1)";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
@@ -506,7 +507,7 @@ static void db_update_playlist(PlaylistID playlist_id, const char* new_name)
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Playlists SET name=?1 WHERE id=?2";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, playlist_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -662,7 +663,7 @@ void mp_add_song(const std::string& song_path)
     uint8_t* art_data = nullptr;
     int art_size = 0;
 
-    auto set_art_data = [&mp3_file_ref, &art_data, &art_size]()
+    auto set_song_art_data = [&mp3_file_ref, &art_data, &art_size]()
         {
             TagLib::List<TagLib::VariantMap> props = mp3_file_ref.complexProperties("PICTURE");
             if (props.isEmpty())
@@ -682,7 +683,7 @@ void mp_add_song(const std::string& song_path)
             stbi_image_free(raw_art_data);
         };
 
-    set_art_data();
+    set_song_art_data();
     db_create_song(title.c_str(), song_path.c_str(), song_length, art_data, art_size);
     if (art_data != nullptr)
         free(art_data);
@@ -699,7 +700,24 @@ void mp_add_song(const std::string& song_path)
         album_id = db_get_album_id(album_name.c_str());
         if (album_id == INVALID_ID) 
         {
-            db_create_album(album_name.c_str());
+            std::filesystem::path fs_song_path = std::filesystem::path(song_path).replace_filename("cover.jpg");
+            uint8_t* album_art_data = nullptr;
+            int album_art_size = 0; 
+            if (std::filesystem::exists(fs_song_path))
+            {
+                int input_w, input_h, nc;
+                uint8_t* raw_art_data = stbi_load(fs_song_path.c_str(), &input_w, &input_h, &nc, 4);
+                album_art_data = stbir_resize_uint8_linear(
+                            raw_art_data, input_w, input_h, 0,
+                            NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
+                            STBIR_4CHANNEL
+                        );
+                album_art_size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
+                stbi_image_free(raw_art_data);
+            }
+            db_create_album(album_name.c_str(), album_art_data, album_art_size);
+            if (album_art_data != nullptr)
+                free(album_art_data);
             album_id = db_get_album_id(album_name.c_str());
         }
         db_create_album_song(album_id, song_id, track);
@@ -930,7 +948,7 @@ const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, 
     {
         query = "SELECT COUNT(id) FROM Songs WHERE title LIKE ?1"; 
         sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-        sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
         sqlite3_step(stmt);
         mp_ctx.num_results = sqlite3_column_int(stmt, 0);
         sqlite3_finalize(stmt);
@@ -938,7 +956,7 @@ const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, 
 
     query = "SELECT id FROM Songs WHERE title LIKE ?1 LIMIT ?2 OFFSET ?3";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, page_limit);
     sqlite3_bind_int(stmt, 3, page_limit * page_num);
     std::vector<LruCacheRef<Song>> results{};
