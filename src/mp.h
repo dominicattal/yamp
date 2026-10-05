@@ -9,6 +9,14 @@
 #include <functional>
 #include <memory>
 
+using GenericID = int;
+using SongID = int;
+using AlbumID = int;
+using ArtistID = int;
+using PlaylistID = int;
+
+#define INVALID_ID -1
+
 enum LoopMode {
     LOOP_NONE,
     LOOP_GROUP,
@@ -18,7 +26,7 @@ enum LoopMode {
 struct Song {
     std::string title;
     std::string path;
-    int id;
+    SongID id;
     float length;
 };
 
@@ -28,24 +36,24 @@ struct SongTrack {
 };
 
 struct SongTrackID {
-    int song_id;
+    SongID song_id;
     int track;
 };
 
 struct Artist {
     std::string name;
-    int id;
+    ArtistID id;
 };
 
 struct Album {
     std::string name;
-    int id;
+    AlbumID id;
     float length;
 };
 
 struct Playlist {
     std::string name;
-    int id;
+    PlaylistID id;
     float length;
 };
 
@@ -72,13 +80,13 @@ struct MPContext {
     LruCache<Artist> artists;
     LruCache<Playlist> playlists;
 
-    LruCache<int> song_artist;
-    LruCache<int> song_album;
-    LruCache<int> album_artist;
+    LruCache<ArtistID> song_artist;
+    LruCache<AlbumID> song_album;
+    LruCache<ArtistID> album_artist;
     LruCache<std::vector<SongTrackID>> album_songs;
     LruCache<std::vector<SongTrackID>> playlist_songs;
-    LruCache<std::vector<int>> artist_songs;
-    LruCache<std::vector<int>> artist_albums;
+    LruCache<std::vector<SongID>> artist_songs;
+    LruCache<std::vector<AlbumID>> artist_albums;
 
     LruCacheRef<Song> current_song;
     LruCacheRef<Artist> current_song_artist;
@@ -119,7 +127,7 @@ struct MPContext {
     bool paused;
     bool autoplay;
 
-    int loop_mode;
+    LoopMode loop_mode;
 };
 
 extern MPContext mp_ctx;
@@ -139,13 +147,13 @@ void mp_recursive_add_songs(const std::string& folder_path);
 
 // Add a playlist to the database. Returns the id of the created playlist.
 LruCacheRef<Playlist> mp_create_playlist();
-void mp_rename_playlist(int playlist_id, const char* new_playlist_name);
+void mp_rename_playlist(PlaylistID playlist_id, const char* new_playlist_name);
 
 // Immediately play a song
-void mp_play_song(int song_id);
+void mp_play_song(SongID song_id);
 
 // Queue a song or mulitple songs
-void mp_queue_song(int song_id);
+void mp_queue_song(SongID song_id);
 
 // Will pause if song is playing and resume if song is not playing
 void mp_pause_or_resume();
@@ -156,39 +164,39 @@ void mp_update_volume();
 void mp_update_cursor();
 
 void mp_play_playlist(int playlist_id);
-void mp_play_album(int album_id);
+void mp_play_album(AlbumID album_id);
 
 // Load song cover art from memory
 FrontCover mp_song_front_cover_load(const std::string& cover_path);
-void mp_song_front_cover_update(int song_id, const std::string& cover_path);
+void mp_song_front_cover_update(SongID song_id, const std::string& cover_path);
 void mp_song_front_cover_free(FrontCover* data);
-void mp_song_update(int song_id, const char* title, const char* artist, const char* album, const char* cover_path);
+void mp_song_update(SongID song_id, const char* title, const char* artist, const char* album, const char* cover_path);
 
 // Search for songs based on query
 const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, int page_limit, int page_num);
 
-LruCacheRef<Song>       mp_get_song(int song_id);
-LruCacheRef<Album>      mp_get_album(int album_id);
-LruCacheRef<Artist>     mp_get_artist(int artist_id);
+LruCacheRef<Song>       mp_get_song(SongID song_id);
+LruCacheRef<Album>      mp_get_album(AlbumID album_id);
+LruCacheRef<Artist>     mp_get_artist(ArtistID artist_id);
 LruCacheRef<Playlist>   mp_get_playlist(int playlist_id);
 
-LruCacheRef<Artist>     mp_get_artist_from_song(int song_id);
-LruCacheRef<Album>      mp_get_album_from_song(int song_id);
-LruCacheRef<Artist>     mp_get_artist_from_album(int album_id);
+LruCacheRef<Artist>     mp_get_artist_from_song(SongID song_id);
+LruCacheRef<Album>      mp_get_album_from_song(SongID song_id);
+LruCacheRef<Artist>     mp_get_artist_from_album(AlbumID album_id);
 
-LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_album(int album_id);
+LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_album(AlbumID album_id);
 LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_playlist(int playlist_id);
-LruCacheRef<std::vector<int>> mp_get_songs_from_artist(int artist_id);
-LruCacheRef<std::vector<int>> mp_get_albums_from_artist(int artist_id);
+LruCacheRef<std::vector<int>> mp_get_songs_from_artist(ArtistID artist_id);
+LruCacheRef<std::vector<int>> mp_get_albums_from_artist(ArtistID artist_id);
 
 // If page_num == -1, then return the first page and the number of results
 // If page_num >= 0, then assume caller knows the number of results and just return songs
-SearchResult<Song> mp_get_paginated_songs_from_artist(int artist_id, int page_limit, int page_num = -1);
+SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int page_limit, int page_num = -1);
 
 std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 
-void mp_add_song_to_playlist(int song_id, int playlist_id);
-void mp_add_album_to_playlist(int album_id, int playlist_id);
+void mp_add_song_to_playlist(SongID song_id, int playlist_id);
+void mp_add_album_to_playlist(AlbumID album_id, int playlist_id);
 
 // Skip current song in queue
 void mp_queue_skip();

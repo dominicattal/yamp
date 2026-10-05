@@ -71,12 +71,6 @@ enum ViewEnum {
 
 struct GLTexture {
     GLuint id;
-    int width;
-    int height;
-};
-
-struct GLTexture2 {
-    GLuint id;
     ImVec2 uv0;
     ImVec2 uv1;
 };
@@ -85,6 +79,7 @@ struct UIContext {
     GLFWwindow* window;
 
     struct TextureInfo {
+        using TextureSlotID = int;
         // create TEXTURE_SIZE x TEXTURE_SIZE textures that have pages for LARGE_COVER_SIZE x LARGE_COVER_SIZE
         // images to upload. 
         GLuint fbo;
@@ -93,10 +88,11 @@ struct UIContext {
         GLuint shader_program;
         GLuint vao;
         GLuint vbo;
-        std::priority_queue<int, std::vector<int>, std::greater<int>> texture_slots;
+        std::priority_queue<TextureSlotID, std::vector<TextureSlotID>, std::greater<int>> texture_slots;
         int texture_count;
         std::vector<GLuint> textures;
-        std::unordered_map<int, int> song_map;
+        std::unordered_map<SongID, TextureSlotID> song_map;
+        std::unordered_map<AlbumID, TextureSlotID> album_map;
         GLTexture default_album_art;
         GLTexture play_button;
         GLTexture queue_button;
@@ -115,9 +111,9 @@ struct UIContext {
     } debug;
 
     std::mutex load_queue_lock;
-    std::vector<std::pair<int, std::string>> load_queue;
+    std::vector<std::pair<SongID, std::string>> load_queue;
     std::mutex unload_queue_lock;
-    std::vector<int> unload_queue;
+    std::vector<SongID> unload_queue;
 
     bool show_demo_window;
     bool show_debug_window;
@@ -148,7 +144,7 @@ struct UIContext {
 
     std::vector<LruCacheRef<Playlist>> playlists;
 
-    std::deque<std::pair<ViewEnum, int>> view_history;
+    std::deque<std::pair<ViewEnum, GenericID>> view_history;
 };
 
 static UIContext ctx;
@@ -215,7 +211,7 @@ static GLuint compile_shader_program()
     return shader_program;
 }
 
-static GLTexture2 get_texture_from_slot_idx(int slot_idx)
+static GLTexture get_texture_from_slot_idx(int slot_idx)
 {
     const float size = static_cast<float>(LARGE_COVER_ART_SIZE) / TEXTURE_SIZE;
     const int slots_across = TEXTURE_SIZE / LARGE_COVER_ART_SIZE;
@@ -228,11 +224,11 @@ static GLTexture2 get_texture_from_slot_idx(int slot_idx)
     };
 }
 
-static GLTexture2 get_texture_from_song(int song_id)
+static GLTexture get_texture_from_song(SongID song_id)
 {
     if (ctx.textures.song_map.find(song_id) != ctx.textures.song_map.end())
         return get_texture_from_slot_idx(ctx.textures.song_map[song_id]);
-    return GLTexture2{
+    return GLTexture{
             .id = ctx.textures.default_album_art.id,
             .uv0 = ImVec2(0.0f, 0.0f),
             .uv1 = ImVec2(1.0f, 1.0f),
@@ -347,7 +343,7 @@ static void set_center_view_artist(LruCacheRef<Artist>&& artist)
     ctx.center.albums.clear();
 
     LruCacheRef<std::vector<int>> albums = mp_get_albums_from_artist(ctx.center.artist->id);
-    for (int album_id : *albums)
+    for (AlbumID album_id : *albums)
         ctx.center.albums.emplace_back(mp_get_album(album_id));
 
     push_history_entry(SHOW_CENTER_ARTIST, ctx.center.artist->id);
@@ -443,7 +439,7 @@ static void delete_texture(int slot_idx)
     ctx.textures.texture_slots.push(slot_idx);
 }
 
-static void initialize_default_texture(GLuint* id, const char* path, int* width, int* height)
+static void initialize_default_texture(GLuint* id, const char* path)
 {
     glGenTextures(1, id);
     glBindTexture(GL_TEXTURE_2D, *id);
@@ -452,25 +448,26 @@ static void initialize_default_texture(GLuint* id, const char* path, int* width,
 
     int nc;
     FILE* fptr = fopen(path, "r");
-    unsigned char* data = stbi_load_from_file(fptr, width, height, &nc, 4);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, *width, *height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    int width, height;
+    unsigned char* data = stbi_load_from_file(fptr, &width, &height, &nc, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     stbi_image_free(data);
     fclose(fptr);
 }
 
 static void initialize_default_textures()
 {
-    initialize_default_texture(&ctx.textures.default_album_art.id, "assets/No-album-art.png", &ctx.textures.default_album_art.width, &ctx.textures.default_album_art.height);
-    initialize_default_texture(&ctx.textures.play_button.id, "assets/play-edited.png", &ctx.textures.play_button.width, &ctx.textures.play_button.height);
-    initialize_default_texture(&ctx.textures.queue_button.id, "assets/add-to-playlist.png", &ctx.textures.queue_button.width, &ctx.textures.queue_button.height);
-    initialize_default_texture(&ctx.textures.skip_button.id, "assets/skip.png", &ctx.textures.skip_button.width, &ctx.textures.skip_button.height);
-    initialize_default_texture(&ctx.textures.pause_button.id, "assets/pause.png", &ctx.textures.pause_button.width, &ctx.textures.pause_button.height);
-    initialize_default_texture(&ctx.textures.repeat_button.id, "assets/repeat-edited.png", &ctx.textures.repeat_button.width, &ctx.textures.repeat_button.height);
-    initialize_default_texture(&ctx.textures.shuffle_button.id, "assets/shuffle-edited.png", &ctx.textures.shuffle_button.width, &ctx.textures.shuffle_button.height);
-    initialize_default_texture(&ctx.textures.autoplay_button.id, "assets/autoplay-edited.png", &ctx.textures.autoplay_button.width, &ctx.textures.autoplay_button.height);
-    initialize_default_texture(&ctx.textures.volume.id, "assets/volume-up-edited.png", &ctx.textures.volume.width, &ctx.textures.volume.height);
-    initialize_default_texture(&ctx.textures.show_queue_button.id, "assets/show-queue-edited.png", &ctx.textures.show_queue_button.width, &ctx.textures.show_queue_button.height);
-    initialize_default_texture(&ctx.textures.clear_queue_button.id, "assets/clear-queue.png", &ctx.textures.clear_queue_button.width, &ctx.textures.clear_queue_button.height);
+    initialize_default_texture(&ctx.textures.default_album_art.id, "assets/No-album-art.png");
+    initialize_default_texture(&ctx.textures.play_button.id, "assets/play-edited.png");
+    initialize_default_texture(&ctx.textures.queue_button.id, "assets/add-to-playlist.png");
+    initialize_default_texture(&ctx.textures.skip_button.id, "assets/skip.png");
+    initialize_default_texture(&ctx.textures.pause_button.id, "assets/pause.png");
+    initialize_default_texture(&ctx.textures.repeat_button.id, "assets/repeat-edited.png");
+    initialize_default_texture(&ctx.textures.shuffle_button.id, "assets/shuffle-edited.png");
+    initialize_default_texture(&ctx.textures.autoplay_button.id, "assets/autoplay-edited.png");
+    initialize_default_texture(&ctx.textures.volume.id, "assets/volume-up-edited.png");
+    initialize_default_texture(&ctx.textures.show_queue_button.id, "assets/show-queue-edited.png");
+    initialize_default_texture(&ctx.textures.clear_queue_button.id, "assets/clear-queue.png");
     glGenTextures(1, &ctx.right.texture);
 }
 
@@ -505,7 +502,7 @@ static void update_textures()
     {
         std::lock_guard lock_guard{ctx.load_queue_lock};
 
-        for (int song_id : ctx.unload_queue)
+        for (SongID song_id : ctx.unload_queue)
         {
             auto it = ctx.textures.song_map.find(song_id); 
             assert(it != ctx.textures.song_map.end());
@@ -569,15 +566,17 @@ void ui_init()
     mp_ctx.song_constructor_callback = 
         [](Song* song) -> void
         {
+            (void)song;
             std::lock_guard lock{ctx.load_queue_lock};
-            ctx.load_queue.push_back(std::make_pair(song->id, song->path));
+            //ctx.load_queue.push_back(std::make_pair(song->id, song->path));
         };
 
     mp_ctx.songs.set_destructor_callback(
         [](Song* song) -> void
         {
+            (void)song;
             std::lock_guard lock{ctx.unload_queue_lock};
-            ctx.unload_queue.push_back(song->id);
+            //ctx.unload_queue.push_back(song->id);
         });
 
     ctx.playlists = mp_get_playlists();
@@ -683,7 +682,7 @@ static void draw_search_results()
                 mp_queue_song(song->id);
 
             ImGui::TableNextColumn();
-            GLTexture2 tex;
+            GLTexture tex;
             if (ctx.textures.song_map.find(song->id) != ctx.textures.song_map.end())
                 tex = get_texture_from_slot_idx(ctx.textures.song_map[song->id]);
             else
@@ -747,7 +746,7 @@ static void draw_song_info()
     const ImVec2 size = ImVec2(210, 210);
     if (ctx.textures.song_map.find(song->id) != ctx.textures.song_map.end())
     {
-        GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[song->id]);
+        GLTexture tex = get_texture_from_slot_idx(ctx.textures.song_map[song->id]);
         ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     }
     else
@@ -834,7 +833,7 @@ static void draw_album_info()
     const ImVec2 size = ImVec2(210, 210);
     if (ctx.textures.song_map.find(first_song->id) != ctx.textures.song_map.end())
     {
-        GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[first_song->id]);
+        GLTexture tex = get_texture_from_slot_idx(ctx.textures.song_map[first_song->id]);
         ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     }
     else
@@ -1079,7 +1078,7 @@ static void draw_playlist_info()
         LruCacheRef<Song>& first_song = tracks.front().song;
         if (ctx.textures.song_map.find(first_song->id) != ctx.textures.song_map.end())
         {
-            GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[first_song->id]);
+            GLTexture tex = get_texture_from_slot_idx(ctx.textures.song_map[first_song->id]);
             ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
         }
         else
@@ -1189,7 +1188,7 @@ static void draw_playlists()
         {
             ImGui::PushID(playlist->id);
             ImGui::TableNextColumn();
-            GLTexture2 tex = {
+            GLTexture tex = {
                 .id = ctx.textures.default_album_art.id,
                 .uv0 = ImVec2(0.0f, 0.0f),
                 .uv1 = ImVec2(1.0f, 1.0f),
@@ -1237,7 +1236,7 @@ static void draw_playlists()
         ImGui::TableSetupColumn("Test", ImGuiTableColumnFlags_NoSort);
         //ImGui::TableSetupScrollFreeze(0, 1);
         //ImGui::TableHeadersRow();
-        for (int song_id : *song_ids)
+        for (SongID song_id : *song_ids)
         {
             LruCacheRef<Song> song = mp_get_song(song_id);
             ImGui::TableNextColumn();
@@ -1248,7 +1247,7 @@ static void draw_playlists()
                 mp_queue_song(song_id);
             ImGui::TableNextColumn();
 
-            GLTexture2 tex = get_texture_from_song(song_id);
+            GLTexture tex = get_texture_from_song(song_id);
             ImGui::ImageWithBg(tex.id, ImVec2(SMALL_COVER_ART_SIZE, SMALL_COVER_ART_SIZE), tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 
             ImGui::TableNextColumn();
@@ -1290,7 +1289,7 @@ static void draw_playlists()
     {
         ImGui::TableSetupColumn("Tmp", ImGuiTableColumnFlags_NoSort);
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-        for (int album_id : *album_ids)
+        for (AlbumID album_id : *album_ids)
         {
             LruCacheRef<Album> album = mp_get_album(album_id);
             ImGui::PushID(album_id);
@@ -1549,7 +1548,7 @@ static void draw_right_side_queue()
         {
             (void)color;
             ImGui::SetCursorPos(ImVec2(root_pos.x, root_pos.y + row * row_advance));
-            GLTexture2 tex = get_texture_from_song(song->id);
+            GLTexture tex = get_texture_from_song(song->id);
             ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 1.0f);
             ImGui::PushStyleColor(ImGuiCol_Border, color);
             ImGui::Image(tex.id, ImVec2(SMALL_COVER_ART_SIZE, SMALL_COVER_ART_SIZE), tex.uv0, tex.uv1);
@@ -1607,7 +1606,7 @@ static void draw_player(const ImVec2 size)
     const ImVec2 album_art_size = ImVec2(100, 100);
     if (mp_ctx.current_song != nullptr && ctx.textures.song_map.find(mp_ctx.current_song->id) != ctx.textures.song_map.end())
     {
-        GLTexture2 tex = get_texture_from_slot_idx(ctx.textures.song_map[mp_ctx.current_song->id]);
+        GLTexture tex = get_texture_from_slot_idx(ctx.textures.song_map[mp_ctx.current_song->id]);
         ImGui::ImageWithBg(tex.id, album_art_size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     }
     else
@@ -1685,7 +1684,7 @@ static void draw_player(const ImVec2 size)
         else if (mp_ctx.loop_mode == LOOP_TRACK)
             tint.y = 1.0f;
         if (ImGui::ImageButton("Repeat Button", ctx.textures.repeat_button.id, button_size, uv0, uv1, bg, tint))
-            mp_ctx.loop_mode = (mp_ctx.loop_mode + 1) % 3;
+            mp_ctx.loop_mode = static_cast<LoopMode>((static_cast<int>(mp_ctx.loop_mode) + 1) % 3);
     }
 
     cursor_x += advance;
