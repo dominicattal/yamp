@@ -64,6 +64,12 @@ struct FrontCover {
     int height;
 };
 
+struct Art {
+    void* sqlite_stmt;
+    const unsigned char* data;
+    size_t size;
+};
+
 template<typename T>
 struct SearchResult {
     std::vector<LruCacheRef<T>> entries;
@@ -198,6 +204,10 @@ std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 
 void mp_add_song_to_playlist(SongID song_id, int playlist_id);
 void mp_add_album_to_playlist(AlbumID album_id, int playlist_id);
+
+Art mp_get_song_art(SongID song_id);
+Art mp_get_album_art(AlbumID album_id);
+void mp_free_art(Art* art);
 
 // Skip current song in queue
 void mp_queue_skip();

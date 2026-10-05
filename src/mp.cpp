@@ -48,7 +48,9 @@ static AlbumID db_get_album_id(const char* name);
 static ArtistID db_get_artist_id(const char* name);
 static PlaylistID db_get_playlist_id(const char* name);
 static Song db_get_song_info(SongID song_id);
+static Art db_get_song_art(SongID song_id);
 static Album db_get_album_info(AlbumID album_id);
+static Art db_get_album_art(AlbumID album_id);
 static Artist db_get_artist_info(int artist_id);
 static Playlist db_get_playlist_info(PlaylistID playlist_id);
 static AlbumID db_get_album_from_song(SongID song_id);
@@ -105,6 +107,19 @@ static Song db_get_song_info(SongID song_id)
     return song;
 }
 
+static Art db_get_song_art(SongID song_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT cover FROM Songs WHERE id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, song_id);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
+    assert(res == SQLITE_ROW);
+    const unsigned char* blob = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 0));
+    int blob_bytes = sqlite3_column_bytes(stmt, 0);
+    return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
+}
+
 static Album db_get_album_info(AlbumID album_id)
 {
     Album album{};
@@ -120,6 +135,19 @@ static Album db_get_album_info(AlbumID album_id)
     album.length = sqlite3_column_double(stmt, 1);
     sqlite3_finalize(stmt);
     return album;
+}
+
+static Art db_get_album_art(AlbumID album_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT cover FROM Albums WHERE id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, album_id);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
+    assert(res == SQLITE_ROW);
+    const unsigned char* blob = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 0));
+    int blob_bytes = sqlite3_column_bytes(stmt, 0);
+    return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
 }
 
 static Artist db_get_artist_info(ArtistID artist_id)
@@ -1161,6 +1189,21 @@ void mp_queue_skip()
         mp_ctx.queue.pop_front();
         mp_play_song(song->id);
     }
+}
+
+Art mp_get_song_art(SongID song_id)
+{
+    return db_get_song_art(song_id);
+}
+
+Art mp_get_album_art(AlbumID album_id)
+{
+    return db_get_album_art(album_id);
+}
+
+void mp_free_art(Art* art)
+{
+    sqlite3_finalize(static_cast<sqlite3_stmt*>(art->sqlite_stmt));
 }
 
 void mp_queue_clear()

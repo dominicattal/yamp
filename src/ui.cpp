@@ -74,6 +74,15 @@ struct GLTexture {
     ImVec2 uv1;
 };
 
+using SlotID = int;
+
+struct Slot {
+    GLuint tex;
+    SlotID idx;
+    int xoff;
+    int yoff;
+};
+
 struct UIContext {
     GLFWwindow* window;
 
@@ -87,11 +96,17 @@ struct UIContext {
         GLuint shader_program;
         GLuint vao;
         GLuint vbo;
-        std::priority_queue<TextureSlotID, std::vector<TextureSlotID>, std::greater<TextureSlotID>> texture_slots;
-        int texture_count;
         std::vector<GLuint> textures;
-        // stores the slot_idx and the ref count
-        std::unordered_map<MPUID, TextureSlotID> slot_map;
+
+        // Use PQ to acquire a slot idx that is drawn to in create_texture
+        std::priority_queue<SlotID, std::vector<SlotID>, std::greater<SlotID>> free_slot_textures;
+        // Use to keep track of the number of slots free_slot_textures has handed out
+        int num_slots;
+        // Use to map an mp object to a slot
+        std::unordered_map<MPUID, Slot> slot_map;
+        // Slot for the default album art
+        Slot default_album_art_slot;
+
         GLTexture default_album_art;
         GLTexture play_button;
         GLTexture queue_button;
@@ -210,16 +225,16 @@ static GLuint compile_shader_program()
     return shader_program;
 }
 
-static GLTexture get_texture_from_slot_idx(int slot_idx)
+static GLTexture get_texture_from_slot(Slot& slot)
 {
-    const float size = static_cast<float>(LARGE_COVER_ART_SIZE) / TEXTURE_SIZE;
-    const int slots_across = TEXTURE_SIZE / LARGE_COVER_ART_SIZE;
-    const float x_off = static_cast<float>((slot_idx % SLOTS_PER_TEXTURE) % slots_across * LARGE_COVER_ART_SIZE) / TEXTURE_SIZE;
-    const float y_off = static_cast<float>((slot_idx % SLOTS_PER_TEXTURE) / slots_across * LARGE_COVER_ART_SIZE) / TEXTURE_SIZE;
-    return { 
-        .id = ctx.textures.textures[slot_idx / SLOTS_PER_TEXTURE],
-        .uv0 = ImVec2(x_off, y_off),
-        .uv1 = ImVec2(x_off + size, y_off + size),
+    return GLTexture{ 
+        .id = slot.tex,
+        .uv0 = ImVec2(
+                static_cast<float>(slot.xoff) / TEXTURE_SIZE, 
+                static_cast<float>(slot.yoff) / TEXTURE_SIZE),
+        .uv1 = ImVec2(
+                static_cast<float>(slot.xoff + LARGE_COVER_ART_SIZE) / TEXTURE_SIZE, 
+                static_cast<float>(slot.yoff + LARGE_COVER_ART_SIZE) / TEXTURE_SIZE)
     };
 }
 
@@ -235,7 +250,7 @@ static GLTexture get_texture_default()
 static GLTexture get_texture_from_song(SongID song_id)
 {
     if (ctx.textures.slot_map.find(song_id) != ctx.textures.slot_map.end())
-        return get_texture_from_slot_idx(ctx.textures.slot_map[song_id]);
+        return get_texture_from_slot(ctx.textures.slot_map[song_id]);
     return get_texture_default();
 }
 
@@ -404,19 +419,18 @@ static void toggle_right_view_queue()
     snprintf(ctx.right.song_album, sizeof(ctx.right.song_album), "%s", album->name.c_str());
 }
 
-static int create_texture(unsigned char* data, int width, int height)
+static Slot get_slot()
 {
-    (void)data; (void)width; (void)height;
-    if (ctx.textures.texture_slots.size() == 0)
-        ctx.textures.texture_slots.push(ctx.textures.texture_count++);
-
-    GLuint id;
-    const int slot_idx = ctx.textures.texture_slots.top();
-    ctx.textures.texture_slots.pop();
-    const size_t texture_idx = slot_idx / SLOTS_PER_TEXTURE;
+    Slot slot{};
+    if (ctx.textures.free_slot_textures.size() == 0)
+        ctx.textures.free_slot_textures.push(ctx.textures.num_slots++);
+    slot.idx = ctx.textures.free_slot_textures.top();
+    ctx.textures.free_slot_textures.pop();
+    const size_t texture_idx = slot.idx / SLOTS_PER_TEXTURE;
     assert(texture_idx <= ctx.textures.textures.size());
     if (texture_idx == ctx.textures.textures.size())
     {
+        GLuint id;
         glGenTextures(1, &id);
         glBindTexture(GL_TEXTURE_2D, id);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -424,7 +438,18 @@ static int create_texture(unsigned char* data, int width, int height)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TEXTURE_SIZE, TEXTURE_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
         ctx.textures.textures.push_back(id);
     }
-    id = ctx.textures.textures[texture_idx];
+    slot.tex = ctx.textures.textures[slot.idx / SLOTS_PER_TEXTURE];
+
+    const int slots_across = TEXTURE_SIZE / LARGE_COVER_ART_SIZE;
+    slot.xoff = (slot.idx % SLOTS_PER_TEXTURE) % slots_across * LARGE_COVER_ART_SIZE;
+    slot.yoff = (slot.idx % SLOTS_PER_TEXTURE) / slots_across * LARGE_COVER_ART_SIZE;
+
+    return slot;
+}
+
+static Slot create_texture(unsigned char* data, int width, int height)
+{
+    Slot slot = get_slot();
     glBindFramebuffer(GL_FRAMEBUFFER, ctx.textures.fbo);
     glViewport(0, 0, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -439,20 +464,17 @@ static int create_texture(unsigned char* data, int width, int height)
     glfwGetWindowSize(ctx.window, &window_width, &window_height);
     glViewport(0, 0, window_width, window_height);
 
-    const int slots_across = TEXTURE_SIZE / LARGE_COVER_ART_SIZE;
-    const int x_off = (slot_idx % SLOTS_PER_TEXTURE) % slots_across * LARGE_COVER_ART_SIZE;
-    const int y_off = (slot_idx % SLOTS_PER_TEXTURE) / slots_across * LARGE_COVER_ART_SIZE;
     glCopyImageSubData(
         ctx.textures.fbo_texture, GL_TEXTURE_2D, 0, 0, 0, 0,
-        id,                       GL_TEXTURE_2D, 0, x_off, y_off, 0.0f,
+        slot.tex, GL_TEXTURE_2D, 0, slot.xoff, slot.yoff, 0.0f,
         LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 1);
 
-    return slot_idx;
+    return slot;
 }
 
-static void delete_texture(int slot_idx)
+static void delete_texture(Slot& slot)
 {
-    ctx.textures.texture_slots.push(slot_idx);
+    ctx.textures.free_slot_textures.push(slot.idx);
 }
 
 static void initialize_default_texture(GLuint* id, const char* path)
@@ -474,6 +496,7 @@ static void initialize_default_texture(GLuint* id, const char* path)
 static void initialize_default_textures()
 {
     initialize_default_texture(&ctx.textures.default_album_art.id, "assets/No-album-art.png");
+
     initialize_default_texture(&ctx.textures.play_button.id, "assets/play-edited.png");
     initialize_default_texture(&ctx.textures.queue_button.id, "assets/add-to-playlist.png");
     initialize_default_texture(&ctx.textures.skip_button.id, "assets/skip.png");
@@ -517,11 +540,13 @@ static void update_textures()
         auto& [song_id, path] = ctx.load_queue.front();
         double t1 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         FrontCover front_cover = mp_song_front_cover_load(path);
+        //Art art = mp_get_song_art(song_id);
         double t2 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        int slot_idx = create_texture(front_cover.data, front_cover.width, front_cover.height);
+        //int slot_idx = create_texture(art.data, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
+        ctx.textures.slot_map[song_id] = create_texture(front_cover.data, front_cover.width, front_cover.height);
         double t3 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        ctx.textures.slot_map[song_id] = slot_idx;
         mp_song_front_cover_free(&front_cover);
+        //mp_free_art(&art);
         double t4 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         SPDLOG_INFO("Loaded front cover in {} ms", (t2 - t1) / 1000);
         SPDLOG_INFO("Created texture in {} ms", (t3 - t2) / 1000);
@@ -1764,6 +1789,8 @@ static void draw_debug_info()
     if (ImGui::Begin("Debug", &ctx.show_debug_window))
     {
         ImGui::Text("%f", ctx.debug.fps);
+        if (ctx.textures.textures.size() > 0)
+            ImGui::Image(ctx.textures.textures[0], ImVec2(512, 512));
         ImGui::End();
     }
     ImGui::PopStyleVar();
