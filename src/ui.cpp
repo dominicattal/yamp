@@ -129,6 +129,7 @@ struct UIContext {
 
         // For art of the shown type, so album art, playlist art, etc
         std::optional<Slot> art_slot;
+        std::vector<Slot> album_art_slots;
 
         // if type is album or playlist, then write to song_tracks
         // otherwise, write to songs
@@ -338,6 +339,9 @@ static void reset_center_view()
     if (ctx.center.art_slot)
         delete_texture(ctx.center.art_slot.value());
     ctx.center.art_slot.reset();
+    for (Slot& slot : ctx.center.album_art_slots)
+        delete_texture(slot);
+    ctx.center.album_art_slots.clear();
 }
 
 static void set_center_view_song(LruCacheRef<Song>&& song)
@@ -400,8 +404,14 @@ static void set_center_view_artist(LruCacheRef<Artist>&& artist)
     ctx.center.album = nullptr;
 
     LruCacheRef<std::vector<int>> albums = mp_get_albums_from_artist(ctx.center.artist->id);
-    for (AlbumID album_id : *albums)
+    for (AlbumID album_id : *albums) {
         ctx.center.albums.emplace_back(mp_get_album(album_id));
+        Art album_art = mp_get_album_art(album_id);
+        Slot slot = (album_art.data == nullptr)
+            ? ctx.textures.default_album_art_slot
+            : create_texture(album_art.data);
+        ctx.center.album_art_slots.push_back(slot);
+    }
 
     push_history_entry(SHOW_CENTER_ARTIST, ctx.center.artist->id);
 }
@@ -1341,6 +1351,7 @@ static void draw_artist_info()
 
     LruCacheRef<Artist>& artist = ctx.center.artist;
     std::vector<LruCacheRef<Album>>& albums = ctx.center.albums;
+    std::vector<Slot>& album_art_slots = ctx.center.album_art_slots;
 
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10.0f);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
@@ -1368,12 +1379,14 @@ static void draw_artist_info()
         LruCacheRef<Album>& album = albums[i];
         ImGui::PushID(i);
         ImGui::SetCursorPos(ImVec2(origin.x + 170 * i, origin.y));
+        tex = get_texture_from_slot(album_art_slots[i]);
         ImGui::ImageWithBg(tex.id, ImVec2(160, 160), tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
         if (ImGui::IsItemHovered())
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
         {
-            set_center_view_album(std::move(album));
+            LruCacheRef<Album> moved_album = std::move(album);
+            set_center_view_album(std::move(moved_album));
             ImGui::PopID();
             return;
         }
