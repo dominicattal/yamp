@@ -16,6 +16,7 @@
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
 #include <stb_image.h>
+#include <stb_image_resize2.h>
 
 struct MPContextInternal {
     std::mt19937 mt;
@@ -112,19 +113,13 @@ static Album db_get_album_info(AlbumID album_id)
     album.id = album_id;
 
     sqlite3_stmt* stmt;
-    const char* query = "SELECT name FROM Albums WHERE id=?1";
+    const char* query = "SELECT name, length FROM Albums WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
     [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     album.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-
-    auto songs = mp_get_songs_from_album(album_id);
-    for (SongTrackID& song_track : *songs) {
-        LruCacheRef<Song> song = mp_get_song(song_track.song_id);
-        album.length += song->length;
-    }
-
+    album.length = sqlite3_column_double(stmt, 1);
     sqlite3_finalize(stmt);
     return album;
 }
@@ -151,19 +146,13 @@ static Playlist db_get_playlist_info(PlaylistID playlist_id)
     playlist.id = playlist_id;
 
     sqlite3_stmt* stmt;
-    const char* query = "SELECT name FROM Playlists WHERE id=?1";
+    const char* query = "SELECT name, length FROM Playlists WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, playlist_id);
     [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     playlist.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-
-    auto songs = mp_get_songs_from_playlist(playlist_id);
-    for (SongTrackID& song_track : *songs) {
-        LruCacheRef<Song> song = mp_get_song(song_track.song_id);
-        playlist.length += song->length;
-    }
-
+    playlist.length = sqlite3_column_double(stmt, 1);
     sqlite3_finalize(stmt);
     return playlist;
 }
@@ -871,28 +860,35 @@ void mp_play_album(AlbumID album_id)
     mp_queue_skip();
 }
 
-FrontCover mp_song_front_cover_load(const std::string& cover_path)
+unsigned char* mp_song_front_cover_load(const std::string& cover_path, int width, int height)
 {
-    FrontCover front_cover{};
     TagLib::FileRef mp3_file_ref(cover_path.c_str());
     if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
         SPDLOG_ERROR("Could not read {}", cover_path);
-        return front_cover;
+        return NULL;
     }
 
     TagLib::List<TagLib::VariantMap> props = mp3_file_ref.complexProperties("PICTURE");
     if (props.isEmpty())
-        return front_cover;
+        return NULL;
 
     const TagLib::VariantMap& map = props.front();
     if (map.contains("data")) 
     {
         int num_channels;
         const TagLib::ByteVector data = map["data"].toByteVector();
-        front_cover.data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(data.data()), data.size(), &front_cover.width, &front_cover.height, &num_channels, 4);
+        int input_w, input_h;
+        unsigned char* input_pixels = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(data.data()), data.size(), &input_w, &input_h, &num_channels, 4);
+        unsigned char* res = stbir_resize_uint8_linear(
+                                input_pixels, input_w, input_h, 0,
+                                NULL, width, height, 0,
+                                STBIR_4CHANNEL
+                             );
+        stbi_image_free(input_pixels);
+        return res;
     }
 
-    return front_cover;
+    return NULL;
 }
 
 void mp_song_front_cover_update(SongID song_id, const std::string& cover_path)
@@ -953,10 +949,9 @@ const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, 
     return mp_ctx.search_result;
 }
 
-void mp_song_front_cover_free(FrontCover* front_cover)
+void mp_song_front_cover_free(unsigned char* front_cover)
 {
-    if (front_cover->data)
-        stbi_image_free(front_cover->data);
+    free(front_cover);
 }
 
 void mp_song_update(SongID song_id, const char* title, const char* artist, const char* album, const char* cover_path)
@@ -1179,4 +1174,24 @@ void mp_queue_skip()
 void mp_queue_clear()
 {
     mp_ctx.queue.clear();
+}
+
+MPUID mp_get_song_uid(SongID song_id)
+{
+    return (0ULL<<62) | song_id;
+}
+
+MPUID mp_get_playlist_uid(PlaylistID playlist_id)
+{
+    return (1ULL<<62) | playlist_id;
+}
+
+MPUID mp_get_album_uid(AlbumID album_id)
+{
+    return (2ULL<62) | album_id;
+}
+
+MPUID mp_get_artist_uid(ArtistID artist_id)
+{
+    return (3ULL<62) | artist_id;
 }

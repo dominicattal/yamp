@@ -16,6 +16,7 @@ add_executable(yamp
     ${CMAKE_HOME_DIRECTORY}/src/main.cpp
     ${CMAKE_HOME_DIRECTORY}/src/ui.cpp
     ${CMAKE_HOME_DIRECTORY}/src/mp.cpp
+    ${CMAKE_HOME_DIRECTORY}/src/stb.cpp
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/imgui_demo.cpp
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/imgui_widgets.cpp
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/backends/imgui_impl_opengl3.cpp
