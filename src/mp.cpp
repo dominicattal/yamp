@@ -15,6 +15,7 @@
 #include <utf8.h>
 #include <spdlog/spdlog.h>
 #include <stb_image.h>
+#include <stb_image_resize2.h>
 
 struct MPContextInternal {
     std::mt19937 mt;
@@ -33,7 +34,7 @@ static MPContextInternal ctx;
 // -----------------------
 
 // Create
-static void db_create_song(const char* title, const char* song_path, double song_length);
+static void db_create_song(const char* title, const char* song_path, double song_length, const uint8_t* art, int art_size);
 static void db_create_album(const char* name);
 static void db_create_artist(const char* name);
 static void db_create_playlist(const char* name);
@@ -113,8 +114,9 @@ static Art db_get_song_art(SongID song_id)
     const char* query = "SELECT cover FROM Songs WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
-    [[maybe_unused]] int res = sqlite3_step(stmt);
-    assert(res == SQLITE_ROW);
+    int res = sqlite3_step(stmt);
+    if (res != SQLITE_ROW)
+        return {stmt, NULL, 0};
     const unsigned char* blob = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 0));
     int blob_bytes = sqlite3_column_bytes(stmt, 0);
     return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
@@ -143,8 +145,9 @@ static Art db_get_album_art(AlbumID album_id)
     const char* query = "SELECT cover FROM Albums WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
-    [[maybe_unused]] int res = sqlite3_step(stmt);
-    assert(res == SQLITE_ROW);
+    int res = sqlite3_step(stmt);
+    if (res != SQLITE_ROW)
+        return Art{stmt, NULL, 0};
     const unsigned char* blob = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 0));
     int blob_bytes = sqlite3_column_bytes(stmt, 0);
     return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
@@ -334,14 +337,15 @@ static void db_create_artist(const char* name)
     sqlite3_finalize(stmt);
 }
 
-static void db_create_song(const char* title, const char* song_path, double song_length)
+static void db_create_song(const char* title, const char* song_path, double song_length, const uint8_t* art, int art_size)
 {
     sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO Songs (title, path, length) VALUES (?1, ?2, ?3);";
+    const char* query = "INSERT INTO Songs (title, path, length, cover) VALUES (?1, ?2, ?3, ?4);";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, title, -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, song_path, -1, SQLITE_TRANSIENT);
     sqlite3_bind_double(stmt, 3, song_length);
+    sqlite3_bind_blob(stmt, 4, art, art_size, SQLITE_STATIC);
     int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (res == SQLITE_CONSTRAINT)
@@ -655,7 +659,34 @@ void mp_add_song(const std::string& song_path)
         return;
     }
 
-    db_create_song(title.c_str(), song_path.c_str(), song_length);
+    uint8_t* art_data = nullptr;
+    int art_size = 0;
+
+    auto set_art_data = [&mp3_file_ref, &art_data, &art_size]()
+        {
+            TagLib::List<TagLib::VariantMap> props = mp3_file_ref.complexProperties("PICTURE");
+            if (props.isEmpty())
+                return;
+            const TagLib::VariantMap& map = props.front();
+            if (!map.contains("data"))
+                return;
+            int input_w, input_h, nc;
+            const TagLib::ByteVector data = map["data"].toByteVector();
+            uint8_t* raw_art_data = stbi_load_from_memory(reinterpret_cast<const uint8_t*>(data.data()), data.size(), &input_w, &input_h, &nc, 4);
+            art_data = stbir_resize_uint8_linear(
+                        raw_art_data, input_w, input_h, 0,
+                        NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
+                        STBIR_4CHANNEL
+                    );
+            art_size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
+            stbi_image_free(raw_art_data);
+        };
+
+    set_art_data();
+    db_create_song(title.c_str(), song_path.c_str(), song_length, art_data, art_size);
+    if (art_data != nullptr)
+        free(art_data);
+
     song_id = db_get_song_id(song_path.c_str());
 
     SPDLOG_INFO("Created song {} {}", song_id, title);
@@ -886,51 +917,6 @@ void mp_play_album(AlbumID album_id)
     mp_queue_skip();
 }
 
-FrontCover mp_song_front_cover_load(const std::string& cover_path)
-{
-    FrontCover front_cover{};
-    TagLib::FileRef mp3_file_ref(cover_path.c_str());
-    if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
-        SPDLOG_ERROR("Could not read {}", cover_path);
-        return front_cover;
-    }
-
-    TagLib::List<TagLib::VariantMap> props = mp3_file_ref.complexProperties("PICTURE");
-    if (props.isEmpty())
-        return front_cover;
-
-    const TagLib::VariantMap& map = props.front();
-    if (map.contains("data")) 
-    {
-        int num_channels;
-        const TagLib::ByteVector data = map["data"].toByteVector();
-        front_cover.data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(data.data()), data.size(), &front_cover.width, &front_cover.height, &num_channels, 4);
-    }
-
-    return front_cover;
-}
-
-void mp_song_front_cover_update(SongID song_id, const std::string& cover_path)
-{
-    LruCacheRef<Song> song = mp_get_song(song_id);
-    std::ifstream img{cover_path.c_str(), std::ios::binary};
-    std::vector<char> bytes{std::istreambuf_iterator<char>(img), std::istreambuf_iterator<char>()};
-    
-    TagLib::FileRef file(song->path.c_str());
-
-    TagLib::VariantMap picture;
-    picture["data"] = TagLib::ByteVector(bytes.data(), bytes.size());
-    picture["mimeType"] = TagLib::String("image/jpeg");
-    picture["pictureType"] = TagLib::String("Front Cover");
-    picture["description"] = TagLib::String("");
-
-    TagLib::List<TagLib::VariantMap> pictures;
-    pictures.append(picture);
-
-    file.setComplexProperties("PICTURE", pictures);
-    file.save();
-}
-
 const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, int page_limit, int page_num)
 {
     sqlite3_stmt* stmt;
@@ -968,13 +954,7 @@ const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, 
     return mp_ctx.search_result;
 }
 
-void mp_song_front_cover_free(FrontCover* front_cover)
-{
-    if (front_cover->data)
-        stbi_image_free(front_cover->data);
-}
-
-void mp_song_update(SongID song_id, const char* title, const char* artist, const char* album, const char* cover_path)
+[[maybe_unused]] void mp_song_update(SongID song_id, const char* title, const char* artist, const char* album, const char* cover_path)
 {
     (void)song_id;
     (void)title;

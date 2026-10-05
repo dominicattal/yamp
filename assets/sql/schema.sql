@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS Songs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title VARCHAR(256),
     path VARCHAR(256) UNIQUE,
-    cover BLOB NOT NULL,
+    cover BLOB,
     length REAL
 );
 
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS Artists (
 CREATE TABLE IF NOT EXISTS Albums (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(256) UNIQUE,
-    cover BLOB NOT NULL,
+    cover BLOB,
     length REAL
 );
 

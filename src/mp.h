@@ -17,6 +17,15 @@ using PlaylistID = int;
 using MPUID = uint64_t;
 
 #define INVALID_ID -1
+#define HISTORY_MAX_SIZE 1000
+#define STRING_LENGTH 512
+#define TEXTURE_SIZE_BITS 12
+#define LARGE_COVER_ART_SIZE_BITS 8
+#define SMALL_COVER_ART_SIZE_BITS 6
+#define TEXTURE_SIZE (1<<TEXTURE_SIZE_BITS)
+#define LARGE_COVER_ART_SIZE (1<<LARGE_COVER_ART_SIZE_BITS)
+#define SMALL_COVER_ART_SIZE (1<<SMALL_COVER_ART_SIZE_BITS)
+#define SLOTS_PER_TEXTURE (1<<(TEXTURE_SIZE_BITS<<1)>>(LARGE_COVER_ART_SIZE_BITS<<1))
 
 enum LoopMode {
     LOOP_NONE,
@@ -58,15 +67,9 @@ struct Playlist {
     float length;
 };
 
-struct FrontCover {
-    unsigned char* data;
-    int width;
-    int height;
-};
-
 struct Art {
     void* sqlite_stmt;
-    const unsigned char* data;
+    const uint8_t* data;
     size_t size;
 };
 
@@ -172,12 +175,6 @@ void mp_update_cursor();
 
 void mp_play_playlist(int playlist_id);
 void mp_play_album(AlbumID album_id);
-
-// Load song cover art from memory
-FrontCover mp_song_front_cover_load(const std::string& cover_path);
-void mp_song_front_cover_update(SongID song_id, const std::string& cover_path);
-void mp_song_front_cover_free(FrontCover* data);
-void mp_song_update(SongID song_id, const char* title, const char* artist, const char* album, const char* cover_path);
 
 // Search for songs based on query
 const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, int page_limit, int page_num);
