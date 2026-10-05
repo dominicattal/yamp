@@ -16,7 +16,6 @@
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
 #include <stb_image.h>
-#include <stb_image_resize2.h>
 
 struct MPContextInternal {
     std::mt19937 mt;
@@ -860,35 +859,28 @@ void mp_play_album(AlbumID album_id)
     mp_queue_skip();
 }
 
-unsigned char* mp_song_front_cover_load(const std::string& cover_path, int width, int height)
+FrontCover mp_song_front_cover_load(const std::string& cover_path)
 {
+    FrontCover front_cover{};
     TagLib::FileRef mp3_file_ref(cover_path.c_str());
     if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
         SPDLOG_ERROR("Could not read {}", cover_path);
-        return NULL;
+        return front_cover;
     }
 
     TagLib::List<TagLib::VariantMap> props = mp3_file_ref.complexProperties("PICTURE");
     if (props.isEmpty())
-        return NULL;
+        return front_cover;
 
     const TagLib::VariantMap& map = props.front();
     if (map.contains("data")) 
     {
         int num_channels;
         const TagLib::ByteVector data = map["data"].toByteVector();
-        int input_w, input_h;
-        unsigned char* input_pixels = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(data.data()), data.size(), &input_w, &input_h, &num_channels, 4);
-        unsigned char* res = stbir_resize_uint8_linear(
-                                input_pixels, input_w, input_h, 0,
-                                NULL, width, height, 0,
-                                STBIR_4CHANNEL
-                             );
-        stbi_image_free(input_pixels);
-        return res;
+        front_cover.data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(data.data()), data.size(), &front_cover.width, &front_cover.height, &num_channels, 4);
     }
 
-    return NULL;
+    return front_cover;
 }
 
 void mp_song_front_cover_update(SongID song_id, const std::string& cover_path)
@@ -949,9 +941,10 @@ const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, 
     return mp_ctx.search_result;
 }
 
-void mp_song_front_cover_free(unsigned char* front_cover)
+void mp_song_front_cover_free(FrontCover* front_cover)
 {
-    free(front_cover);
+    if (front_cover->data)
+        stbi_image_free(front_cover->data);
 }
 
 void mp_song_update(SongID song_id, const char* title, const char* artist, const char* album, const char* cover_path)

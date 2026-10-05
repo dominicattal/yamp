@@ -14,6 +14,7 @@
 #include <vector>
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 #include <spdlog/spdlog.h>
+#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 #define HISTORY_MAX_SIZE 1000
@@ -424,12 +425,28 @@ static int create_texture(unsigned char* data, int width, int height)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TEXTURE_SIZE, TEXTURE_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
         ctx.textures.textures.push_back(id);
     }
-
     id = ctx.textures.textures[texture_idx];
+    glBindFramebuffer(GL_FRAMEBUFFER, ctx.textures.fbo);
+    glViewport(0, 0, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(ctx.textures.shader_program);
+    glBindTexture(GL_TEXTURE_2D, ctx.textures.cover_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glBindVertexArray(ctx.textures.vao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    int window_width, window_height;
+    glfwGetWindowSize(ctx.window, &window_width, &window_height);
+    glViewport(0, 0, window_width, window_height);
+
     const int slots_across = TEXTURE_SIZE / LARGE_COVER_ART_SIZE;
     const int x_off = (slot_idx % SLOTS_PER_TEXTURE) % slots_across * LARGE_COVER_ART_SIZE;
     const int y_off = (slot_idx % SLOTS_PER_TEXTURE) / slots_across * LARGE_COVER_ART_SIZE;
-    glTexSubImage2D(GL_TEXTURE_2D, 0, x_off, y_off, width, height, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glCopyImageSubData(
+        ctx.textures.fbo_texture, GL_TEXTURE_2D, 0, 0, 0, 0,
+        id,                       GL_TEXTURE_2D, 0, x_off, y_off, 0.0f,
+        LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 1);
 
     return slot_idx;
 }
@@ -490,12 +507,12 @@ static void update_textures()
 
         auto& [song_id, path] = ctx.load_queue.front();
         double t1 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        unsigned char* pixel_data = mp_song_front_cover_load(path, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
+        FrontCover front_cover = mp_song_front_cover_load(path);
         double t2 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        int slot_idx = create_texture(pixel_data, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
+        int slot_idx = create_texture(front_cover.data, front_cover.width, front_cover.height);
         double t3 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         ctx.textures.slot_map[song_id] = slot_idx;
-        mp_song_front_cover_free(pixel_data);
+        mp_song_front_cover_free(&front_cover);
         double t4 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         SPDLOG_INFO("Loaded front cover in {} ms", (t2 - t1) / 1000);
         SPDLOG_INFO("Created texture in {} ms", (t3 - t2) / 1000);

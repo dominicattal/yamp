@@ -168,9 +168,9 @@ void mp_play_playlist(int playlist_id);
 void mp_play_album(AlbumID album_id);
 
 // Load song cover art from memory
-unsigned char* mp_song_front_cover_load(const std::string& cover_path, int width, int height);
+FrontCover mp_song_front_cover_load(const std::string& cover_path);
 void mp_song_front_cover_update(SongID song_id, const std::string& cover_path);
-void mp_song_front_cover_free(unsigned char* data);
+void mp_song_front_cover_free(FrontCover* data);
 void mp_song_update(SongID song_id, const char* title, const char* artist, const char* album, const char* cover_path);
 
 // Search for songs based on query
@@ -205,7 +205,7 @@ void mp_queue_clear();
 
 MPUID mp_get_song_uid(SongID song_id);
 MPUID mp_get_playlist_uid(PlaylistID playlist_id);
-MPUID mp_get_album_uid(AlbumID album_id);
+MPUID mp_get_album_uid(PlaylistID playlist_id);
 MPUID mp_get_artist_uid(ArtistID artist_id);
 
 #endif
