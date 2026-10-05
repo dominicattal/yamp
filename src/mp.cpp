@@ -13,7 +13,6 @@
 #include <tag.h>
 #include <tstringlist.h>
 #include <utf8.h>
-#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
 #include <stb_image.h>
 

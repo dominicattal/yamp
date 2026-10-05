@@ -12,7 +12,6 @@
 #include <GLFW/glfw3.h>
 #include <queue>
 #include <vector>
-#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 #include <spdlog/spdlog.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -499,6 +498,16 @@ static void cleanup_textures()
     (void)song;
 }
 
+[[maybe_unused]] static bool loading_textures()
+{
+    return ctx.load_queue.size() > 0;
+}
+
+[[maybe_unused]] static bool is_song_texture_loading(int song_id)
+{
+    return ctx.textures.slot_map.find(song_id) == ctx.textures.slot_map.end();
+}
+
 static void update_textures()
 {
     if (ctx.load_queue.size() > 0)
@@ -706,6 +715,13 @@ static void draw_search_results()
     flags |= ImGuiTableFlags_BordersV;
     flags |= ImGuiTableFlags_NoBordersInBody;
     flags |= ImGuiTableFlags_ScrollY;
+
+    for (LruCacheRef<Song>& song : mp_ctx.search_result) {
+        if (is_song_texture_loading(song->id)) {
+            ImGui::Text("Loading...");
+            return;
+        }
+    }
 
     if (ImGui::BeginTable("All Songs", 5, flags, ImGui::GetContentRegionAvail()))
     {

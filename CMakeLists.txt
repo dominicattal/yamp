@@ -40,5 +40,6 @@ PRIVATE
 
 target_compile_definitions(yamp PRIVATE IMGUI_ENABLE_FREETYPE)
 target_compile_definitions(yamp PRIVATE IMGUI_USE_WCHAR32)
+target_compile_definitions(yamp PRIVATE SPDLOG_ACTIVE_LEVEL)
 
 target_link_libraries(yamp PRIVATE glfw portable_file_dialogs miniaudio spdlog utf8cpp freetype TagLib::tag)
