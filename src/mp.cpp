@@ -1094,6 +1094,40 @@ LruCacheRef<std::vector<int>> mp_get_albums_from_artist(int artist_id)
     return albums;
 }
 
+SearchResult<Song> mp_get_paginated_songs_from_artist(int artist_id, int page_limit, int page_num)
+{
+    SearchResult<Song> result{};
+    sqlite3_stmt* stmt;
+    const char* query;
+    // assume that if page > 0, then the caller already knows the number of results
+    if (page_num == -1)
+    {
+        query = "SELECT COUNT(id) FROM ArtistSong WHERE artist_id=?1"; 
+        sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+        sqlite3_bind_int(stmt, 1, artist_id);
+        sqlite3_step(stmt);
+        result.num_songs = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+        page_num = 0;
+    }
+
+    query = "SELECT song_id FROM ArtistSong WHERE artist_id=?1 LIMIT ?2 OFFSET ?3";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, artist_id);
+    sqlite3_bind_int(stmt, 2, page_limit);
+    sqlite3_bind_int(stmt, 3, page_limit * page_num);
+    std::vector<LruCacheRef<Song>> results{};
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        int song_id = sqlite3_column_int(stmt, 0);
+        LruCacheRef<Song> song = mp_get_song(song_id);
+        assert(song != nullptr);
+        result.entries.push_back(std::move(song));
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
 std::vector<LruCacheRef<Playlist>> mp_get_playlists()
 {
     std::vector<int> playlist_ids = db_get_playlists();

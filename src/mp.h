@@ -55,6 +55,14 @@ struct FrontCover {
     int height;
 };
 
+template<typename T>
+struct SearchResult {
+    std::vector<LruCacheRef<T>> entries;
+    int page_num;
+    int num_pages;
+    int num_songs;
+};
+
 using SongCallback = std::function<void(Song* song)>;
 
 struct MPContext {
@@ -172,6 +180,10 @@ LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_album(int album_id);
 LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_playlist(int playlist_id);
 LruCacheRef<std::vector<int>> mp_get_songs_from_artist(int artist_id);
 LruCacheRef<std::vector<int>> mp_get_albums_from_artist(int artist_id);
+
+// If page_num == -1, then return the first page and the number of results
+// If page_num >= 0, then assume caller knows the number of results and just return songs
+SearchResult<Song> mp_get_paginated_songs_from_artist(int artist_id, int page_limit, int page_num = -1);
 
 std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 
