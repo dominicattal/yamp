@@ -629,7 +629,7 @@ void mp_update()
         ma_sound_get_cursor_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_cursor);
     }
     if (ctx.song_ended) {
-        mp_queue_skip();
+        mp_play_next();
         ctx.song_ended = false;
     }
 }
@@ -824,7 +824,7 @@ void mp_queue_song(SongID song_id)
     LruCacheRef<Song> song = mp_get_song(song_id);
     mp_ctx.queue.push_back(std::move(song));
     if (mp_ctx.queue.size() == 1 && !ctx.current_song_loaded)
-        mp_queue_skip();
+        mp_play_next();
 }
 
 void mp_pause_or_resume()
@@ -866,7 +866,7 @@ void mp_toggle_autoplay()
     }
     mp_ctx.autoplay = !mp_ctx.autoplay;
     if (mp_ctx.autoplay && mp_ctx.current_song == nullptr)
-        mp_queue_skip();
+        mp_play_next();
 }
 
 void mp_update_volume()
@@ -922,7 +922,7 @@ void mp_play_playlist(PlaylistID playlist_id)
     mp_ctx.group_id = playlist_id;
     mp_ctx.queue.clear();
     add_playlist_songs_to_group_queue(playlist_id);
-    mp_queue_skip();
+    mp_play_next();
 }
 
 void mp_play_album(AlbumID album_id)
@@ -932,7 +932,7 @@ void mp_play_album(AlbumID album_id)
     mp_ctx.group_id = album_id;
     mp_ctx.queue.clear();
     add_album_songs_to_group_queue(album_id);
-    mp_queue_skip();
+    mp_play_next();
 }
 
 const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, int page_limit, int page_num)
@@ -1132,13 +1132,28 @@ std::vector<LruCacheRef<Playlist>> mp_get_playlists()
     return playlists;
 }
 
+void mp_play_previous()
+{
+    // for now dont do anything, but should probably think about
+    // what makes sense
+    if (mp_ctx.song_history.size() == 0)
+        return;
+
+    if (mp_ctx.current_song != nullptr)
+        mp_ctx.queue.push_front(std::move(mp_ctx.current_song));
+
+    SongID song_id = mp_ctx.song_history.back();
+    mp_ctx.song_history.pop_back();
+    mp_play_song(song_id);
+}
+
 static void play_next_group_song()
 {
     if (mp_ctx.group_queue.size() == 0) 
     {
         if (mp_ctx.loop_mode == LOOP_NONE) {
             mp_ctx.playing_group = false;
-            mp_queue_skip();
+            mp_play_next();
             return;
         }
 
@@ -1150,7 +1165,7 @@ static void play_next_group_song()
         if (mp_ctx.group_queue.size() == 0) {
             SPDLOG_WARN("Tried to play group with no songs");
             mp_ctx.playing_group = false;
-            mp_queue_skip();
+            mp_play_next();
             return;
         }
     }
@@ -1159,9 +1174,12 @@ static void play_next_group_song()
     mp_play_song(song_id);
 }
 
-void mp_queue_skip()
+void mp_play_next()
 {
-    if (mp_ctx.loop_mode == LOOP_TRACK) {
+    if (mp_ctx.current_song != nullptr)
+        mp_ctx.song_history.push_back(mp_ctx.current_song->id);
+
+    if (mp_ctx.loop_mode == LOOP_TRACK && mp_ctx.current_song != nullptr) {
         mp_play_song(mp_ctx.current_song->id);
         return;
     }

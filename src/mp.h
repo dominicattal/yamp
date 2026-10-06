@@ -113,6 +113,9 @@ struct MPContext {
     // this stores the order songs should be played in the group
     std::deque<SongTrack> group_queue;
 
+    // this stores the history of played songs
+    std::deque<SongID> song_history;
+
     // this stores the songs from the most recent search
     std::vector<LruCacheRef<Song>> search_result;
     int num_results;
@@ -207,7 +210,8 @@ Art mp_get_album_art(AlbumID album_id);
 void mp_free_art(Art* art);
 
 // Skip current song in queue
-void mp_queue_skip();
+void mp_play_previous();
+void mp_play_next();
 void mp_queue_clear();
 
 MPUID mp_get_song_uid(SongID song_id);
