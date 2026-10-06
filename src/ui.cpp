@@ -935,26 +935,24 @@ static void draw_custom_table(CustomTableParams& params)
         if (ImGui::BeginPopupContextItem())
         {
             *params.selected_row = row;
-            params.menu_popup_callback(params.selected_row);
-            //if (res == MENU_CLOSE_TABLE)
-            //{
-            //    ImGui::EndPopup();
-            //    ImGui::PopID();
-            //    ImGui::EndChild();
-            //    return;
-            //}
-            ImGui::EndPopup();
-            //if (res == MENU_CLOSE_POPUP)
-            //{
-            //    ImGui::CloseCurrentPopup();
-            //}
-            //else if (res == MENU_END_POPUP)
-            //{
-            //    ImGui::EndPopup();
-            //}
-            //else if (res == MENU_CLOSE_TABLE)
-            //{
-            //}
+            MenuPopupEnum res = params.menu_popup_callback(params.selected_row);
+            if (res == MENU_CLOSE_TABLE)
+            {
+                ImGui::EndPopup();
+                ImGui::PopID();
+                ImGui::EndChild();
+                return;
+            }
+            //ImGui::EndPopup();
+            else if (res == MENU_CLOSE_POPUP)
+            {
+                ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
+            else if (res == MENU_END_POPUP)
+            {
+                ImGui::EndPopup();
+            }
         }
         else if (*params.selected_row == row)
         {
@@ -1066,61 +1064,49 @@ static void draw_album_info()
     params.selected_row = &selected_row;
     params.menu_popup_callback = [](int* selected_row) -> MenuPopupEnum
         {
-            SPDLOG_INFO("{} {}", *selected_row, tracks.size());
-            return MENU_END_POPUP;
-            //LruCacheRef<Song>& song = tracks[*selected_row].song;
-            //if (ImGui::Button("Show"))
-            //{
-            //    *selected_row = -1;
-            //    set_center_view_song(std::move(song));
-            //    return MENU_CLOSE_TABLE;
-            //}
-            //if (ImGui::Button("Play"))
-            //{
-            //    mp_play_song(song->id);
-            //    return MENU_CLOSE_POPUP;
-            //}
-            //return MENU_END_POPUP;
-            ////LruCacheRef<Song>& song = tracks[*selected_row].song;
-            //if (ImGui::Button("Show"))
-            //{
-            //    *selected_row = -1;
-            //    set_center_view_song(std::move(song));
-            //    return MENU_CLOSE_TABLE;
-            //}
-            //if (ImGui::Button("Play"))
-            //{
-            //    mp_play_song(song->id);
-            //    return MENU_CLOSE_POPUP;
-            //}
-            //if (ImGui::Button("Queue"))
-            //{
-            //    mp_queue_song(song->id);
-            //    return MENU_CLOSE_POPUP;
-            //}
-            //if (ImGui::Button("Add to Playlist"))
-            //    ImGui::OpenPopup("add_to_playlist_popup");
-            //if (ImGui::BeginPopup("add_to_playlist_popup"))
-            //{
-            //    for (const LruCacheRef<Playlist>& playlist : ctx.playlists)
-            //    {
-            //        ImGui::PushID(playlist->id);
-            //        if (ImGui::Button(playlist->name.c_str()))
-            //            mp_add_song_to_playlist(song->id, playlist->id);
-            //        ImGui::PopID();
-            //    }
-            //    if (ImGui::Button("Create Playlist"))
-            //    {
-            //        LruCacheRef<Playlist> playlist = mp_create_playlist();
-            //        ctx.playlists.push_back(mp_get_playlist(playlist->id));
-            //        mp_add_song_to_playlist(song->id, playlist->id);
-            //        set_center_view_playlist(std::move(playlist));
-            //    }
-            //}
-            //if (ImGui::Button("Close"))
-            //    return MENU_CLOSE_POPUP;
+            LruCacheRef<Song>& song = tracks[*selected_row].song;
+            if (ImGui::Button("Show"))
+            {
+                *selected_row = -1;
+                set_center_view_song(std::move(song));
+                return MENU_CLOSE_TABLE;
+            }
+            if (ImGui::Button("Play"))
+            {
+                mp_play_song(song->id);
+                return MENU_CLOSE_POPUP;
+            }
+            if (ImGui::Button("Queue"))
+            {
+                mp_queue_song(song->id);
+                return MENU_CLOSE_POPUP;
+            }
+            if (ImGui::Button("Add to Playlist"))
+                ImGui::OpenPopup("add_to_playlist_popup");
+            if (ImGui::BeginPopup("add_to_playlist_popup"))
+            {
+                for (const LruCacheRef<Playlist>& playlist : ctx.playlists)
+                {
+                    ImGui::PushID(playlist->id);
+                    if (ImGui::Button(playlist->name.c_str()))
+                        mp_add_song_to_playlist(song->id, playlist->id);
+                    ImGui::PopID();
+                }
+                if (ImGui::Button("Create Playlist"))
+                {
+                    LruCacheRef<Playlist> playlist = mp_create_playlist();
+                    ctx.playlists.push_back(mp_get_playlist(playlist->id));
+                    mp_add_song_to_playlist(song->id, playlist->id);
+                    set_center_view_playlist(std::move(playlist));
+                    ImGui::EndPopup();
+                    return MENU_CLOSE_TABLE;
+                }
+                ImGui::EndPopup();
+            }
+            if (ImGui::Button("Close"))
+                return MENU_CLOSE_POPUP;
 
-            //return MENU_END_POPUP;
+            return MENU_END_POPUP;
         };
 
     params.col_offsets.push_back(&track_col_offset);
