@@ -1,3 +1,7 @@
+// *****************************
+// Includes
+// *****************************
+
 #include "ui.h"
 #include "mp.h"
 #include <cstring>
@@ -15,6 +19,10 @@
 #include <spdlog/spdlog.h>
 #include <stb_image.h>
 #include <stb_image_resize2.h>
+
+// *****************************
+// Constants, Global Variables, Types
+// *****************************
 
 #define IMGUI_BLANK ImVec4(0.0f, 0.0f, 0.0f, 0.0f)
 
@@ -155,6 +163,191 @@ struct UIContext {
 
 static UIContext ctx;
 
+// *****************************
+// ImGUI Helper Functions
+// *****************************
+
+enum AlignmentEnum {
+    ALIGN_LEFT,
+    ALIGN_CENTER,
+    ALIGN_RIGHT
+};
+
+enum MenuPopupEnum {
+    MENU_END_POPUP,
+    MENU_CLOSE_POPUP,
+    MENU_CLOSE_TABLE
+};
+
+struct CustomTableParams {
+    int num_rows;
+    int num_cols;
+    int* selected_row;
+    float header_row_height;
+    float row_height;
+    float table_width;
+    std::vector<float*> col_offsets;
+    std::vector<float> col_widths;
+    std::vector<std::function<void(ImVec2, ImVec2)>> header_row_col_callback;
+    std::vector<std::function<void(ImVec2, ImVec2, int)>> body_row_col_callback;
+    std::function<MenuPopupEnum(int*)> menu_popup_callback;
+};
+
+static bool imgui_text_button(const char* text)
+{
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+
+    ImVec2 cursor_pos = ImGui::GetCursorPos();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::Text("%s", text);
+    ImGui::PopStyleColor();
+    const bool hovered = ImGui::IsItemHovered();
+    const bool clicked = ImGui::IsItemClicked();
+    if (hovered)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+    if (hovered) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+    ImGui::SetCursorPos(cursor_pos);
+    ImGui::Text("%s", text);
+    if (hovered) ImGui::PopStyleColor();
+
+    ImGui::PopStyleVar();
+    return hovered && clicked;
+}
+
+static void imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 region_size, AlignmentEnum h_align, AlignmentEnum v_align)
+{
+    ImVec2 text_size = ImGui::CalcTextSize(text);
+    ImGui::SetCursorPos(ImVec2(
+                region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
+                region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
+    ImGui::Text("%s", text);
+    // Resetting the cursor is unnecessary
+    //ImGui::SetCursorPos(ImVec2(region_start.x + region_size.x, region_start.y));
+}
+
+static bool imgui_aligned_text_button(const char* text, ImVec2 region_start, ImVec2 region_size, AlignmentEnum h_align, AlignmentEnum v_align)
+{
+    ImVec2 text_size = ImGui::CalcTextSize(text);
+    ImGui::SetCursorPos(ImVec2(
+                region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
+                region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
+    return imgui_text_button(text);
+}
+
+static void imgui_custom_table(CustomTableParams& params)
+{
+    constexpr float separator_width = 8.0f;
+    constexpr float separator_line_width = 2.0f;
+    constexpr float separator_offset = -12.0f;
+    ImVec2 origin = ImGui::GetCursorPos();
+    ImVec2 origin_screen = ImGui::GetCursorScreenPos();
+    params.col_offsets.push_back(&params.table_width);
+    for (size_t i = 0; i < params.col_offsets.size() - 2; i++)
+    {
+        ImGui::PushID(i);
+        ImVec2 region_start = ImVec2(origin.x + *params.col_offsets[i], origin.y);
+        ImVec2 region_size = ImVec2(params.col_widths[i], params.header_row_height);
+        params.header_row_col_callback[i](region_start, region_size);
+        ImGui::SetCursorPos(ImVec2(origin.x + *params.col_offsets[i+1] + separator_offset - separator_width / 2.0f, origin.y));
+        ImGui::InvisibleButton("##", ImVec2(separator_width, params.header_row_height));
+        if (ImGui::IsItemHovered())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        if (ImGui::IsItemActive())
+        {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            *params.col_offsets[i+1] = std::clamp(
+                    ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f,
+                    *params.col_offsets[i], *params.col_offsets[i+2]);
+            //*params.col_offsets[i+1] = std::clamp(
+            //        ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f,
+            //        *params.col_offsets[i] + params.col_widths[i] - separator_offset, 
+            //        *params.col_offsets[i+2] - params.col_widths[i+1] + separator_offset);
+        }
+        ImGui::GetWindowDrawList()->AddLineV(
+                origin_screen.x + *params.col_offsets[i+1] + separator_offset - separator_line_width / 2.0f, 
+                origin_screen.y + 5.0f, 
+                origin_screen.y + params.header_row_height - 5.0f, 
+                IM_COL32(56, 56, 56, 255),
+                separator_line_width);
+        ImGui::PopID();
+    }
+    params.header_row_col_callback.back()(
+            ImVec2(origin.x + *params.col_offsets[params.num_cols-1], origin.y),
+            ImVec2(params.col_widths[params.num_cols-1], params.header_row_height)
+        );
+    ImGui::SetCursorPos(ImVec2(origin.x, origin.y + params.header_row_height));
+    ImGui::Separator();
+    ImGui::SetCursorPos(ImVec2(origin.x, origin.y + params.header_row_height + 2.0f));
+    ImGui::BeginChild("##table_body", ImGui::GetContentRegionAvail(), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+    float cursor_pos_y = ImGui::GetCursorPosY();
+    for (int row = 0; row < params.num_rows; row++)
+    {
+        ImGui::PushID(row);
+
+        ImVec2 row_size = ImVec2(params.table_width, params.row_height);
+        ImVec2 mouse_pos = ImGui::GetMousePos();
+
+        ImGui::SetCursorPos(ImVec2(0.0f, cursor_pos_y));
+        ImVec2 p_min = ImGui::GetCursorScreenPos();
+        ImVec2 p_max = ImVec2(p_min.x + row_size.x, p_min.y + row_size.y);
+
+        bool in_bounds = mouse_pos.x >= p_min.x && mouse_pos.x <= p_max.x && mouse_pos.y >= p_min.y && mouse_pos.y <= p_max.y;
+
+        if (*params.selected_row == row || (*params.selected_row == -1 && in_bounds))
+        {
+            ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, IM_COL32(0x20, 0x20, 0x20, 0xFF));
+        }
+
+        ImGui::Dummy(row_size);
+
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+            *params.selected_row = row;
+        if (ImGui::BeginPopupContextItem("A"))
+        {
+            *params.selected_row = row;
+            MenuPopupEnum res = params.menu_popup_callback(params.selected_row);
+            if (res == MENU_CLOSE_TABLE)
+            {
+                ImGui::EndPopup();
+                ImGui::PopID();
+                ImGui::EndChild();
+                return;
+            }
+            else if (res == MENU_CLOSE_POPUP)
+            {
+                ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
+            else if (res == MENU_END_POPUP)
+            {
+                ImGui::EndPopup();
+            }
+        }
+        else if (*params.selected_row == row)
+        {
+            *params.selected_row = -1;
+        }
+
+        for (int col = 0; col < params.num_cols; col++)
+        {
+            ImGui::PushID(col);
+            ImVec2 region_start(*params.col_offsets[col], cursor_pos_y);
+            ImVec2 region_size(params.col_widths[col], params.row_height);
+            ImGui::SetCursorPos(region_start);
+            params.body_row_col_callback[col](region_start, region_size, row);
+            ImGui::PopID();
+        }
+        ImGui::PopID();
+        cursor_pos_y += params.row_height;
+    }
+    ImGui::EndChild();
+}
+
+// *****************************
+// ImGUI Helper Functions End
+// *****************************
+
 static void glfw_error_callback(int error, const char* description)
 {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -248,7 +441,7 @@ static GLTexture get_texture_from_song(SongID song_id)
     return get_texture_default();
 }
 
-static GLTexture get_texture_from_playlist(PlaylistID playlist_id)
+[[maybe_unused]] static GLTexture get_texture_from_playlist(PlaylistID playlist_id)
 {
     (void)playlist_id;
     return get_texture_default();
@@ -654,49 +847,6 @@ void ui_cleanup()
     SPDLOG_INFO("UI cleaned up");
 }
 
-static bool imgui_text_button(const char* text)
-{
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-
-    ImVec2 cursor_pos = ImGui::GetCursorPos();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    ImGui::Text("%s", text);
-    ImGui::PopStyleColor();
-    const bool hovered = ImGui::IsItemHovered();
-    const bool clicked = ImGui::IsItemClicked();
-    if (hovered)
-        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-
-    if (hovered) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-    ImGui::SetCursorPos(cursor_pos);
-    ImGui::Text("%s", text);
-    if (hovered) ImGui::PopStyleColor();
-
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(3);
-    return hovered && clicked;
-}
-
-enum Alignment {
-    ALIGN_LEFT,
-    ALIGN_CENTER,
-    ALIGN_RIGHT
-};
-
-[[maybe_unused]] static void imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 region_size, Alignment h_align, Alignment v_align)
-{
-    ImVec2 text_size = ImGui::CalcTextSize(text);
-    ImGui::SetCursorPos(ImVec2(
-                region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
-                region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
-    ImGui::Text("%s", text);
-    // Resetting the cursor is unnecessary
-    //ImGui::SetCursorPos(ImVec2(region_start.x + region_size.x, region_start.y));
-}
-
 static void draw_search_results()
 {
     ImGuiTableFlags flags = ImGuiTableFlags_None;
@@ -852,128 +1002,6 @@ static void draw_song_info()
     }
 }
 
-enum MenuPopupEnum {
-    MENU_END_POPUP,
-    MENU_CLOSE_POPUP,
-    MENU_CLOSE_TABLE
-};
-
-struct CustomTableParams {
-    int num_rows;
-    int num_cols;
-    int* selected_row;
-    float row_height;
-    float table_width;
-    std::vector<float*> col_offsets;
-    std::vector<float> col_widths;
-    std::vector<std::function<void(ImVec2, ImVec2)>> header_row_col_callback;
-    std::vector<std::function<void(ImVec2, ImVec2, int)>> body_row_col_callback;
-    std::function<MenuPopupEnum(int*)> menu_popup_callback;
-};
-
-static void draw_custom_table(CustomTableParams& params)
-{
-    constexpr float separator_width = 8.0f;
-    constexpr float separator_line_width = 2.0f;
-    constexpr float separator_offset = -12.0f;
-    ImVec2 origin = ImGui::GetCursorPos();
-    ImVec2 origin_screen = ImGui::GetCursorScreenPos();
-    params.col_offsets.push_back(&params.table_width);
-    for (size_t i = 0; i < params.col_offsets.size() - 2; i++)
-    {
-        ImGui::PushID(i);
-        ImVec2 region_start = ImVec2(origin.x + *params.col_offsets[i], origin.y);
-        ImVec2 region_size = ImVec2(params.col_widths[i], params.row_height);
-        params.header_row_col_callback[i](region_start, region_size);
-        ImGui::SetCursorPos(ImVec2(origin.x + *params.col_offsets[i+1] + separator_offset - separator_width / 2.0f, origin.y));
-        ImGui::InvisibleButton("##", ImVec2(separator_width, params.row_height));
-        if (ImGui::IsItemHovered())
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-        if (ImGui::IsItemActive())
-        {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-            *params.col_offsets[i+1] = std::clamp(
-                    ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f,
-                    *params.col_offsets[i], *params.col_offsets[i+2]);
-            //*params.col_offsets[i+1] = std::clamp(
-            //        ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f,
-            //        *params.col_offsets[i] + params.col_widths[i] - separator_offset, 
-            //        *params.col_offsets[i+2] - params.col_widths[i+1] + separator_offset);
-        }
-        ImGui::GetWindowDrawList()->AddLineV(
-                origin_screen.x + *params.col_offsets[i+1] + separator_offset - separator_line_width / 2.0f, 
-                origin_screen.y + 5.0f, 
-                origin_screen.y + params.row_height - 5.0f, 
-                IM_COL32(56, 56, 56, 255),
-                separator_line_width);
-        ImGui::PopID();
-    }
-    params.header_row_col_callback.back()(
-            ImVec2(origin.x + *params.col_offsets[params.num_cols-1], origin.y),
-            ImVec2(params.col_widths[params.num_cols-1], params.row_height)
-        );
-    ImGui::SetCursorPos(ImVec2(origin.x, origin.y + params.row_height));
-    ImGui::Separator();
-    ImGui::SetCursorPos(ImVec2(origin.x, origin.y + params.row_height));
-    ImGui::BeginChild("##table_body", ImGui::GetContentRegionAvail(), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
-    ImVec2 cursor_pos = ImGui::GetCursorPos();
-    for (int row = 0; row < params.num_rows; row++)
-    {
-        ImGui::PushID(row);
-
-        ImGui::SetCursorPos(ImVec2(0.0f, cursor_pos.y));
-        
-        const ImVec4 selectable_color = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Header, selectable_color);
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, selectable_color);
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, selectable_color);
-        ImGui::Selectable("##", *params.selected_row == row, ImGuiSelectableFlags_None, ImVec2(params.table_width, params.row_height));
-        ImGui::PopStyleColor(3);
-
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-            *params.selected_row = row;
-        if (ImGui::BeginPopupContextItem())
-        {
-            *params.selected_row = row;
-            MenuPopupEnum res = params.menu_popup_callback(params.selected_row);
-            if (res == MENU_CLOSE_TABLE)
-            {
-                ImGui::EndPopup();
-                ImGui::PopID();
-                ImGui::EndChild();
-                return;
-            }
-            //ImGui::EndPopup();
-            else if (res == MENU_CLOSE_POPUP)
-            {
-                ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-            }
-            else if (res == MENU_END_POPUP)
-            {
-                ImGui::EndPopup();
-            }
-        }
-        else if (*params.selected_row == row)
-        {
-            *params.selected_row = -1;
-        }
-
-        for (int col = 0; col < params.num_cols; col++)
-        {
-            ImGui::PushID(col);
-            ImVec2 region_start(*params.col_offsets[col], cursor_pos.y);
-            ImVec2 region_size(params.col_widths[col], params.row_height);
-            ImGui::SetCursorPos(region_start);
-            params.body_row_col_callback[col](region_start, region_size, row);
-            ImGui::PopID();
-        }
-        ImGui::PopID();
-        cursor_pos.y += params.row_height;
-    }
-    ImGui::EndChild();
-}
-
 static void draw_album_info()
 {
     assert(ctx.center.album != nullptr);
@@ -1047,6 +1075,7 @@ static void draw_album_info()
     CustomTableParams params{};
     params.num_cols = 3;
     params.num_rows = tracks.size();
+    params.header_row_height = 40.0f;
     params.row_height = 40.0f;
     params.table_width = ImGui::GetContentRegionAvail().x;
 
@@ -1192,186 +1221,9 @@ static void draw_album_info()
             imgui_aligned_text(length_str, region_start, region_size, ALIGN_RIGHT, ALIGN_CENTER);
         });
 
-    draw_custom_table(params);
+    imgui_custom_table(params);
 
     length_col_right_offset = params.table_width - length_col_offset;
-
-    return;
-
-    /*
-    constexpr float row_height = 40.0f;
-    const float row_width = ImGui::GetContentRegionAvail().x;
-
-    static float track_col_offset = 10.0f;
-    static float title_col_offset = 70.0f;
-    static float length_col_right_offset = 100.0f;
-    float length_col_offset = row_width - length_col_right_offset;
-
-    static float track_col_width = 50.0f;
-    static float title_col_width = 400.0f;
-    static float length_col_width = 50.0f;
-
-    constexpr float separator_width = 8.0f;
-    constexpr float separator_line_width = 2.0f;
-    constexpr float separator_offset = -12.0f;
-
-    ImVec2 origin = ImGui::GetCursorPos();
-    ImVec2 origin_screen = ImGui::GetCursorScreenPos();
-
-    imgui_aligned_text("#", ImVec2(origin.x + track_col_offset, origin.y), ImVec2(track_col_width, row_height), ALIGN_CENTER, ALIGN_CENTER);
-    ImGui::SetCursorPos(ImVec2(origin.x + title_col_offset + separator_offset - separator_width / 2.0f, origin.y));
-    ImGui::InvisibleButton("##track-separator", ImVec2(separator_width, row_height));
-    if (ImGui::IsItemHovered())
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-    if (ImGui::IsItemActive())
-    {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-        title_col_offset = std::clamp(ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f, track_col_offset + track_col_width - separator_offset, length_col_offset);
-    }
-    ImGui::GetWindowDrawList()->AddLineV(origin_screen.x + title_col_offset + separator_offset - separator_line_width / 2.0f, origin_screen.y + 5.0f, origin_screen.y + row_height - 5.0f, IM_COL32(56, 56, 56, 255), separator_line_width);
-
-    imgui_aligned_text("Title", ImVec2(origin.x + title_col_offset, origin.y), ImVec2(title_col_width, row_height), ALIGN_LEFT, ALIGN_CENTER);
-    ImGui::SetCursorPos(ImVec2(origin.x + length_col_offset + separator_offset - separator_width / 2.0f, origin.y));
-    ImGui::InvisibleButton("##title-separator", ImVec2(separator_width, row_height));
-    if (ImGui::IsItemHovered())
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-    if (ImGui::IsItemActive())
-    {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-        length_col_right_offset = row_width - std::clamp(ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f, title_col_offset + title_col_width - separator_offset, row_width - length_col_width);
-        length_col_offset = row_width - length_col_right_offset;
-    }
-    ImGui::GetWindowDrawList()->AddLineV(origin_screen.x + length_col_offset + separator_offset - separator_line_width / 2.0f, origin_screen.y + 5.0f, origin_screen.y + row_height - 5.0f, IM_COL32(56, 56, 56, 255), separator_line_width);
-
-
-    imgui_aligned_text("Length", ImVec2(origin.x + length_col_offset, origin.y), ImVec2(length_col_width, row_height), ALIGN_RIGHT, ALIGN_CENTER);
-
-    ImGui::SetCursorPos(ImVec2(origin.x, origin.y + row_height));
-    ImGui::Separator();
-    ImGui::SetCursorPos(ImVec2(origin.x, origin.y + row_height));
-    ImGui::BeginChild("album_songs", ImGui::GetContentRegionAvail(), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
-    ImVec2 cursor_pos = ImGui::GetCursorPos();
-    for (auto& [song, track] : tracks)
-    {
-        ImGui::PushID(song->id);
-
-        float cursor_y = cursor_pos.y;
-        ImVec2 mouse_pos = ImGui::GetMousePos();
-        ImVec2 play_button_size(18.0f, 18.0f);
-        ImGui::SetCursorPos(ImVec2(0.0f, cursor_y));
-
-        const ImVec4 selectable_color = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-        static int selected = -1;
-
-        ImGui::PushStyleColor(ImGuiCol_Header, selectable_color);
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, selectable_color);
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, selectable_color);
-        ImGui::Selectable("##", selected == song->id, ImGuiSelectableFlags_None, ImVec2(row_width, row_height));
-        ImGui::PopStyleColor(3);
-
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-            selected = song->id;
-        if (ImGui::BeginPopupContextItem())
-        {
-            selected = song->id;
-            if (ImGui::Button("Show"))
-            {
-                selected = -1;
-                set_center_view_song(std::move(song));
-                ImGui::EndPopup();
-                ImGui::PopID();
-                ImGui::EndChild();
-                return;
-            }
-            if (ImGui::Button("Play"))
-            {
-                mp_play_song(song->id);
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::Button("Queue"))
-            {
-                mp_queue_song(song->id);
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::Button("Add to Playlist"))
-                ImGui::OpenPopup("add_to_playlist_popup");
-            if (ImGui::BeginPopup("add_to_playlist_popup"))
-            {
-                for (const LruCacheRef<Playlist>& playlist : ctx.playlists)
-                {
-                    ImGui::PushID(playlist->id);
-                    if (ImGui::Button(playlist->name.c_str()))
-                        mp_add_song_to_playlist(song->id, playlist->id);
-                    ImGui::PopID();
-                }
-                if (ImGui::Button("Create Playlist"))
-                {
-                    LruCacheRef<Playlist> playlist = mp_create_playlist();
-                    ctx.playlists.push_back(mp_get_playlist(playlist->id));
-                    mp_add_song_to_playlist(song->id, playlist->id);
-                    set_center_view_playlist(std::move(playlist));
-                }
-                ImGui::EndPopup();
-            }
-            if (ImGui::Button("Close"))
-                ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-        else if (selected == song->id)
-        {
-            selected = -1;
-        }
-        ImGui::SetCursorPos(ImVec2(track_col_offset + (track_col_width - play_button_size.x) / 2.0f, cursor_y + (row_height - play_button_size.y) / 2.0f));
-        ImVec2 screen_pos = ImGui::GetCursorScreenPos();
-        bool hovered = mouse_pos.x >= screen_pos.x 
-            && mouse_pos.x <= screen_pos.x + play_button_size.x
-            && mouse_pos.y >= screen_pos.y 
-            && mouse_pos.y <= screen_pos.y + play_button_size.y;
-        if (!hovered)
-        {
-            std::string track_str = std::to_string(track);
-            ImVec2 text_size = ImGui::CalcTextSize(track_str.c_str());
-            ImGui::SetCursorPos(ImVec2(track_col_offset + (track_col_width - text_size.x) / 2.0f, cursor_y + (row_height - text_size.y) / 2.0f));
-            ImGui::Text("%s", track_str.c_str());
-        }
-        else
-        {
-            GLTexture tex = ctx.textures.play_button;
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-            const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
-            const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
-            const ImVec4 bg_col = IMGUI_BLANK;
-            const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-            // IDK why ImGui::Image() doesnt work here maybe investigate some other time
-            //ImGui::Image(tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
-            ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
-            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-            {
-                if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
-                    mp_queue_song(song->id);
-                else
-                    mp_play_song(song->id);
-            }
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor(3);
-        }
-
-        imgui_aligned_text(song->title.c_str(), ImVec2(cursor_pos.x + title_col_offset, cursor_pos.y), ImVec2(title_col_width, row_height), ALIGN_LEFT, ALIGN_CENTER);
-
-        char length_str[256];
-        int length = static_cast<int>(song->length);
-        snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
-        imgui_aligned_text(length_str, ImVec2(cursor_pos.x + length_col_offset, cursor_pos.y), ImVec2(length_col_width, row_height), ALIGN_RIGHT, ALIGN_CENTER);
-
-        ImGui::PopID();
-        cursor_pos.y += row_height;
-        ImGui::SetCursorPos(ImVec2(0.0f, cursor_y));
-    }
-    ImGui::EndChild();
-    */
 }
 
 static void draw_playlist_info()
@@ -1381,15 +1233,16 @@ static void draw_playlist_info()
     LruCacheRef<Playlist>& playlist = ctx.center.playlist;
     std::vector<SongTrack>& tracks = ctx.center.song_tracks;
 
-    const ImVec2 size = ImVec2(LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE);
-    GLTexture tex = get_texture_from_playlist(playlist->id);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10.0f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
+    const ImVec2 size = ImVec2(210, 210);
+    GLTexture tex = get_texture_from_slot(ctx.textures.default_album_art_slot);
     ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 
     ImGui::SameLine();
-
     {
         ImGui::BeginChild("playlist_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
-        ImGui::SetWindowFontScale(4.0f); 
+        ImGui::SetWindowFontScale(2.0f); 
         ImGui::Text("%s", playlist->name.c_str());
         ImGui::SetWindowFontScale(1.0f); 
         static char playlist_name[256];
@@ -1428,46 +1281,207 @@ static void draw_playlist_info()
         return;
     }
 
-    if (ImGui::BeginTable("Nested ALbum Songs", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable))
-    {
-        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 75);
-        ImGui::TableSetupColumn("Track", ImGuiTableColumnFlags_WidthFixed, 50);
-        ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableHeadersRow();
-        int id = 0;
-        for (const auto& [song, track] : tracks)
+    LruCacheRef<Artist> center_artist = nullptr;
+    LruCacheRef<Album> center_album = nullptr;
+
+    CustomTableParams params{};
+    params.num_cols = 5;
+    params.num_rows = tracks.size();
+    params.header_row_height = 40.0f;
+    params.row_height = 48.0f;
+    params.table_width = ImGui::GetContentRegionAvail().x;
+
+    static float track_col_offset = 10.0f;
+    static float title_col_offset = 70.0f;
+    static float artist_col_offset = 300.0f;
+    static float album_col_offset = 550.0f;
+    static float length_col_right_offset = 100.0f;
+    float length_col_offset = params.table_width - length_col_right_offset;
+
+    static float track_col_width = 50.0f;
+    static float title_col_width = 300.0f;
+    static float artist_col_width = 300.0f;
+    static float album_col_width = 300.0f;
+    static float length_col_width = 50.0f;
+
+    static int selected_row = -1;
+
+    params.selected_row = &selected_row;
+    params.menu_popup_callback = [](int* selected_row) -> MenuPopupEnum
         {
-            ImGui::TableNextRow(ImGuiTableRowFlags_None, 40.0f);
-            ImGui::TableNextColumn();
-            ImGui::PushID(id++);
+            LruCacheRef<Song>& song = tracks[*selected_row].song;
+            if (ImGui::Button("Show"))
+            {
+                *selected_row = -1;
+                set_center_view_song(std::move(song));
+                return MENU_CLOSE_TABLE;
+            }
             if (ImGui::Button("Play"))
-                mp_play_song(song->id);;
+            {
+                mp_play_song(song->id);
+                return MENU_CLOSE_POPUP;
+            }
             if (ImGui::Button("Queue"))
+            {
                 mp_queue_song(song->id);
-            ImGui::TableNextColumn();
-            ImGui::Text("%d", track);
-            ImGui::TableNextColumn();
-            LruCacheRef<Album> album = mp_get_album_from_song(song->id);
-            LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
-            ImGui::Text("%s", song->title.c_str());
-            char album_name[256];
-            if (album) {
-                snprintf(album_name, sizeof(album_name), "%s", album->name.c_str());
-                if (ImGui::Button(album_name))
+                return MENU_CLOSE_POPUP;
+            }
+            if (ImGui::Button("Add to Playlist"))
+                ImGui::OpenPopup("add_to_playlist_popup");
+            if (ImGui::BeginPopup("add_to_playlist_popup"))
+            {
+                for (const LruCacheRef<Playlist>& playlist : ctx.playlists)
                 {
-                    set_center_view_album(std::move(album));
+                    ImGui::PushID(playlist->id);
+                    if (ImGui::Button(playlist->name.c_str()))
+                        mp_add_song_to_playlist(song->id, playlist->id);
                     ImGui::PopID();
-                    ImGui::EndTable();
-                    return;
                 }
+                if (ImGui::Button("Create Playlist"))
+                {
+                    LruCacheRef<Playlist> playlist = mp_create_playlist();
+                    ctx.playlists.push_back(mp_get_playlist(playlist->id));
+                    mp_add_song_to_playlist(song->id, playlist->id);
+                    set_center_view_playlist(std::move(playlist));
+                    ImGui::EndPopup();
+                    return MENU_CLOSE_TABLE;
+                }
+                ImGui::EndPopup();
             }
-            if (artist) {
-                ImGui::Text("%s", artist->name.c_str());
+            if (ImGui::Button("Close"))
+                return MENU_CLOSE_POPUP;
+
+            return MENU_END_POPUP;
+        };
+
+    params.col_offsets.push_back(&track_col_offset);
+    params.col_widths.push_back(track_col_width);
+    params.header_row_col_callback.push_back(
+        [](ImVec2 region_start, ImVec2 region_size)
+        {
+            imgui_aligned_text("#", region_start, region_size, ALIGN_CENTER, ALIGN_CENTER);
+        });
+    params.body_row_col_callback.push_back(
+        [](ImVec2 region_start, ImVec2 region_size, int row)
+        {
+            //imgui_aligned_text(std::to_string(tracks[row].track).c_str(), region_start, region_size, ALIGN_CENTER, ALIGN_CENTER);
+            auto& [song, track] = tracks[row];
+            ImVec2 mouse_pos = ImGui::GetMousePos();
+            ImVec2 play_button_size(18.0f, 18.0f);
+            ImGui::SetCursorPos(ImVec2(region_start.x + (region_size.x - play_button_size.x) / 2.0f, region_start.y + (region_size.y - play_button_size.y) / 2.0f));
+            ImVec2 screen_pos = ImGui::GetCursorScreenPos();
+            bool hovered = mouse_pos.x >= screen_pos.x 
+                && mouse_pos.x <= screen_pos.x + play_button_size.x
+                && mouse_pos.y >= screen_pos.y 
+                && mouse_pos.y <= screen_pos.y + play_button_size.y;
+            if (!hovered)
+            {
+                std::string track_str = std::to_string(track);
+                ImVec2 text_size = ImGui::CalcTextSize(track_str.c_str());
+                ImGui::SetCursorPos(ImVec2(region_start.x + (region_size.x - text_size.x) / 2.0f, region_start.y + (region_size.y - text_size.y) / 2.0f));
+                ImGui::Text("%s", track_str.c_str());
             }
-            ImGui::PopID();
-        }
-        ImGui::EndTable();
-    }
+            else
+            {
+                GLTexture tex = ctx.textures.play_button;
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+                const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
+                const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
+                const ImVec4 bg_col = IMGUI_BLANK;
+                const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                // IDK why ImGui::Image() doesnt work here maybe investigate some other time
+                //ImGui::Image(tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+                ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+                if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                {
+                    if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+                        mp_queue_song(song->id);
+                    else
+                        mp_play_song(song->id);
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(3);
+            }
+        });
+
+    params.col_offsets.push_back(&title_col_offset);
+    params.col_widths.push_back(title_col_width);
+    params.header_row_col_callback.push_back(
+        [](ImVec2 region_start, ImVec2 region_size)
+        {
+            imgui_aligned_text("Title", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
+        });
+    params.body_row_col_callback.push_back(
+        [](ImVec2 region_start, ImVec2 region_size, int row)
+        {
+            auto& [song, track] = tracks[row];
+            ImVec2 picture_size(48, 48);
+            GLTexture tex = get_texture_from_song(song->id);
+            ImGui::SetCursorPos(ImVec2(region_start.x, region_start.y));
+            ImGui::Image(tex.id, picture_size, tex.uv0, tex.uv1);
+            imgui_aligned_text(tracks[row].song->title.c_str(), ImVec2(region_start.x + picture_size.x + 5.0f, region_start.y), region_size, ALIGN_LEFT, ALIGN_CENTER);
+        });
+
+    params.col_offsets.push_back(&artist_col_offset);
+    params.col_widths.push_back(artist_col_width);
+    params.header_row_col_callback.push_back(
+        [](ImVec2 region_start, ImVec2 region_size)
+        {
+            imgui_aligned_text("Artist", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
+        });
+    params.body_row_col_callback.push_back(
+        [&center_artist](ImVec2 region_start, ImVec2 region_size, int row)
+        {
+            auto& [song, track] = tracks[row];
+            LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
+            if (imgui_aligned_text_button(artist->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
+                center_artist = std::move(artist);
+        });
+
+    params.col_offsets.push_back(&album_col_offset);
+    params.col_widths.push_back(album_col_width);
+    params.header_row_col_callback.push_back(
+        [](ImVec2 region_start, ImVec2 region_size)
+        {
+            imgui_aligned_text("Album", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
+        });
+    params.body_row_col_callback.push_back(
+        [&center_album](ImVec2 region_start, ImVec2 region_size, int row)
+        {
+            auto& [song, track] = tracks[row];
+            LruCacheRef<Album> album = mp_get_album_from_song(song->id);
+            if (imgui_aligned_text_button(album->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
+                center_album = std::move(album);
+        });
+
+    params.col_offsets.push_back(&length_col_offset);
+    params.col_widths.push_back(length_col_width);
+    params.header_row_col_callback.push_back(
+        [](ImVec2 region_start, ImVec2 region_size)
+        {
+            imgui_aligned_text("Length", region_start, region_size, ALIGN_RIGHT, ALIGN_CENTER);
+        });
+    params.body_row_col_callback.push_back(
+        [](ImVec2 region_start, ImVec2 region_size, int row)
+        {
+            LruCacheRef<Song>& song = tracks[row].song;
+            char length_str[256];
+            int length = static_cast<int>(song->length);
+            snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
+            imgui_aligned_text(length_str, region_start, region_size, ALIGN_RIGHT, ALIGN_CENTER);
+        });
+
+    imgui_custom_table(params);
+
+    length_col_right_offset = params.table_width - length_col_offset;
+
+    if (center_artist != nullptr)
+        set_center_view_artist(std::move(center_artist));
+    if (center_album != nullptr)
+        set_center_view_album(std::move(center_album));
 }
 
 static void draw_playlists()
