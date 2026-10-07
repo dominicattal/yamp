@@ -218,21 +218,74 @@ static bool imgui_text_button(const char* text)
 static void imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 region_size, AlignmentEnum h_align, AlignmentEnum v_align)
 {
     ImVec2 text_size = ImGui::CalcTextSize(text);
+
+    if (text_size.x < region_size.x)
+    {
+        ImGui::SetCursorPos(ImVec2(
+                    region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
+                    region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
+        ImGui::Text("%s", text);
+        return;
+    }
+
+    constexpr int MAX_STRING_SIZE = 512;
+    const char* ellipse = "…";
+    ImVec2 ellipse_size = ImGui::CalcTextSize(ellipse);
+    int text_end_idx = 0;
+    while (text_end_idx < MAX_STRING_SIZE && text[text_end_idx] != '\0' && ImGui::CalcTextSize(text, text + text_end_idx).x < region_size.x - ellipse_size.x)
+        text_end_idx++;
+
+    // Dont even draw text lol wtf
+    if (text_end_idx == 0)
+        return;
+
+    text_size = ImGui::CalcTextSize(text, text + text_end_idx - 1);
     ImGui::SetCursorPos(ImVec2(
                 region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
                 region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
-    ImGui::Text("%s", text);
-    // Resetting the cursor is unnecessary
-    //ImGui::SetCursorPos(ImVec2(region_start.x + region_size.x, region_start.y));
+
+    SPDLOG_INFO("{} {} {} {}", text, region_size.x, text_size.x, ellipse_size.x);
+
+    char buf[MAX_STRING_SIZE];
+    strncpy(buf, text, text_end_idx - 1);
+    buf[text_end_idx - 1] = '\0';
+    ImGui::Text("%s…", buf);
 }
 
 static bool imgui_aligned_text_button(const char* text, ImVec2 region_start, ImVec2 region_size, AlignmentEnum h_align, AlignmentEnum v_align)
 {
     ImVec2 text_size = ImGui::CalcTextSize(text);
+
+    if (text_size.x < region_size.x)
+    {
+        ImGui::SetCursorPos(ImVec2(
+                    region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
+                    region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
+        return imgui_text_button(text);
+    }
+
+    constexpr int MAX_STRING_SIZE = 512;
+    const char* ellipse = "…";
+    ImVec2 ellipse_size = ImGui::CalcTextSize(ellipse);
+    int text_end_idx = 0;
+    while (text_end_idx < MAX_STRING_SIZE && text[text_end_idx] != '\0' && ImGui::CalcTextSize(text, text + text_end_idx).x < region_size.x - ellipse_size.x)
+        text_end_idx++;
+
+    // Dont even draw text lol wtf
+    if (text_end_idx == 0)
+        return false;
+
+    text_size = ImGui::CalcTextSize(text, text + text_end_idx - 1);
     ImGui::SetCursorPos(ImVec2(
                 region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
                 region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
-    return imgui_text_button(text);
+
+    char buf[MAX_STRING_SIZE];
+    strncpy(buf, text, text_end_idx - 1);
+    buf[text_end_idx - 1] = '\0';
+    char buf2[MAX_STRING_SIZE];
+    snprintf(buf2, sizeof(buf2), "%s…", buf);
+    return imgui_text_button(buf2);
 }
 
 static void imgui_custom_table(CustomTableParams& params)
@@ -243,39 +296,45 @@ static void imgui_custom_table(CustomTableParams& params)
     ImVec2 origin = ImGui::GetCursorPos();
     ImVec2 origin_screen = ImGui::GetCursorScreenPos();
     params.col_offsets.push_back(&params.table_width);
-    for (size_t i = 0; i < params.col_offsets.size() - 2; i++)
+    for (size_t i = 0; i < params.col_offsets.size() - 1; i++)
     {
         ImGui::PushID(i);
-        ImVec2 region_start = ImVec2(origin.x + *params.col_offsets[i], origin.y);
-        ImVec2 region_size = ImVec2(params.col_widths[i], params.header_row_height);
-        params.header_row_col_callback[i](region_start, region_size);
-        ImGui::SetCursorPos(ImVec2(origin.x + *params.col_offsets[i+1] + separator_offset - separator_width / 2.0f, origin.y));
-        ImGui::InvisibleButton("##", ImVec2(separator_width, params.header_row_height));
-        if (ImGui::IsItemHovered())
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-        if (ImGui::IsItemActive())
+        ImVec2 region_start(origin.x + *params.col_offsets[i], origin.y);
+        ImVec2 region_size(*params.col_offsets[i+1] - *params.col_offsets[i] + 2 * separator_offset - separator_line_width, params.row_height);
+        if (i != params.col_offsets.size() - 2)
         {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-            *params.col_offsets[i+1] = std::clamp(
-                    ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f,
-                    *params.col_offsets[i], *params.col_offsets[i+2]);
-            //*params.col_offsets[i+1] = std::clamp(
-            //        ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f,
-            //        *params.col_offsets[i] + params.col_widths[i] - separator_offset, 
-            //        *params.col_offsets[i+2] - params.col_widths[i+1] + separator_offset);
+            ImGui::SetCursorPos(ImVec2(origin.x + *params.col_offsets[i+1] + separator_offset - separator_width / 2.0f, origin.y));
+            ImGui::InvisibleButton("##", ImVec2(separator_width, params.header_row_height));
+            if (ImGui::IsItemHovered())
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            if (ImGui::IsItemActive())
+            {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                *params.col_offsets[i+1] = std::clamp(
+                        ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f,
+                        *params.col_offsets[i], *params.col_offsets[i+2]);
+                //*params.col_offsets[i+1] = std::clamp(
+                //        ImGui::GetMousePos().x - origin_screen.x - separator_offset + separator_line_width / 2.0f,
+                //        *params.col_offsets[i] + params.col_widths[i] - separator_offset, 
+                //        *params.col_offsets[i+2] - params.col_widths[i+1] + separator_offset);
+            }
+            ImGui::GetWindowDrawList()->AddLineV(
+                    origin_screen.x + *params.col_offsets[i+1] + separator_offset - separator_line_width / 2.0f, 
+                    origin_screen.y + 5.0f, 
+                    origin_screen.y + params.header_row_height - 5.0f, 
+                    IM_COL32(56, 56, 56, 255),
+                    separator_line_width);
         }
-        ImGui::GetWindowDrawList()->AddLineV(
-                origin_screen.x + *params.col_offsets[i+1] + separator_offset - separator_line_width / 2.0f, 
-                origin_screen.y + 5.0f, 
-                origin_screen.y + params.header_row_height - 5.0f, 
-                IM_COL32(56, 56, 56, 255),
-                separator_line_width);
+        region_start = ImVec2(origin.x + *params.col_offsets[i], origin.y);
+        region_size = ImVec2(*params.col_offsets[i+1] - *params.col_offsets[i] + 2 * separator_offset - separator_line_width, params.row_height);
+        ImGui::SetCursorPos(region_start);
+        params.header_row_col_callback[i](region_start, region_size);
         ImGui::PopID();
     }
-    params.header_row_col_callback.back()(
-            ImVec2(origin.x + *params.col_offsets[params.num_cols-1], origin.y),
-            ImVec2(params.col_widths[params.num_cols-1], params.header_row_height)
-        );
+    //params.header_row_col_callback.back()(
+    //        ImVec2(origin.x + *params.col_offsets[params.num_cols-1], origin.y),
+    //        ImVec2(params.table_width - *params.col_offsets.back() + 2 * separator_offset - separator_line_width, params.header_row_height)
+    //    );
     ImGui::SetCursorPos(ImVec2(origin.x, origin.y + params.header_row_height));
     ImGui::Separator();
     ImGui::SetCursorPos(ImVec2(origin.x, origin.y + params.header_row_height + 2.0f));
@@ -333,7 +392,7 @@ static void imgui_custom_table(CustomTableParams& params)
         {
             ImGui::PushID(col);
             ImVec2 region_start(*params.col_offsets[col], cursor_pos_y);
-            ImVec2 region_size(params.col_widths[col], params.row_height);
+            ImVec2 region_size(*params.col_offsets[col+1] - *params.col_offsets[col] + 2 * separator_offset - separator_line_width, params.row_height);
             ImGui::SetCursorPos(region_start);
             params.body_row_col_callback[col](region_start, region_size, row);
             ImGui::PopID();
@@ -1422,7 +1481,8 @@ static void draw_playlist_info()
             GLTexture tex = get_texture_from_song(song->id);
             ImGui::SetCursorPos(ImVec2(region_start.x, region_start.y));
             ImGui::Image(tex.id, picture_size, tex.uv0, tex.uv1);
-            imgui_aligned_text(tracks[row].song->title.c_str(), ImVec2(region_start.x + picture_size.x + 5.0f, region_start.y), region_size, ALIGN_LEFT, ALIGN_CENTER);
+            float padding = 5.0f;
+            imgui_aligned_text(tracks[row].song->title.c_str(), ImVec2(region_start.x + picture_size.x + padding, region_start.y), ImVec2(region_size.x - picture_size.x - padding, region_size.y), ALIGN_LEFT, ALIGN_CENTER);
         });
 
     params.col_offsets.push_back(&artist_col_offset);
