@@ -78,7 +78,8 @@ struct SearchResult {
     std::vector<LruCacheRef<T>> entries;
     int page_num;
     int num_pages;
-    int num_songs;
+    int results_per_page;
+    int num_results;
 };
 
 using SongCallback = std::function<void(Song* song)>;
@@ -115,10 +116,6 @@ struct MPContext {
 
     // this stores the history of played songs
     std::deque<SongID> song_history;
-
-    // this stores the songs from the most recent search
-    std::vector<LruCacheRef<Song>> search_result;
-    int num_results;
 
     // whether mp is playing a group (playlist or album) or not.
     bool playing_group;
@@ -180,7 +177,7 @@ void mp_play_playlist(int playlist_id);
 void mp_play_album(AlbumID album_id);
 
 // Search for songs based on query
-const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, int page_limit, int page_num);
+SearchResult<Song> mp_search_songs(const char* search_query, int results_per_page, int page_num);
 
 LruCacheRef<Song>       mp_get_song(SongID song_id);
 LruCacheRef<Album>      mp_get_album(AlbumID album_id);

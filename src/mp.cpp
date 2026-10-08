@@ -935,41 +935,39 @@ void mp_play_album(AlbumID album_id)
     mp_play_next();
 }
 
-const std::vector<LruCacheRef<Song>>& mp_search_songs(const char* search_query, int page_limit, int page_num)
+SearchResult<Song> mp_search_songs(const char* search_query, int results_per_page, int page_num)
 {
+    SearchResult<Song> search_result{};
     sqlite3_stmt* stmt;
+    const char* query;
     char buffer[256];
     snprintf(buffer, sizeof(buffer), "%%%s%%", search_query);
 
-    const char* query;
+    search_result.page_num = page_num;
+    search_result.results_per_page = results_per_page;
 
-    // assume that if page > 0, then the caller already knows the number of results
-    if (page_num == 0)
-    {
-        query = "SELECT COUNT(id) FROM Songs WHERE title LIKE ?1"; 
-        sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-        sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
-        sqlite3_step(stmt);
-        mp_ctx.num_results = sqlite3_column_int(stmt, 0);
-        sqlite3_finalize(stmt);
-    }
+    query = "SELECT COUNT(id) FROM Songs WHERE title LIKE ?1"; 
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
+    sqlite3_step(stmt);
+    search_result.num_results = sqlite3_column_int(stmt, 0);
+    search_result.num_pages = (search_result.num_results - 1) / search_result.results_per_page + 1;
+    sqlite3_finalize(stmt);
 
     query = "SELECT id FROM Songs WHERE title LIKE ?1 LIMIT ?2 OFFSET ?3";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 2, page_limit);
-    sqlite3_bind_int(stmt, 3, page_limit * page_num);
-    std::vector<LruCacheRef<Song>> results{};
+    sqlite3_bind_int(stmt, 2, results_per_page);
+    sqlite3_bind_int(stmt, 3, results_per_page * (page_num - 1));
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         int song_id = sqlite3_column_int(stmt, 0);
         LruCacheRef<Song> song = mp_get_song(song_id);
         assert(song != nullptr);
-        results.push_back(std::move(song));
+        search_result.entries.push_back(std::move(song));
     }
-    mp_ctx.search_result = std::move(results);
     sqlite3_finalize(stmt);
-    return mp_ctx.search_result;
+    return search_result;
 }
 
 [[maybe_unused]] void mp_song_update(SongID song_id, const char* title, const char* artist, const char* album, const char* cover_path)
@@ -1101,7 +1099,7 @@ SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int pa
         sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
         sqlite3_bind_int(stmt, 1, artist_id);
         sqlite3_step(stmt);
-        result.num_songs = sqlite3_column_int(stmt, 0);
+        result.num_results = sqlite3_column_int(stmt, 0);
         sqlite3_finalize(stmt);
         page_num = 0;
     }
