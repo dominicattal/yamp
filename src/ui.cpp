@@ -300,6 +300,8 @@ static void imgui_custom_table(CustomTableParams& params)
     constexpr float separator_offset = -12.0f;
     ImVec2 origin = ImGui::GetCursorPos();
     ImVec2 origin_screen = ImGui::GetCursorScreenPos();
+    ImGui::Separator();
+    ImGui::SetCursorPos(origin);
     params.col_offsets.push_back(&params.table_width);
     for (size_t i = 0; i < params.col_offsets.size() - 1; i++)
     {
@@ -406,6 +408,15 @@ static void imgui_custom_table(CustomTableParams& params)
         cursor_pos_y += params.row_height;
     }
     ImGui::EndChild();
+}
+
+static bool imgui_region_hovered(ImVec2 region_start, ImVec2 size)
+{
+    ImVec2 mouse_pos = ImGui::GetMousePos();
+    return mouse_pos.x >= region_start.x 
+        && mouse_pos.x <= region_start.x + size.x
+        && mouse_pos.y >= region_start.y 
+        && mouse_pos.y <= region_start.y + size.y;
 }
 
 // *****************************
@@ -923,16 +934,14 @@ static void draw_search_results()
     //}
 
     SearchResult<Song>& search_result = ctx.center.search_result;
-    ImGui::SameLine();
-    if (ImGui::Button("Left") && search_result.page_num > 1)
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 15.0f);
+    if (ImGui::ArrowButton("Left", ImGuiDir_Left) && search_result.page_num > 1)
         search_result = mp_search_songs(ctx.search_query, SEARCH_RESULTS_PER_PAGE, --search_result.page_num);
     ImGui::SameLine();
-    if (ImGui::Button("Right") && search_result.page_num < search_result.num_pages)
+    if (ImGui::ArrowButton("Right", ImGuiDir_Right) && search_result.page_num < search_result.num_pages)
         search_result = mp_search_songs(ctx.search_query, SEARCH_RESULTS_PER_PAGE, ++search_result.page_num);
     ImGui::SameLine();
     ImGui::Text("%d/%d (%d results)", search_result.page_num, search_result.num_pages, search_result.num_results);
-
-    ImGui::Separator();
 
     LruCacheRef<Artist> center_artist = nullptr;
     LruCacheRef<Album> center_album = nullptr;
@@ -1018,8 +1027,40 @@ static void draw_search_results()
             LruCacheRef<Song>& song = search_result.entries[row];
             ImVec2 picture_size(48, 48);
             GLTexture tex = get_texture_from_song(song->id);
-            ImGui::SetCursorPos(ImVec2(region_start.x, region_start.y));
-            ImGui::Image(tex.id, picture_size, tex.uv0, tex.uv1);
+            ImGui::SetCursorPos(region_start);
+            const bool hovered = imgui_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
+            ImVec4 tint = (hovered) ? ImVec4(0.6f, 0.6f, 0.6f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+            ImGui::ImageWithBg(tex.id, picture_size, tex.uv0, tex.uv1, IMGUI_BLANK, tint);
+            if (hovered)
+            {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                GLTexture tex = ctx.textures.play_button;
+                ImVec2 play_button_size(18.0f, 18.0f);
+                ImVec2 play_button_pos(
+                        region_start.x + (picture_size.x - play_button_size.x) / 2.0f,
+                        region_start.y + (picture_size.y - play_button_size.y) / 2.0f);
+                ImGui::SetCursorPos(play_button_pos);
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+                const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
+                const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
+                const ImVec4 bg_col = IMGUI_BLANK;
+                const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                // IDK why ImGui::Image() doesnt work here maybe investigate some other time
+                //ImGui::Image(tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+                ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                {
+                    if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+                        mp_queue_song(song->id);
+                    else
+                        mp_play_song(song->id);
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(3);
+            }
             float padding = 5.0f;
             imgui_aligned_text(song->title.c_str(), ImVec2(region_start.x + picture_size.x + padding, region_start.y), ImVec2(region_size.x - picture_size.x - padding, region_size.y), ALIGN_LEFT, ALIGN_CENTER);
         });
@@ -1311,14 +1352,10 @@ static void draw_album_info()
         {
             //imgui_aligned_text(std::to_string(tracks[row].track).c_str(), region_start, region_size, ALIGN_CENTER, ALIGN_CENTER);
             auto& [song, track] = tracks[row];
-            ImVec2 mouse_pos = ImGui::GetMousePos();
             ImVec2 play_button_size(18.0f, 18.0f);
             ImGui::SetCursorPos(ImVec2(region_start.x + (region_size.x - play_button_size.x) / 2.0f, region_start.y + (region_size.y - play_button_size.y) / 2.0f));
             ImVec2 screen_pos = ImGui::GetCursorScreenPos();
-            bool hovered = mouse_pos.x >= screen_pos.x 
-                && mouse_pos.x <= screen_pos.x + play_button_size.x
-                && mouse_pos.y >= screen_pos.y 
-                && mouse_pos.y <= screen_pos.y + play_button_size.y;
+            const bool hovered = imgui_region_hovered(screen_pos, play_button_size);
             if (!hovered)
             {
                 std::string track_str = std::to_string(track);
