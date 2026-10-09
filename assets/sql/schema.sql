@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS Songs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title VARCHAR(256),
-    path VARCHAR(256) UNIQUE,
+    path VARCHAR(256),
     cover BLOB,
     length REAL
 );

@@ -163,6 +163,10 @@ static Artist db_get_artist_info(ArtistID artist_id)
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, artist_id);
     [[maybe_unused]] int res = sqlite3_step(stmt);
+    if (res != SQLITE_ROW)
+    {
+        SPDLOG_INFO("{}", artist_id);
+    }
     assert(res == SQLITE_ROW);
     artist.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
 
