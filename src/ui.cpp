@@ -21,7 +21,7 @@
 #include <stb_image_resize2.h>
 
 // *****************************
-// Constants, Global Variables, Types
+// Global Constants, Variables, Types
 // *****************************
 
 #define IMGUI_BLANK ImVec4(0.0f, 0.0f, 0.0f, 0.0f)
@@ -817,7 +817,6 @@ static void initialize_default_texture_slot(const char* path)
 static void initialize_default_textures()
 {
     initialize_default_texture_slot("assets/No-album-art.png");
-
     initialize_default_texture(&ctx.textures.play_button.id, "assets/play-edited.png");
     initialize_default_texture(&ctx.textures.queue_button.id, "assets/add-to-playlist.png");
     initialize_default_texture(&ctx.textures.skip_button.id, "assets/skip.png");
@@ -978,7 +977,7 @@ void ui_cleanup()
     glfwDestroyWindow(ctx.window);
     glfwTerminate();
 
-    // cannot destroy cacheref before cache
+    // cannot destroy cache before cacheref
     ctx.center.song_tracks.clear();
     ctx.center.songs.clear();
     ctx.center.albums.clear();
@@ -1905,7 +1904,6 @@ static void draw_artist_info_albums()
     }
 }
 
-
 static void draw_artist_info_songs()
 {
     LruCacheRef<Song> center_song = nullptr;
@@ -2620,6 +2618,7 @@ static void draw_imgui()
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(display_size);
     static bool window_open = true;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     ImGui::Begin("UMP", &window_open, window_flags);
 
     static bool player_open = true;
@@ -2696,6 +2695,7 @@ static void draw_imgui()
     }
 
     ImGui::End();
+    ImGui::PopStyleVar();
 
     if (ctx.show_demo_window)
         ImGui::ShowDemoWindow(&ctx.show_demo_window);
