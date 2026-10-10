@@ -193,9 +193,7 @@ LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_playlist(int playlist_id
 LruCacheRef<std::vector<int>> mp_get_songs_from_artist(ArtistID artist_id);
 LruCacheRef<std::vector<int>> mp_get_albums_from_artist(ArtistID artist_id);
 
-// If page_num == -1, then return the first page and the number of results
-// If page_num >= 0, then assume caller knows the number of results and just return songs
-SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int page_limit, int page_num = -1);
+SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
 std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 
