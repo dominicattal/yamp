@@ -1115,11 +1115,8 @@ LruCacheRef<Song> mp_get_song(SongID song_id)
     if (song_id == INVALID_ID)
         return nullptr;
     LruCacheRef<Song> song = mp_ctx.songs.get(song_id);
-    if (song == nullptr) {
+    if (song == nullptr)
         song = mp_ctx.songs.put(song_id, db_get_song_info(song_id));
-        if (mp_ctx.song_constructor_callback)
-            mp_ctx.song_constructor_callback(song.get());
-    }
     return song;
 }
 
@@ -1301,6 +1298,19 @@ Art mp_get_album_art(AlbumID album_id)
     return db_get_album_art(album_id);
 }
 
+Art mp_get_art(MPUID uid)
+{
+    switch (mp_get_uid_type(uid))
+    {
+        case MPUID_SONG:
+            return mp_get_song_art(uid & MPUID_ID_MASK);
+        case MPUID_ALBUM:
+            return mp_get_album_art(uid & MPUID_ID_MASK);
+        default:
+            return {};
+    }
+}
+
 void mp_free_art(Art* art)
 {
     sqlite3_finalize(static_cast<sqlite3_stmt*>(art->sqlite_stmt));
@@ -1313,20 +1323,25 @@ void mp_queue_clear()
 
 MPUID mp_get_song_uid(SongID song_id)
 {
-    return (0ULL<<62) | song_id;
+    return (MPUID_SONG<<MPUID_SHIFT) | song_id;
 }
 
 MPUID mp_get_playlist_uid(PlaylistID playlist_id)
 {
-    return (1ULL<<62) | playlist_id;
+    return (MPUID_PLAYLIST<<MPUID_SHIFT) | playlist_id;
 }
 
 MPUID mp_get_album_uid(AlbumID album_id)
 {
-    return (2ULL<62) | album_id;
+    return (MPUID_ALBUM<<MPUID_SHIFT) | album_id;
 }
 
 MPUID mp_get_artist_uid(ArtistID artist_id)
 {
-    return (3ULL<62) | artist_id;
+    return (MPUID_ARTIST<<MPUID_SHIFT) | artist_id;
+}
+
+MPUIDEnum mp_get_uid_type(MPUID uid)
+{
+    return static_cast<MPUIDEnum>((uid & MPUID_TYPE_MASK)>>MPUID_SHIFT);
 }

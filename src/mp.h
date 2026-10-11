@@ -26,6 +26,16 @@ using MPUID = uint64_t;
 #define LARGE_COVER_ART_SIZE (1<<LARGE_COVER_ART_SIZE_BITS)
 #define SMALL_COVER_ART_SIZE (1<<SMALL_COVER_ART_SIZE_BITS)
 #define SLOTS_PER_TEXTURE (1<<(TEXTURE_SIZE_BITS<<1)>>(LARGE_COVER_ART_SIZE_BITS<<1))
+#define MPUID_SHIFT 62
+#define MPUID_ID_MASK ((1ULL<<MPUID_SHIFT)-1)
+#define MPUID_TYPE_MASK (3ULL<<MPUID_SHIFT)
+
+enum MPUIDEnum : MPUID {
+    MPUID_SONG,
+    MPUID_ALBUM,
+    MPUID_ARTIST,
+    MPUID_PLAYLIST
+};
 
 enum LoopMode {
     LOOP_NONE,
@@ -95,8 +105,6 @@ struct SearchResult {
     int num_results;
 };
 
-using SongCallback = std::function<void(Song* song)>;
-
 struct MPContext {
 
     LruCache<Song> songs;
@@ -115,8 +123,6 @@ struct MPContext {
     LruCacheRef<Song> current_song;
     LruCacheRef<Artist> current_song_artist;
     LruCacheRef<Album> current_song_album;
-
-    SongCallback song_constructor_callback;
 
     // this stores songs the user explicity queues up
     std::deque<LruCacheRef<Song>> queue;
@@ -219,6 +225,7 @@ void mp_add_album_to_playlist(AlbumID album_id, int playlist_id);
 
 Art mp_get_song_art(SongID song_id);
 Art mp_get_album_art(AlbumID album_id);
+Art mp_get_art(MPUID uid);
 void mp_free_art(Art* art);
 
 // Skip current song in queue
@@ -230,5 +237,6 @@ MPUID mp_get_song_uid(SongID song_id);
 MPUID mp_get_playlist_uid(PlaylistID playlist_id);
 MPUID mp_get_album_uid(PlaylistID playlist_id);
 MPUID mp_get_artist_uid(ArtistID artist_id);
+MPUIDEnum mp_get_uid_type(MPUID uid);
 
 #endif

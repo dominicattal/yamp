@@ -131,6 +131,7 @@ class LruCache
         val_t val;
     };
 public:
+    using ConstructorCallback = std::function<void(val_t*)>;
     using DestructorCallback = std::function<void(val_t*)>;
     using Iterator = typename std::list<LruCacheEntry>::iterator;
 
@@ -157,6 +158,8 @@ public:
         assert(m_map.find(key) == m_map.end());
         m_list.emplace_front(1, key, std::move(val));
         m_map[key] = m_list.begin();
+        if (m_constructor_callback)
+            m_constructor_callback(std::addressof(m_list.begin()->val));
         if (m_list.size() > m_max_size)
         {
             if (auto it = std::prev(m_list.end()); it->ref_count == 0)
@@ -167,6 +170,10 @@ public:
         }
         return LruCacheRef<val_t>{this, key, std::addressof(m_list.front().val)};
     }
+    void set_constructor_callback(ConstructorCallback callback)
+    {
+        m_constructor_callback = callback;
+    }
     void set_destructor_callback(DestructorCallback callback)
     {
         m_destructor_callback = callback;
@@ -175,6 +182,7 @@ private:
     size_t m_max_size;
     std::mutex m_mutex;
     std::list<LruCacheEntry> m_list;
+    ConstructorCallback m_constructor_callback;
     DestructorCallback m_destructor_callback;
     std::unordered_map<int, Iterator> m_map;
 
