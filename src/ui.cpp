@@ -175,6 +175,8 @@ struct UIContext {
 
     std::vector<LruCacheRef<Playlist>> playlists;
 
+    std::vector<Pin> pins;
+
     std::deque<std::pair<ViewEnum, GenericID>> view_history;
 
     char search_query[256];
@@ -965,6 +967,8 @@ void ui_init()
         });
 
     ctx.playlists = mp_get_playlists();
+
+    ctx.pins = mp_get_pins();
 }
 
 void ui_cleanup()
@@ -985,6 +989,7 @@ void ui_cleanup()
     ctx.center.album.release();
     ctx.center.artist.release();
     ctx.center.search_result.entries.clear();
+    ctx.pins.clear();
     ctx.playlists.clear();
 
     SPDLOG_INFO("UI cleaned up");
@@ -1357,6 +1362,18 @@ static void draw_album_info()
         if (ImGui::ImageButton("Album Queue", ctx.textures.queue_button.id, button_size))
             for (const auto& [song, track] : tracks)
                 mp_queue_song(song->id);
+
+        ImGui::SameLine();
+        bool is_album_pinned = std::find_if(ctx.pins.begin(), ctx.pins.end(),
+            [album_id = album->id](const Pin& pin)
+            {
+                return !pin.is_playlist && pin.album->id == album_id;
+            }) != ctx.pins.end();
+        if (ImGui::ImageButton("Pin", ctx.textures.pin_button.id, button_size) && !is_album_pinned)
+        {
+            mp_pin_album(album->id);
+            ctx.pins.emplace_back(mp_get_album(album->id), nullptr, ctx.pins.size(), /*is_playlist=*/false);
+        }
 
         ImGui::SameLine();
         if (ImGui::ImageButton("Menu", ctx.textures.menu_button.id, button_size))
@@ -2104,7 +2121,7 @@ static void draw_artist_info()
 
     ImGui::SetCursorPosX(origin.x + album_art_size.x + 2.0f * album_art_padding);
     ImGui::SetCursorPosY(origin.y + album_art_size.y + album_art_padding - 20.0f);
-    if (ImGui::Button((show_songs) ? "Songs" : "Albums"))
+    if (ImGui::Button((show_songs) ? "Albums" : "Songs"))
         show_songs = !show_songs;
 
     if (show_songs)
@@ -2246,7 +2263,30 @@ static void draw_settings()
 
 static void draw_edit()
 {
-    ImGui::Text("Edit");
+    if (ImGui::Button("Add Song")) 
+    {
+        const std::string title {"Choose files to read"};
+        const std::string default_path = pfd::path::home();
+        const std::vector<std::string> filters {"All Files", "*"};
+        const pfd::opt options = pfd::opt::multiselect;
+        std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
+        mp_add_songs(song_paths);
+    }
+    if (ImGui::Button("Add Folder")) 
+    {
+        const std::string title {"Select Any Directory"};
+        const std::string default_path = pfd::path::home();
+        const std::string folder_path = pfd::select_folder(title, default_path).result();
+        mp_recursive_add_songs(folder_path);
+    }
+    if (ImGui::Button("Create Song"))
+        ;
+    if (ImGui::Button("Create Album"))
+        ;
+    if (ImGui::Button("Create Artist"))
+        ;
+    if (ImGui::Button("Create Playlist"))
+        ;
 }
 
 static void draw_lyrics()
@@ -2569,32 +2609,14 @@ static void draw_debug_info()
 
 static void draw_left_side()
 {
-    if (ImGui::Button("Add Song")) 
-    {
-        const std::string title {"Choose files to read"};
-        const std::string default_path = pfd::path::home();
-        const std::vector<std::string> filters {"All Files", "*"};
-        const pfd::opt options = pfd::opt::multiselect;
-        std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
-        mp_add_songs(song_paths);
-    }
-    if (ImGui::Button("Add Folder")) 
-    {
-        const std::string title {"Select Any Directory"};
-        const std::string default_path = pfd::path::home();
-        const std::string folder_path = pfd::select_folder(title, default_path).result();
-        mp_recursive_add_songs(folder_path);
-    }
     if (ImGui::Button("Playlists"))
         set_center_view_playlists();
-    if (ImGui::Button("Create Song"))
-        ;
-    if (ImGui::Button("Create Album"))
-        ;
-    if (ImGui::Button("Create Artist"))
-        ;
-    if (ImGui::Button("Create Playlist"))
-        ;
+
+    for (Pin& pin : ctx.pins)
+    {
+        if (!pin.is_playlist)
+            ImGui::Text("%s", pin.album->name.c_str());
+    }
 }
 
 static void draw_imgui()

@@ -67,6 +67,19 @@ struct Playlist {
     float length;
 };
 
+struct Pin {
+    LruCacheRef<Album> album;
+    LruCacheRef<Playlist> playlist;
+    int order;
+    bool is_playlist;
+};
+
+struct PinID {
+    int album_or_playlist_id;
+    int order;
+    bool is_playlist;
+};
+
 struct Art {
     void* sqlite_stmt;
     const uint8_t* data;
@@ -173,7 +186,7 @@ void mp_toggle_autoplay();
 void mp_update_volume();
 void mp_update_cursor();
 
-void mp_play_playlist(int playlist_id);
+void mp_play_playlist(PlaylistID playlist_id);
 void mp_play_album(AlbumID album_id);
 
 // Search for songs based on query
@@ -196,6 +209,10 @@ LruCacheRef<std::vector<int>> mp_get_albums_from_artist(ArtistID artist_id);
 SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
 std::vector<LruCacheRef<Playlist>> mp_get_playlists();
+
+void mp_pin_album(AlbumID album_id);
+void mp_pin_playlist(PlaylistID playlist_id);
+std::vector<Pin> mp_get_pins();
 
 void mp_add_song_to_playlist(SongID song_id, int playlist_id);
 void mp_add_album_to_playlist(AlbumID album_id, int playlist_id);

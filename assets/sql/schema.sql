@@ -49,3 +49,8 @@ CREATE TABLE IF NOT EXISTS PlaylistSong (
     track INTEGER,
     PRIMARY KEY (playlist_id, song_id)
 );
+
+CREATE TABLE IF NOT EXISTS Pins (
+    album_or_playlist_id INTEGER PRIMARY KEY,
+    pin_order INTEGER
+);
