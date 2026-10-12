@@ -170,8 +170,6 @@ struct UIContext {
 
     std::vector<LruCacheRef<Playlist>> playlists;
 
-    std::vector<Pin> pins;
-
     std::deque<std::pair<ViewEnum, GenericID>> view_history;
 
     char search_query[256];
@@ -954,8 +952,6 @@ void ui_init()
         });
 
     //ctx.playlists = mp_get_playlists();
-
-    ctx.pins = mp_get_pins();
 }
 
 void ui_cleanup()
@@ -976,7 +972,6 @@ void ui_cleanup()
     ctx.center.album.release();
     ctx.center.artist.release();
     ctx.center.search_result.entries.clear();
-    ctx.pins.clear();
     ctx.playlists.clear();
 
     SPDLOG_INFO("UI cleaned up");
@@ -1254,24 +1249,11 @@ static void draw_song_info()
         tex = ctx.textures.queue_button;
         if (ImGui::ImageButton("song_queue", tex.id, ImVec2(32, 32)))
             mp_queue_song(song->id);
-        if (ImGui::Button("Add To Playlist"))
-            ImGui::OpenPopup("add_to_playlist_popup");
-        if (ImGui::BeginPopup("add_to_playlist_popup"))
+
+        ImGui::SameLine();
+        if (ImGui::ImageButton("Pin", ctx.textures.pin_button.id, ImVec2(32, 32)))
         {
-            for (const LruCacheRef<Playlist>& playlist : ctx.playlists)
-            {
-                ImGui::PushID(playlist->id);
-                if (ImGui::Button(playlist->name.c_str()))
-                    mp_add_song_to_playlist(song->id, playlist->id);
-                ImGui::PopID();
-            }
-            if (ImGui::Button("Create Playlist"))
-            {
-                LruCacheRef<Playlist> playlist = mp_create_playlist();
-                mp_add_song_to_playlist(song->id, playlist->id);
-                set_center_view_playlist(std::move(playlist));
-            }
-            ImGui::EndPopup();
+            mp_pin_song(song->id);
         }
         ImGui::EndChild();
     }
@@ -1349,15 +1331,9 @@ static void draw_album_info()
                 mp_queue_song(song->id);
 
         ImGui::SameLine();
-        bool is_album_pinned = std::find_if(ctx.pins.begin(), ctx.pins.end(),
-            [album_id = album->id](const Pin& pin)
-            {
-                return !pin.is_playlist && pin.album->id == album_id;
-            }) != ctx.pins.end();
-        if (ImGui::ImageButton("Pin", ctx.textures.pin_button.id, button_size) && !is_album_pinned)
+        if (ImGui::ImageButton("Pin", ctx.textures.pin_button.id, button_size))
         {
             mp_pin_album(album->id);
-            ctx.pins.emplace_back(mp_get_album(album->id), nullptr, ctx.pins.size(), /*is_playlist=*/false);
         }
 
         ImGui::SameLine();
@@ -1601,6 +1577,12 @@ static void draw_playlist_info()
         if (ImGui::ImageButton("Playlist Queue", ctx.textures.queue_button.id, button_size))
             for (const auto& [song, track] : tracks)
                 mp_queue_song(song->id);
+
+        ImGui::SameLine();
+        if (ImGui::ImageButton("Pin", ctx.textures.pin_button.id, button_size))
+        {
+            mp_pin_playlist(playlist->id);
+        }
 
         if (ImGui::BeginPopup("change_playlist_name")) {
             ImGui::Text("Edit name:");
@@ -2105,6 +2087,12 @@ static void draw_artist_info()
 
     ImGui::SetCursorPosX(origin.x + album_art_size.x + 2.0f * album_art_padding);
     ImGui::SetCursorPosY(origin.y + album_art_size.y + album_art_padding - 20.0f);
+    if (ImGui::ImageButton("Pin", ctx.textures.pin_button.id, ImVec2(32, 32)))
+    {
+        mp_pin_artist(artist->id);
+    }
+
+    ImGui::SameLine();
     if (ImGui::Button((show_songs) ? "Albums" : "Songs"))
         show_songs = !show_songs;
 
@@ -2552,33 +2540,74 @@ static void draw_left_side()
     ImVec2 root_pos = ImGui::GetCursorPos();
     float row_advance = 72.0f;
 
-    auto list_pin = [&row, &root_pos, &row_advance](const Pin& pin, const ImVec4& color)
+    auto list_pin = [&row, &root_pos, &row_advance](const Pin& pin)
         {
+            GLTexture tex = get_texture_default();
+            ImVec4 color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+            if (pin.type == MPUID_SONG)
+            {
+                tex = get_texture_from_song(pin.song->id);
+                color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+            }
+            if (pin.type == MPUID_ALBUM)
+            {
+                tex = get_texture_from_album(pin.album->id);
+                color = ImVec4(1.0f, 0.0f, 1.0f, 1.0f);
+            }
+            if (pin.type == MPUID_ARTIST)
+            {
+                tex = get_texture_default();
+                color = ImVec4(0.0f, 1.0f, 1.0f, 1.0f);
+            }
+            if (pin.type == MPUID_PLAYLIST)
+            {
+                tex = get_texture_from_playlist(pin.playlist->id);
+                color = ImVec4(1.0f, 0.7f, 0.0f, 1.0f);
+            }
+
             ImGui::SetCursorPos(ImVec2(root_pos.x, root_pos.y + row * row_advance));
             ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 1.0f);
             ImGui::PushStyleColor(ImGuiCol_Border, color);
-            GLTexture tex = (pin.is_playlist) ? get_texture_default() : get_texture_from_album(pin.album->id);
             ImGui::Image(tex.id, ImVec2(SMALL_COVER_ART_SIZE, SMALL_COVER_ART_SIZE), tex.uv0, tex.uv1);
             ImGui::PopStyleColor();
             ImGui::PopStyleVar();
             ImGui::SameLine();
             ImVec2 cursor_pos = ImGui::GetCursorPos();
-            if (pin.is_playlist)
+
+            switch (pin.type)
             {
-                if (imgui_aligned_text_button(pin.playlist->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
-                    set_center_view_playlist(mp_get_playlist(pin.playlist->id));
-            }
-            else
-            {
-                if (imgui_aligned_text_button(pin.album->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
-                    set_center_view_album(mp_get_album(pin.album->id));
+                case MPUID_SONG:
+                {
+                    if (imgui_aligned_text_button(pin.song->title.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
+                        set_center_view_song(mp_get_song(pin.song->id));
+                    break;
+                }
+                case MPUID_PLAYLIST:
+                {
+                    if (imgui_aligned_text_button(pin.playlist->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
+                        set_center_view_playlist(mp_get_playlist(pin.playlist->id));
+                    break;
+                }
+                case MPUID_ALBUM:
+                {
+                    if (imgui_aligned_text_button(pin.album->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
+                        set_center_view_album(mp_get_album(pin.album->id));
+                    break;
+                }
+                case MPUID_ARTIST:
+                {
+                    if (imgui_aligned_text_button(pin.artist->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
+                        set_center_view_artist(mp_get_artist(pin.artist->id));
+                    break;
+                }
+                default: break;
             }
             row++;
         };
 
-    for (Pin& pin : ctx.pins)
+    for (Pin& pin : mp_ctx.pins)
     {
-        list_pin(pin, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+        list_pin(pin);
     }
 }
 

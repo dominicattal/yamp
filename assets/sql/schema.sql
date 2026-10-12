@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS PlaylistSong (
 );
 
 CREATE TABLE IF NOT EXISTS Pins (
-    album_or_playlist_id INTEGER PRIMARY KEY,
-    pin_order INTEGER
+    id INTEGER,
+    mp_type INTEGER,
+    pin_order INTEGER,
+    PRIMARY KEY (id, mp_type)
 );

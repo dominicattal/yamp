@@ -70,8 +70,6 @@ static int db_get_random_song();
 [[maybe_unused]] static void db_update_song(SongID song_id, const char* new_title, const char* new_song_path, double new_song_length);
 [[maybe_unused]] static void db_update_song_artist(SongID song_id, const char* artist);
 [[maybe_unused]] static void db_update_playlist(PlaylistID playlist_id, const char* new_name);
-static void db_pin_album(AlbumID album_id);
-static void db_pin_playlist(PlaylistID playlist_id);
 
 // Delete
 static void db_delete_artist(int artist_id);
@@ -566,42 +564,17 @@ static int db_get_num_pins()
     return num_pins;
 }
 
-static void db_pin_album(AlbumID album_id)
-{
-    sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO Pins (album_or_playlist_id, pin_order) VALUES (?1, ?2)";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, album_id);
-    sqlite3_bind_int(stmt, 2, db_get_num_pins() + 1);
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-}
-
-static void db_pin_playlist(PlaylistID playlist_id)
-{
-    sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO Pins (album_or_playlist_id, pin_order) VALUES (?1, ?2)";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, (1UL<<31) | playlist_id);
-    sqlite3_bind_int(stmt, 2, db_get_num_pins() + 1);
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-}
-
 static std::vector<PinID> db_get_pins()
 {
     sqlite3_stmt* stmt;
-    const char* query = "SELECT album_or_playlist_id, pin_order FROM Pins ORDER BY pin_order";
+    const char* query = "SELECT id, mp_type, pin_order FROM Pins ORDER BY pin_order";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    std::vector<PinID> pin_ids;
+    std::vector<PinID> pin_ids{};
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
-        PinID pin;
-        int album_or_playlist_id = sqlite3_column_int(stmt, 0);
-        pin.album_or_playlist_id = album_or_playlist_id & ((1UL<<31)-1);
-        pin.is_playlist = album_or_playlist_id & (1UL<<31);
-        pin.order = sqlite3_column_int(stmt, 1);
-        pin_ids.push_back(pin);
+        int id = sqlite3_column_int(stmt, 0);
+        MPUIDEnum type = static_cast<MPUIDEnum>(sqlite3_column_int(stmt, 1));
+        pin_ids.emplace_back(mp_get_uid(id, type), sqlite3_column_int(stmt, 2));
     }
     sqlite3_finalize(stmt);
     return pin_ids;
@@ -614,6 +587,18 @@ static void db_create_artist_album(ArtistID artist_id, AlbumID album_id)
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
     sqlite3_bind_int(stmt, 1, artist_id);
     sqlite3_bind_int(stmt, 2, album_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+static void db_create_pin(int id, MPUIDEnum type)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "INSERT INTO Pins (id, mp_type, pin_order) VALUES (?1, ?2, ?3)";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, id);
+    sqlite3_bind_int(stmt, 2, type);
+    sqlite3_bind_int(stmt, 3, db_get_num_pins() + 1);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
@@ -670,6 +655,33 @@ void mp_init()
     res = ma_engine_init(NULL, &ctx.engine);
     if (res != MA_SUCCESS)
         exit(1);
+
+    std::vector<PinID> pin_ids = db_get_pins();
+    mp_ctx.pins.resize(pin_ids.size());
+    std::transform(pin_ids.begin(), pin_ids.end(), mp_ctx.pins.begin(),
+        [](PinID& pin_id) -> Pin
+        {
+            Pin pin{};
+            int id = mp_get_id(pin_id.uid);
+            pin.type = mp_get_uid_type(pin_id.uid);
+            pin.order = pin_id.order;
+            switch (pin.type)
+            {
+                case MPUID_SONG:
+                    pin.song = mp_get_song(id);
+                    break;
+                case MPUID_ALBUM:
+                    pin.album = mp_get_album(id);
+                    break;
+                case MPUID_ARTIST:
+                    pin.artist = mp_get_artist(id);
+                    break;
+                case MPUID_PLAYLIST:
+                    pin.playlist = mp_get_playlist(id);
+                    break;
+            }
+            return pin;
+        });
 }
 
 void mp_cleanup()
@@ -993,33 +1005,56 @@ void mp_play_album(AlbumID album_id)
     mp_play_next();
 }
 
+void mp_pin_song(SongID song_id)
+{
+    db_create_pin(song_id, MPUID_SONG);
+    mp_ctx.pins.push_back(Pin{
+                .song = mp_get_song(song_id),
+                .album = nullptr,
+                .artist = nullptr,
+                .playlist = nullptr,
+                .type = MPUID_SONG,
+                .order = static_cast<int>(mp_ctx.pins.size())
+            });
+}
+
 void mp_pin_album(AlbumID album_id)
 {
-    db_pin_album(album_id);
+    db_create_pin(album_id, MPUID_ALBUM);
+    mp_ctx.pins.push_back(Pin{
+                .song = nullptr,
+                .album = mp_get_album(album_id),
+                .artist = nullptr,
+                .playlist = nullptr,
+                .type = MPUID_ALBUM,
+                .order = static_cast<int>(mp_ctx.pins.size())
+            });
+}
+
+void mp_pin_artist(ArtistID artist_id)
+{
+    db_create_pin(artist_id, MPUID_ARTIST);
+    mp_ctx.pins.push_back(Pin{
+                .song = nullptr,
+                .album = nullptr,
+                .artist = mp_get_artist(artist_id),
+                .playlist = nullptr,
+                .type = MPUID_ARTIST,
+                .order = static_cast<int>(mp_ctx.pins.size())
+            });
 }
 
 void mp_pin_playlist(PlaylistID playlist_id)
 {
-    db_pin_playlist(playlist_id);
-}
-
-std::vector<Pin> mp_get_pins()
-{
-    std::vector<PinID> pin_ids = db_get_pins();
-    std::vector<Pin> pins(pin_ids.size());
-    std::transform(pin_ids.begin(), pin_ids.end(), pins.begin(),
-        [](PinID& pin_id) -> Pin
-        {
-            Pin pin{};
-            if (pin_id.is_playlist)
-                pin.playlist = mp_get_playlist(pin_id.album_or_playlist_id);
-            else
-                pin.album = mp_get_album(pin_id.album_or_playlist_id);
-            pin.order = pin_id.order;
-            pin.is_playlist = pin_id.is_playlist;
-            return pin;
-        });
-    return pins;
+    db_create_pin(playlist_id, MPUID_PLAYLIST);
+    mp_ctx.pins.push_back(Pin{
+                .song = nullptr,
+                .album = nullptr,
+                .artist = nullptr,
+                .playlist = mp_get_playlist(playlist_id),
+                .type = MPUID_PLAYLIST,
+                .order = static_cast<int>(mp_ctx.pins.size())
+            });
 }
 
 SearchResult<Song> mp_search_songs(const char* search_query, int results_per_page, int page_num)
@@ -1323,25 +1358,35 @@ void mp_queue_clear()
 
 MPUID mp_get_song_uid(SongID song_id)
 {
-    return (MPUID_SONG<<MPUID_SHIFT) | song_id;
+    return (MPUID_SONG<<MPUID_SHIFT) | static_cast<MPUID>(song_id);
 }
 
 MPUID mp_get_playlist_uid(PlaylistID playlist_id)
 {
-    return (MPUID_PLAYLIST<<MPUID_SHIFT) | playlist_id;
+    return (MPUID_PLAYLIST<<MPUID_SHIFT) | static_cast<MPUID>(playlist_id);
 }
 
 MPUID mp_get_album_uid(AlbumID album_id)
 {
-    return (MPUID_ALBUM<<MPUID_SHIFT) | album_id;
+    return (MPUID_ALBUM<<MPUID_SHIFT) | static_cast<MPUID>(album_id);
 }
 
 MPUID mp_get_artist_uid(ArtistID artist_id)
 {
-    return (MPUID_ARTIST<<MPUID_SHIFT) | artist_id;
+    return (MPUID_ARTIST<<MPUID_SHIFT) | static_cast<MPUID>(artist_id);
+}
+
+MPUID mp_get_uid(int id, MPUIDEnum type)
+{
+    return (type<<MPUID_SHIFT) | static_cast<MPUID>(id);
 }
 
 MPUIDEnum mp_get_uid_type(MPUID uid)
 {
     return static_cast<MPUIDEnum>((uid & MPUID_TYPE_MASK)>>MPUID_SHIFT);
+}
+
+int mp_get_id(MPUID uid)
+{
+    return uid & MPUID_ID_MASK;
 }

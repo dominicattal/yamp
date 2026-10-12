@@ -78,16 +78,17 @@ struct Playlist {
 };
 
 struct Pin {
+    LruCacheRef<Song> song;
     LruCacheRef<Album> album;
+    LruCacheRef<Artist> artist;
     LruCacheRef<Playlist> playlist;
+    MPUIDEnum type;
     int order;
-    bool is_playlist;
 };
 
 struct PinID {
-    int album_or_playlist_id;
+    MPUID uid;
     int order;
-    bool is_playlist;
 };
 
 struct Art {
@@ -157,6 +158,8 @@ struct MPContext {
     bool autoplay;
 
     LoopMode loop_mode;
+
+    std::vector<Pin> pins;
 };
 
 extern MPContext mp_ctx;
@@ -216,9 +219,10 @@ SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int re
 
 std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 
+void mp_pin_song(SongID song_id);
 void mp_pin_album(AlbumID album_id);
+void mp_pin_artist(ArtistID artist_id);
 void mp_pin_playlist(PlaylistID playlist_id);
-std::vector<Pin> mp_get_pins();
 
 void mp_add_song_to_playlist(SongID song_id, int playlist_id);
 void mp_add_album_to_playlist(AlbumID album_id, int playlist_id);
@@ -233,10 +237,12 @@ void mp_play_previous();
 void mp_play_next();
 void mp_queue_clear();
 
+MPUID mp_get_uid(int id, MPUIDEnum type);
 MPUID mp_get_song_uid(SongID song_id);
 MPUID mp_get_playlist_uid(PlaylistID playlist_id);
 MPUID mp_get_album_uid(PlaylistID playlist_id);
 MPUID mp_get_artist_uid(ArtistID artist_id);
 MPUIDEnum mp_get_uid_type(MPUID uid);
+int mp_get_id(MPUID uid);
 
 #endif
