@@ -235,6 +235,8 @@ void mp_free_art(Art* art);
 // Skip current song in queue
 void mp_play_previous();
 void mp_play_next();
+void mp_go_backward_in_current_song();
+void mp_go_forward_in_current_song();
 void mp_queue_clear();
 
 MPUID mp_get_uid(int id, MPUIDEnum type);

@@ -1323,6 +1323,14 @@ void mp_play_next()
     }
 }
 
+void mp_go_backward_in_current_song()
+{
+}
+
+void mp_go_forward_in_current_song()
+{
+}
+
 Art mp_get_song_art(SongID song_id)
 {
     return db_get_song_art(song_id);

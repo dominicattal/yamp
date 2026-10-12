@@ -125,6 +125,7 @@ struct UIContext {
         GLTexture lyrics_button;
         GLTexture close_button;
         GLTexture maximize_button;
+        GLTexture round_rewind_button;
         GLTexture volume;
     } textures;
 
@@ -804,6 +805,7 @@ static void initialize_default_textures()
     initialize_default_texture(&ctx.textures.lyrics_button.id, "assets/song-lyrics-edited.png");
     initialize_default_texture(&ctx.textures.close_button.id, "assets/close-edited.png");
     initialize_default_texture(&ctx.textures.maximize_button.id, "assets/maximize-edited.png");
+    initialize_default_texture(&ctx.textures.round_rewind_button.id, "assets/round-rewind-edited.png");
     glGenTextures(1, &ctx.right.texture);
 }
 
@@ -2307,11 +2309,14 @@ static void draw_center()
 
 static void draw_right_side_queue()
 {
+    float padding = 8.0f;
+    ImGui::SetCursorPosX(padding);
     ImGui::SetWindowFontScale(2.0f); 
     ImGui::Text("Queue");
     ImGui::SetWindowFontScale(1.0f); 
     int row = 0;
     ImVec2 root_pos = ImGui::GetCursorPos();
+    root_pos.x = padding;
     float row_advance = 72.0f;
     auto list_song = [&row, &root_pos, &row_advance](const LruCacheRef<Song>& song, const ImVec4& color)
         {
@@ -2425,25 +2430,14 @@ static void draw_player(const ImVec2 size)
         mp_update_cursor();
 
     const ImVec2 button_size = ImVec2(32.0f, 32.0f);
-    const float spacing = 16.0f;
-    const float width = 32 * 6 + spacing * 5;
-    const float advance = 32 + spacing;
+    float spacing = 16.0f;
+    int num_buttons = 7;
+    float width = 32.0f * num_buttons + spacing * (num_buttons - 1);
+    float advance = 32.0f + spacing;
     float cursor_x = (size.x - width) / 2.0f;
-    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
+    float cursor_y = 50.0f;
     bool key_pressed = !ImGui::GetIO().WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9));
-    tex = (mp_ctx.paused) ? ctx.textures.play_button : ctx.textures.pause_button;
-    if (ImGui::ImageButton("Pause/Resume Button", tex.id, ImVec2(32, 32)) || key_pressed)
-        mp_pause_or_resume();
-    cursor_x += advance;
-    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
-    if (ImGui::ImageButton("Previous Button", ctx.textures.skip_button.id, button_size, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
-        mp_play_previous();
-    cursor_x += advance;
-    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
-    if (ImGui::ImageButton("Next Button", ctx.textures.skip_button.id, button_size))
-        mp_play_next();
 
-    cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
     {
         ImVec2 uv0 = ImVec2(0,0);
@@ -2459,7 +2453,33 @@ static void draw_player(const ImVec2 size)
     }
 
     cursor_x += advance;
-    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
+    ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
+    if (ImGui::ImageButton("Round Previous Button", ctx.textures.round_rewind_button.id, button_size))
+        mp_go_backward_in_current_song();
+
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
+    if (ImGui::ImageButton("Previous Button", ctx.textures.skip_button.id, button_size, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
+        mp_play_previous();
+
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
+    tex = (mp_ctx.paused) ? ctx.textures.play_button : ctx.textures.pause_button;
+    if (ImGui::ImageButton("Pause/Resume Button", tex.id, ImVec2(32, 32)) || key_pressed)
+        mp_pause_or_resume();
+
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
+    if (ImGui::ImageButton("Next Button", ctx.textures.skip_button.id, button_size))
+        mp_play_next();
+
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
+    if (ImGui::ImageButton("Round Next Button", ctx.textures.round_rewind_button.id, button_size, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
+        mp_go_forward_in_current_song();
+
+    cursor_x += advance;
+    ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     {
         ImVec2 uv0 = ImVec2(0,0);
         ImVec2 uv1 = ImVec2(1,1);
@@ -2469,19 +2489,6 @@ static void draw_player(const ImVec2 size)
             tint.x = 1.0f;
         if (ImGui::ImageButton("Shuffle Button", ctx.textures.shuffle_button.id, button_size, uv0, uv1, bg, tint))
             mp_toggle_shuffle();
-    }
-
-    cursor_x += advance;
-    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
-    {
-        ImVec2 uv0 = ImVec2(0,0);
-        ImVec2 uv1 = ImVec2(1,1);
-        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-        if (mp_ctx.autoplay)
-            tint.x = 1.0f;
-        if (ImGui::ImageButton("Autoplay Button", ctx.textures.autoplay_button.id, button_size, uv0, uv1, bg, tint))
-            mp_toggle_autoplay();
     }
 
     {
@@ -2500,16 +2507,36 @@ static void draw_player(const ImVec2 size)
         ImVec2 uv1 = ImVec2(1,1);
         ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
         ImVec4 tint = (ctx.right.type == SHOW_RIGHT_QUEUE) ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+
+        num_buttons = 4;
+        width = 32.0f * num_buttons + spacing * (num_buttons - 1);
         constexpr float magic_spacing_constant = 8.0f;
-        ImGui::SetCursorPos(ImVec2(size.x - button_size.x - right_edge_spacing - magic_spacing_constant, 50.0f));
-        if (ImGui::ImageButton("Show Queue Button", ctx.textures.show_queue_button.id, button_size, uv0, uv1, bg, tint))
-            toggle_right_view_queue();
-        ImGui::SetCursorPos(ImVec2(size.x - 2 * button_size.x - right_edge_spacing - spacing - magic_spacing_constant, 50.0f));
-        if (ImGui::ImageButton("Clear Queue Button", ctx.textures.clear_queue_button.id, button_size))
-            mp_queue_clear();
-        ImGui::SetCursorPos(ImVec2(size.x - 3 * button_size.x - right_edge_spacing - 2 * spacing - 2 * magic_spacing_constant, 50.0f));
+        cursor_x = size.x - width - right_edge_spacing - magic_spacing_constant;
+
+        ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
+        {
+            ImVec2 uv0 = ImVec2(0,0);
+            ImVec2 uv1 = ImVec2(1,1);
+            ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+            ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+            if (mp_ctx.autoplay)
+                tint.x = 1.0f;
+            if (ImGui::ImageButton("Autoplay Button", ctx.textures.autoplay_button.id, button_size, uv0, uv1, bg, tint))
+                mp_toggle_autoplay();
+        }
+        
+        cursor_x += advance;
+        ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
         if (ImGui::ImageButton("Lyrics", ctx.textures.lyrics_button.id, button_size))
             set_center_view_lyrics(mp_ctx.current_song);
+        cursor_x += advance;
+        ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
+        if (ImGui::ImageButton("Clear Queue Button", ctx.textures.clear_queue_button.id, button_size))
+            mp_queue_clear();
+        cursor_x += advance;
+        ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
+        if (ImGui::ImageButton("Show Queue Button", ctx.textures.show_queue_button.id, button_size, uv0, uv1, bg, tint))
+            toggle_right_view_queue();
     }
 }
 
