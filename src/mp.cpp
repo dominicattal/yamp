@@ -884,6 +884,7 @@ void mp_play_song(SongID song_id)
     ma_sound_start(&ctx.current_song_sound);
     ma_sound_get_length_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_length);
     ctx.current_song_loaded = true;
+    mp_ctx.paused = false;
     mp_ctx.current_song = std::move(song);
     mp_ctx.current_song_artist = mp_get_artist_from_song(song_id);
     mp_ctx.current_song_album = mp_get_album_from_song(song_id);

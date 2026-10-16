@@ -422,10 +422,22 @@ static void imgui_custom_table(CustomTableParams& params)
     ImGui::EndChild();
 }
 
-static bool imgui_region_hovered(ImVec2 region_start, ImVec2 size)
+static bool imgui_is_mouse_in_window_bounds()
 {
-    ImVec2 mouse_pos = ImGui::GetMousePos();
-    return mouse_pos.x >= region_start.x 
+    const ImVec2 mouse_pos = ImGui::GetMousePos();
+    const ImVec2 window_pos = ImGui::GetWindowPos();
+    const ImVec2 window_size = ImGui::GetWindowSize();
+    return mouse_pos.x >= window_pos.x
+        && mouse_pos.x <= window_pos.x + window_size.x
+        && mouse_pos.y >= window_pos.y
+        && mouse_pos.y <= window_pos.y + window_size.y;
+}
+
+static bool imgui_is_region_hovered(ImVec2 region_start, ImVec2 size)
+{
+    const ImVec2 mouse_pos = ImGui::GetMousePos();
+    return imgui_is_mouse_in_window_bounds()
+        && mouse_pos.x >= region_start.x 
         && mouse_pos.x <= region_start.x + size.x
         && mouse_pos.y >= region_start.y 
         && mouse_pos.y <= region_start.y + size.y;
@@ -902,17 +914,19 @@ void ui_init()
 
     //const char* font_file_path = "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf";
     //const char* font_file_path = "/usr/share/fonts/truetype/noto/NotoSansAdlam-Regular.ttf";
-    const char* font_file_path = "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf";
+    //const char* font_file_path = "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf";
+    const char* font_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Inter/Inter-VariableFont_opsz,wght.ttf";
+    //const char* emoji_font_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Noto_Color_Emoji/NotoColorEmoji-Regular.ttf";
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
-    style.FontSizeBase = 16.0f;
+    style.FontSizeBase = 18.0f;
     style.ScaleAllSizes(main_scale);
     style.FontScaleDpi = main_scale;
     style.WindowBorderSize = 0.0f;
 
     ImGuiIO& io = ImGui::GetIO();
     const ImWchar icons_ranges[] = { 0xf000, 0xf3ff, 0 };
-    io.Fonts->AddFontFromFileTTF(font_file_path, 20.0f, nullptr, icons_ranges);
+    io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, nullptr, icons_ranges);
 
     ImGui::StyleColorsDark();
 
@@ -1084,7 +1098,7 @@ static void draw_search_results()
             ImVec2 picture_size(48, 48);
             GLTexture tex = get_texture_from_song(song->id);
             ImGui::SetCursorPos(region_start);
-            const bool hovered = imgui_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
+            const bool hovered = imgui_is_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
             ImVec4 tint = (hovered) ? ImVec4(0.6f, 0.6f, 0.6f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
             ImGui::ImageWithBg(tex.id, picture_size, tex.uv0, tex.uv1, IMGUI_BLANK, tint);
             if (hovered)
@@ -1446,7 +1460,7 @@ static void draw_album_info()
             ImVec2 play_button_size(18.0f, 18.0f);
             ImGui::SetCursorPos(ImVec2(region_start.x + (region_size.x - play_button_size.x) / 2.0f, region_start.y + (region_size.y - play_button_size.y) / 2.0f));
             ImVec2 screen_pos = ImGui::GetCursorScreenPos();
-            const bool hovered = imgui_region_hovered(screen_pos, play_button_size);
+            const bool hovered = imgui_is_region_hovered(screen_pos, play_button_size);
             if (!hovered)
             {
                 std::string track_str = std::to_string(track);
@@ -1975,7 +1989,7 @@ static void draw_artist_info_songs()
             ImVec2 picture_size(48, 48);
             GLTexture tex = get_texture_from_song(song->id);
             ImGui::SetCursorPos(region_start);
-            const bool hovered = imgui_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
+            const bool hovered = imgui_is_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
             ImVec4 tint = (hovered) ? ImVec4(0.6f, 0.6f, 0.6f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
             ImGui::ImageWithBg(tex.id, picture_size, tex.uv0, tex.uv1, IMGUI_BLANK, tint);
             if (hovered)
