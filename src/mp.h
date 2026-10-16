@@ -144,6 +144,7 @@ struct MPContext {
     // album_id if group_is_album == true, playlist_id otherwise
     int group_id;
 
+    bool mute;
     float volume;
 
     // seconds
@@ -194,6 +195,8 @@ void mp_toggle_shuffle();
 void mp_toggle_autoplay();
 void mp_update_volume();
 void mp_update_cursor();
+
+void mp_toggle_mute();
 
 void mp_play_playlist(PlaylistID playlist_id);
 void mp_play_album(AlbumID album_id);

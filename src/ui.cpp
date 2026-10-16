@@ -127,6 +127,7 @@ struct UIContext {
         GLTexture maximize_button;
         GLTexture round_rewind_button;
         GLTexture volume;
+        GLTexture mute;
     } textures;
 
     struct Debug {
@@ -807,6 +808,7 @@ static void initialize_default_textures()
     initialize_default_texture(&ctx.textures.shuffle_button.id, "assets/shuffle-edited.png");
     initialize_default_texture(&ctx.textures.autoplay_button.id, "assets/autoplay-edited.png");
     initialize_default_texture(&ctx.textures.volume.id, "assets/volume-up-edited.png");
+    initialize_default_texture(&ctx.textures.mute.id, "assets/mute-edited.png");
     initialize_default_texture(&ctx.textures.show_queue_button.id, "assets/show-queue-edited.png");
     initialize_default_texture(&ctx.textures.clear_queue_button.id, "assets/clear-queue.png");
     initialize_default_texture(&ctx.textures.menu_button.id, "assets/menu-edited.png");
@@ -2506,12 +2508,16 @@ static void draw_player(const ImVec2 size)
     }
 
     {
+        GLTexture tex = (mp_ctx.mute) ? ctx.textures.mute : ctx.textures.volume;
         float right_edge_spacing = 10.0f;
         float icon_spacing = 4.0f;
         float volume_slider_size = 150.0f;
         float volume_icon_size = 20.0f;
         ImGui::SetCursorPos(ImVec2(size.x - volume_slider_size - volume_icon_size - right_edge_spacing - icon_spacing, 20.0f));
-        ImGui::Image(ctx.textures.volume.id, ImVec2(volume_icon_size, volume_icon_size));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+        if (ImGui::ImageButton("##Volume Button", tex.id, ImVec2(volume_icon_size, volume_icon_size)))
+            mp_toggle_mute();
+        ImGui::PopStyleVar();
         ImGui::SetCursorPos(ImVec2(size.x - volume_slider_size - right_edge_spacing, 20.0f));
         ImGui::SetNextItemWidth(volume_slider_size);
         if (ImGui::SliderFloat("##Volume", &mp_ctx.volume, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_None))
@@ -2562,7 +2568,7 @@ static void draw_debug_info()
     ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Debug", &ctx.show_debug_window))
     {
-        ImGui::Text("%f", ctx.debug.fps);
+        ImGui::Text("%5.3f", ctx.debug.fps / 1000.0f);
         if (ctx.textures.textures.size() > 0)
             ImGui::Image(ctx.textures.textures[0], ImVec2(512, 512));
         ImGui::Text("Song History size: %ld", mp_ctx.song_history.size());
@@ -2769,7 +2775,7 @@ void ui_loop()
     {
         glfwPollEvents();
 
-        double start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        double start = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         mp_update();
         if (glfwGetWindowAttrib(ctx.window, GLFW_ICONIFIED) != 0)
             continue;
@@ -2782,7 +2788,7 @@ void ui_loop()
 
         update_textures();
         draw_imgui();
-        double end = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        double end = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         ctx.debug.fps = end - start;
 
         glfwSwapBuffers(ctx.window);

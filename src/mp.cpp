@@ -883,6 +883,7 @@ void mp_play_song(SongID song_id)
     ma_sound_init_ex(&ctx.engine, &config, &ctx.current_song_sound);
     ma_sound_start(&ctx.current_song_sound);
     ma_sound_get_length_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_length);
+    mp_update_volume();
     ctx.current_song_loaded = true;
     mp_ctx.paused = false;
     mp_ctx.current_song = std::move(song);
@@ -942,7 +943,16 @@ void mp_toggle_autoplay()
 
 void mp_update_volume()
 {
-    ma_sound_set_volume(&ctx.current_song_sound, mp_ctx.volume);
+    if (mp_ctx.mute)
+        ma_sound_set_volume(&ctx.current_song_sound, 0.0f);
+    else
+        ma_sound_set_volume(&ctx.current_song_sound, mp_ctx.volume);
+}
+
+void mp_toggle_mute()
+{
+    mp_ctx.mute = !mp_ctx.mute;
+    mp_update_volume();
 }
 
 void mp_update_cursor()
