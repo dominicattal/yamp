@@ -184,9 +184,7 @@ void mp_add_song(std::string&& song_path);
 void mp_add_songs(std::vector<std::string>&& song_paths);
 void mp_recursive_add_songs(const std::string& folder_path);
 // When finished adding song, call this to destroy objects in mp_ctx.loaded_songs
-void mp_commit_loaded_songs();
-void mp_rollback_loaded_songs();
-bool mp_loading_added_songs();
+void mp_reset_loaded_songs();
 
 // Add a playlist to the database. Returns the id of the created playlist.
 LruCacheRef<Playlist> mp_create_playlist();

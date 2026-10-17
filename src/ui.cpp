@@ -1262,7 +1262,7 @@ static void draw_song_info()
         } else {
             imgui_aligned_text("<No Album>", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
         }
-        int length = static_cast<int>(album->length);
+        int length = static_cast<int>(ctx.center.song->length);
         ImGui::Text("1984 • %d:%02d", length / 60, length % 60);
 
         ImGui::SetWindowFontScale(1.0f); 
@@ -2299,16 +2299,14 @@ static void draw_edit()
         ;
     if (ImGui::Button("Create Playlist"))
         ;
-    if (ImGui::Button("Commit Changes"))
-        mp_commit_loaded_songs();
-    if (ImGui::Button("Rollback Changes"))
-        mp_rollback_loaded_songs();
+    if (ImGui::Button("Reset"))
+        mp_reset_loaded_songs();
 
     if (!mp_ctx.adding_songs)
     {
         ImGui::Text("Default text");
     }
-    else if (!mp_loading_added_songs())
+    else if (prompt.has_value())
     {
         ImGui::Text("Loading...");
     }

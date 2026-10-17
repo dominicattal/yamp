@@ -524,7 +524,7 @@ static void db_update_playlist(PlaylistID playlist_id, const char* new_name)
 static void db_update_album_length(AlbumID album_id)
 {
     sqlite3_stmt* stmt;
-    const char* query = "UPDATE Albums SET length=(SELECT SUM(length) FROM Songs S JOIN AlbumSong A ON S.id==A.song_id WHERE A.album_id=?1) WHERE id =?1";
+    const char* query = "UPDATE Albums SET length=(SELECT SUM(length) FROM Songs S JOIN AlbumSong A ON S.id=A.song_id WHERE A.album_id=?1) WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
     sqlite3_step(stmt);
@@ -796,21 +796,13 @@ static void add_song_from_path(const std::string& song_path)
 
 void mp_add_song(std::string&& song_path)
 {
-    if (!mp_ctx.adding_songs)
-    {
-        sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-        mp_ctx.adding_songs = true;
-    }
+    mp_ctx.adding_songs = true;
     add_song_from_path(song_path);
 }
 
 void mp_add_songs(std::vector<std::string>&& song_paths)
 {
-    if (!mp_ctx.adding_songs)
-    {
-        sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-        mp_ctx.adding_songs = true;
-    }
+    mp_ctx.adding_songs = true;
     for (std::string& song_path : song_paths)
         add_song_from_path(song_path);
 }
@@ -822,30 +814,15 @@ void mp_recursive_add_songs(const std::string& folder_path)
     if (!fs::exists(std::filesystem::path{folder_path}))
         return;
 
-    if (!mp_ctx.adding_songs)
-    {
-        sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-        mp_ctx.adding_songs = true;
-    }
-
+    mp_ctx.adding_songs = true;
     fs::directory_options options = fs::directory_options::follow_directory_symlink;
     fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
     for (auto const& dir_entry : entries)
         add_song_from_path(dir_entry.path().string());
 }
 
-void mp_commit_loaded_songs()
+void mp_reset_loaded_songs()
 {
-    sqlite3_exec(ctx.db, "COMMIT;", nullptr, nullptr, nullptr);
-    mp_ctx.adding_songs = false;
-    mp_ctx.added_songs.clear();
-    mp_ctx.added_artists.clear();
-    mp_ctx.added_albums.clear();
-}
-
-void mp_rollback_loaded_songs()
-{
-    sqlite3_exec(ctx.db, "ROLLBACK;", nullptr, nullptr, nullptr);
     mp_ctx.adding_songs = false;
     mp_ctx.added_songs.clear();
     mp_ctx.added_artists.clear();
