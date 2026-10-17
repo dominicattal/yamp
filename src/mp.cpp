@@ -30,7 +30,7 @@ struct MPContextInternal {
     std::deque<std::string> add_song_file_paths;
     std::condition_variable_any add_song_cv;
     std::mutex add_song_mutex;
-    std::jthread add_song_thread;
+    std::vector<std::jthread> add_song_threads;
 };
 
 MPContext mp_ctx;
@@ -787,18 +787,21 @@ static void add_song_worker_thread(std::stop_token stop)
 {
     while (true)
     {
-        std::unique_lock lock(ctx.add_song_mutex);
+        std::string song_path;
+        {
+            std::unique_lock lock(ctx.add_song_mutex);
 
-        ctx.add_song_cv.wait(lock, stop, []() { 
-                return !ctx.add_song_file_paths.empty();
-            });
+            ctx.add_song_cv.wait(lock, stop, []() { 
+                    return !ctx.add_song_file_paths.empty();
+                });
 
-        if (stop.stop_requested())
-            return;
+            if (stop.stop_requested())
+                return;
 
-        std::string song_path = ctx.add_song_file_paths.front();
+            song_path = std::move(ctx.add_song_file_paths.front());
+            ctx.add_song_file_paths.pop_front();
+        }
         add_song_from_path(song_path);
-        ctx.add_song_file_paths.pop_front();
     }
 }
 
@@ -869,7 +872,8 @@ void mp_rollback_loaded_songs()
 
 bool mp_loading_added_songs()
 {
-    return ctx.add_song_file_paths.size() == 0;
+    return true;
+    //return ctx.add_song_file_paths.size() == 0;
 }
 
 LruCacheRef<Playlist> mp_create_playlist()
@@ -1519,7 +1523,8 @@ void mp_init()
             return pin;
         });
 
-    ctx.add_song_thread = std::jthread{add_song_worker_thread};
+    for (int i = 0; i < 4; i++)
+        ctx.add_song_threads.emplace_back(add_song_worker_thread);
 }
 
 void mp_cleanup()

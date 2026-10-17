@@ -3,7 +3,6 @@
 
 #include <cassert>
 #include <functional>
-#include <mutex>
 #include <unordered_map>
 #include <list>
 //#include <spdlog/spdlog.h>
@@ -136,12 +135,11 @@ public:
     using Iterator = typename std::list<LruCacheEntry>::iterator;
 
     LruCache()
-        : m_max_size{256}, m_mutex{}, m_list{}, m_destructor_callback{}, m_map{}
+        : m_max_size{256}, m_list{}, m_destructor_callback{}, m_map{}
     {
     }
     LruCacheRef<val_t> get(int key)
     {
-        std::lock_guard<std::mutex> lock{m_mutex};
         //SPDLOG_INFO("LruCache<{}> get {}", typeid(val_t).name(), key);
         if (auto it = m_map.find(key); it != m_map.end())
         {
@@ -153,7 +151,6 @@ public:
     }
     LruCacheRef<val_t> put(int key, val_t&& val)
     {
-        std::lock_guard<std::mutex> lock{m_mutex};
         //SPDLOG_INFO("LruCache<{}> put {}", typeid(val_t).name(), key);
         assert(m_map.find(key) == m_map.end());
         m_list.emplace_front(1, key, std::move(val));
@@ -164,6 +161,8 @@ public:
         {
             if (auto it = std::prev(m_list.end()); it->ref_count == 0)
             {
+                if (m_destructor_callback)
+                    m_destructor_callback(std::addressof(it->val));
                 m_map.erase(m_map.find(it->key));
                 m_list.erase(it);
             }
@@ -180,7 +179,6 @@ public:
     }
 private:
     size_t m_max_size;
-    std::mutex m_mutex;
     std::list<LruCacheEntry> m_list;
     ConstructorCallback m_constructor_callback;
     DestructorCallback m_destructor_callback;
@@ -192,7 +190,6 @@ private:
 template<typename val_t>
 void reset_callback(LruCache<val_t>* cache, LruCacheRef<val_t>* cache_ref)
 {
-    std::lock_guard<std::mutex> lock{cache->m_mutex};
     auto it = cache->m_map.find(cache_ref->m_key);
     assert(it != cache->m_map.end());
     assert(it->second->ref_count > 0);
