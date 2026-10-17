@@ -28,3 +28,6 @@
 [submodule "vendor/taglib"]
 	path = vendor/taglib
 	url = https://github.com/taglib/taglib.git
+[submodule "vendor/vendor/inih"]
+	path = vendor/vendor/inih
+	url = https://github.com/benhoyt/inih.git
