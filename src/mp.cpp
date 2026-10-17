@@ -1440,10 +1440,10 @@ int mp_get_id(MPUID uid)
     return uid & MPUID_ID_MASK;
 }
 
-void mp_change_db(std::string db_path)
+void mp_change_db(const std::string& db_path)
 {
     sqlite3* new_db;
-    sqlite3_open_v2(
+    int res = sqlite3_open_v2(
         db_path.c_str(),
         &new_db,
         SQLITE_OPEN_READWRITE |
@@ -1451,7 +1451,7 @@ void mp_change_db(std::string db_path)
         SQLITE_OPEN_FULLMUTEX,
         nullptr
     );
-    if (new_db != nullptr)
+    if (res == SQLITE_OK)
     {
         if (ctx.current_song_loaded)
             ma_sound_uninit(&ctx.current_song_sound);
@@ -1486,6 +1486,12 @@ void mp_change_db(std::string db_path)
 
         config.db_path = db_path;
         ctx.db = new_db;
+
+        SPDLOG_INFO("Changed db to {}", db_path);
+    }
+    else
+    {
+        SPDLOG_ERROR("Could not change to db {}", db_path);
     }
 }
 

@@ -2274,13 +2274,21 @@ static void draw_home()
 
     if (prompt.has_value() && prompt->wait_for(std::chrono::nanoseconds(0)) == std::future_status::ready)
     {
-        destroy_cache_references();
-        mp_change_db(prompt->get());
+        std::string db_path = prompt->get();
+        if (db_path.size() > 0)
+        {
+            destroy_cache_references();
+            mp_change_db(db_path);
+        }
+        else
+        {
+            SPDLOG_INFO("Change db prompt cancelled");
+        }
         prompt.reset();
     }
 
-    ImGui::SameLine();
-    ImGui::Text("%s", config.db_path.c_str());
+
+    ImGui::Text("DB: %s", config.db_path.c_str());
 }
 
 static void draw_settings()

@@ -174,7 +174,7 @@ extern MPContext mp_ctx;
 // Initializes and cleans up music play context
 void mp_init();
 void mp_cleanup();
-void mp_change_db(std::string db_path);
+void mp_change_db(const std::string& db_path);
 
 // Call this every frame. Checks whether current song ended or not
 void mp_update();
