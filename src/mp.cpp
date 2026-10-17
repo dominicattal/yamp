@@ -72,6 +72,7 @@ static int db_get_random_song();
 [[maybe_unused]] static void db_update_song(SongID song_id, const char* new_title, const char* new_song_path, double new_song_length);
 [[maybe_unused]] static void db_update_song_artist(SongID song_id, const char* artist);
 [[maybe_unused]] static void db_update_playlist(PlaylistID playlist_id, const char* new_name);
+static void db_update_album_length(AlbumID album_id);
 
 // Delete
 static void db_delete_artist(int artist_id);
@@ -484,6 +485,7 @@ static void db_create_album_song(AlbumID album_id, SongID song_id, int track)
     sqlite3_bind_int(stmt, 3, track);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    db_update_album_length(album_id);
 }
 
 static PlaylistID db_get_playlist_id(const char* name)
@@ -515,6 +517,16 @@ static void db_update_playlist(PlaylistID playlist_id, const char* new_name)
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, playlist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+static void db_update_album_length(AlbumID album_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE Albums SET length=(SELECT SUM(length) FROM Songs S JOIN AlbumSong A ON S.id==A.song_id WHERE A.album_id=?1) WHERE id =?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, album_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
@@ -838,12 +850,6 @@ void mp_rollback_loaded_songs()
     mp_ctx.added_songs.clear();
     mp_ctx.added_artists.clear();
     mp_ctx.added_albums.clear();
-}
-
-bool mp_loading_added_songs()
-{
-    return true;
-    //return ctx.add_song_file_paths.size() == 0;
 }
 
 LruCacheRef<Playlist> mp_create_playlist()
