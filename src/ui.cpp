@@ -4,6 +4,7 @@
 
 #include "ui.h"
 #include "mp.h"
+#include "config.h"
 #include <cstring>
 #include <imgui.h>
 #include <unordered_map>
@@ -983,16 +984,8 @@ void ui_init()
     //ctx.playlists = mp_get_playlists();
 }
 
-void ui_cleanup()
+static void destroy_cache_references()
 {
-    cleanup_textures();
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-
-    glfwDestroyWindow(ctx.window);
-    glfwTerminate();
-
     // cannot destroy cache before cacheref
     ctx.center.song_tracks.clear();
     ctx.center.songs.clear();
@@ -1003,6 +996,17 @@ void ui_cleanup()
     ctx.center.artist.release();
     ctx.center.search_result.entries.clear();
     ctx.playlists.clear();
+}
+
+void ui_cleanup()
+{
+    cleanup_textures();
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    glfwDestroyWindow(ctx.window);
+    glfwTerminate();
 
     SPDLOG_INFO("UI cleaned up");
 }
@@ -2253,6 +2257,30 @@ static void draw_header(ImVec2 size)
 static void draw_home()
 {
     ImGui::Text("Home");
+
+    static std::optional<std::future<std::string>> prompt{};
+    if (ImGui::Button("Change DB") && !prompt.has_value()) 
+    {
+        prompt = std::async(std::launch::async,
+            []() -> std::string {
+                const std::string title {"Choose database"};
+                const std::string default_path = pfd::path::home();
+                const std::vector<std::string> filters {"SQLite DB", "*.db"};
+                const pfd::opt options = pfd::opt::none;
+                std::vector<std::string> db_path = pfd::open_file(title, default_path, filters, options).result();
+                return (db_path.size() > 0) ? db_path.front() : "";
+            });
+    }
+
+    if (prompt.has_value() && prompt->wait_for(std::chrono::nanoseconds(0)) == std::future_status::ready)
+    {
+        destroy_cache_references();
+        mp_change_db(prompt->get());
+        prompt.reset();
+    }
+
+    ImGui::SameLine();
+    ImGui::Text("%s", config.db_path.c_str());
 }
 
 static void draw_settings()

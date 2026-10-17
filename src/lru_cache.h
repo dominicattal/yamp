@@ -177,6 +177,11 @@ public:
     {
         m_destructor_callback = callback;
     }
+    void clear()
+    {
+        m_list.clear();
+        m_map.clear();
+    }
 private:
     size_t m_max_size;
     std::list<LruCacheEntry> m_list;

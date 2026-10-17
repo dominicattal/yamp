@@ -1,4 +1,5 @@
 #include "mp.h"
+#include "config.h"
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
@@ -640,7 +641,7 @@ static void db_init()
 {
     //sqlite3_open("build/yamp.db", &ctx.db);
     sqlite3_open_v2(
-        "build/yamp.db",
+        config.db_path.c_str(),
         &ctx.db,
         SQLITE_OPEN_READWRITE |
         SQLITE_OPEN_CREATE |
@@ -648,6 +649,8 @@ static void db_init()
         nullptr
     );
     execute_file("assets/sql/schema.sql");
+
+    SPDLOG_INFO("DB at {} loaded successfully", config.db_path);
 
     sqlite3_stmt* stmt;
     const char* query = "SELECT COUNT(id) FROM Songs";
@@ -1437,6 +1440,55 @@ int mp_get_id(MPUID uid)
     return uid & MPUID_ID_MASK;
 }
 
+void mp_change_db(std::string db_path)
+{
+    sqlite3* new_db;
+    sqlite3_open_v2(
+        db_path.c_str(),
+        &new_db,
+        SQLITE_OPEN_READWRITE |
+        SQLITE_OPEN_CREATE |
+        SQLITE_OPEN_FULLMUTEX,
+        nullptr
+    );
+    if (new_db != nullptr)
+    {
+        if (ctx.current_song_loaded)
+            ma_sound_uninit(&ctx.current_song_sound);
+        ctx.current_song_loaded = false;
+        sqlite3_close(ctx.db);
+
+        mp_ctx.current_song.release();
+        mp_ctx.current_song_artist.release();
+        mp_ctx.current_song_album.release();
+        mp_ctx.queue.clear();
+        mp_ctx.autoplay_queue.clear();
+        mp_ctx.group_queue.clear();
+        mp_ctx.song_history.clear();
+        mp_ctx.pins.clear();
+        mp_ctx.added_songs.clear();
+        mp_ctx.added_artists.clear();
+        mp_ctx.added_albums.clear();
+        mp_ctx.playing_group = false;
+        mp_ctx.autoplay = false;
+
+        mp_ctx.songs.clear();
+        mp_ctx.albums.clear();
+        mp_ctx.artists.clear();
+        mp_ctx.playlists.clear();
+        mp_ctx.song_artist.clear();
+        mp_ctx.song_album.clear();
+        mp_ctx.album_artist.clear();
+        mp_ctx.album_songs.clear();
+        mp_ctx.playlist_songs.clear();
+        mp_ctx.artist_songs.clear();
+        mp_ctx.artist_albums.clear();
+
+        config.db_path = db_path;
+        ctx.db = new_db;
+    }
+}
+
 void mp_init()
 {
     ctx.mt.seed(std::chrono::steady_clock::now().time_since_epoch().count());
@@ -1482,7 +1534,9 @@ void mp_cleanup()
     if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
     ma_engine_uninit(&ctx.engine);
-    sqlite3_close(ctx.db);
+    int res = sqlite3_close(ctx.db);
+    if (res == SQLITE_BUSY)
+        SPDLOG_WARN("SQLite busy on cleanup");
     SPDLOG_INFO("MP cleaned up");
 }
 

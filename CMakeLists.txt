@@ -8,6 +8,7 @@ add_subdirectory(vendor/portable-file-dialogs)
 add_subdirectory(vendor/spdlog)
 add_subdirectory(vendor/utfcpp)
 add_subdirectory(vendor/freetype)
+add_subdirectory(vendor/inih)
 find_package(OpenGL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(TagLib 2.3.2 REQUIRED)
@@ -17,6 +18,7 @@ add_executable(yamp
     ${CMAKE_HOME_DIRECTORY}/src/ui.cpp
     ${CMAKE_HOME_DIRECTORY}/src/mp.cpp
     ${CMAKE_HOME_DIRECTORY}/src/stb.cpp
+    ${CMAKE_HOME_DIRECTORY}/src/config.cpp
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/imgui_demo.cpp
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/imgui_widgets.cpp
     ${CMAKE_HOME_DIRECTORY}/vendor/imgui/backends/imgui_impl_opengl3.cpp
@@ -43,4 +45,4 @@ target_compile_definitions(yamp PRIVATE IMGUI_ENABLE_FREETYPE)
 target_compile_definitions(yamp PRIVATE IMGUI_USE_WCHAR32)
 target_compile_definitions(yamp PRIVATE SPDLOG_ACTIVE_LEVEL)
 
-target_link_libraries(yamp PRIVATE glfw portable_file_dialogs miniaudio spdlog utf8cpp freetype TagLib::tag)
+target_link_libraries(yamp PRIVATE glfw portable_file_dialogs miniaudio spdlog utf8cpp freetype TagLib::tag ini)
