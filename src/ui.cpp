@@ -2468,10 +2468,12 @@ static void draw_player(const ImVec2 size)
             mp_ctx.loop_mode = static_cast<LoopMode>((static_cast<int>(mp_ctx.loop_mode) + 1) % 3);
     }
 
+    constexpr float skip_time = 5.0f;
+
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     if (ImGui::ImageButton("Round Previous Button", ctx.textures.round_rewind_button.id, button_size))
-        mp_go_backward_in_current_song();
+        mp_go_backward_in_current_song(skip_time);
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
@@ -2492,7 +2494,7 @@ static void draw_player(const ImVec2 size)
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     if (ImGui::ImageButton("Round Next Button", ctx.textures.round_rewind_button.id, button_size, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
-        mp_go_forward_in_current_song();
+        mp_go_forward_in_current_song(skip_time);
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));

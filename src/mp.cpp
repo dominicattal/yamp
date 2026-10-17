@@ -770,25 +770,42 @@ void mp_add_song(const std::string& song_path)
         album_id = db_get_album_id(album_name.c_str());
         if (album_id == INVALID_ID) 
         {
-            std::filesystem::path fs_song_path = std::filesystem::path(song_path).replace_filename("cover.jpg");
-            uint8_t* album_art_data = nullptr;
-            int album_art_size = 0; 
-            if (std::filesystem::exists(fs_song_path))
+            bool loaded_art = false;
+            for (const char* cover_path : std::array<const char*, 2>{"cover.jpg", "cover.png"})
             {
-                int input_w, input_h, nc;
-                uint8_t* raw_art_data = stbi_load(fs_song_path.c_str(), &input_w, &input_h, &nc, 4);
-                album_art_data = stbir_resize_uint8_linear(
-                            raw_art_data, input_w, input_h, 0,
-                            NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
-                            STBIR_4CHANNEL
-                        );
-                album_art_size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
-                stbi_image_free(raw_art_data);
+                std::filesystem::path fs_song_path = std::filesystem::path(song_path).replace_filename(cover_path);
+                if (std::filesystem::exists(fs_song_path))
+                {
+                    int input_w, input_h, nc;
+                    uint8_t* raw_art_data = stbi_load(fs_song_path.c_str(), &input_w, &input_h, &nc, 4);
+                    uint8_t* album_art_data = stbir_resize_uint8_linear(
+                                raw_art_data, input_w, input_h, 0,
+                                NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
+                                STBIR_4CHANNEL
+                            );
+                    int album_art_size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
+                    stbi_image_free(raw_art_data);
+                    SPDLOG_INFO("Loaded album art {}", fs_song_path.c_str());
+
+                    db_create_album(album_name.c_str(), album_art_data, album_art_size);
+                    if (album_art_data != nullptr)
+                        free(album_art_data);
+
+                    loaded_art = true;
+                    break;
+                }
             }
-            db_create_album(album_name.c_str(), album_art_data, album_art_size);
-            if (album_art_data != nullptr)
-                free(album_art_data);
+
+            if (!loaded_art)
+            {
+                Art art = mp_get_song_art(song_id);
+                db_create_album(album_name.c_str(), art.data, art.size);
+                mp_free_art(&art);
+            }
+
             album_id = db_get_album_id(album_name.c_str());
+
+            SPDLOG_INFO("Create album {} {}", album_id, album_name);
         }
         db_create_album_song(album_id, song_id, track);
     }
@@ -800,7 +817,10 @@ void mp_add_song(const std::string& song_path)
         {
             db_create_artist(artist_name.c_str());
             artist_id = db_get_artist_id(artist_name.c_str());
+
+            SPDLOG_INFO("Create artist {} {}", artist_id, artist_name);
         }
+
         db_create_artist_song(artist_id, song_id);
     }
 
@@ -910,6 +930,39 @@ void mp_pause_or_resume()
         mp_ctx.paused = true;
         ma_sound_stop(&ctx.current_song_sound);
     }
+}
+
+void mp_go_forward_in_current_song(float seconds)
+{
+    if (!ctx.current_song_loaded)
+        return;
+
+    const ma_uint32 sample_rate = ctx.current_song_sound.engineNode.resampler.sampleRateIn;
+    ma_uint64 current_pcm_frame;
+    ma_sound_get_cursor_in_pcm_frames(&ctx.current_song_sound, &current_pcm_frame);
+
+    ma_uint64 skip_pcm_frames = static_cast<ma_uint64>(seconds) * sample_rate;
+    current_pcm_frame += skip_pcm_frames;
+
+    ma_sound_seek_to_pcm_frame(&ctx.current_song_sound, current_pcm_frame);
+}
+
+void mp_go_backward_in_current_song(float seconds)
+{
+    if (!ctx.current_song_loaded)
+        return;
+
+    const ma_uint32 sample_rate = ctx.current_song_sound.engineNode.resampler.sampleRateIn;
+    ma_uint64 current_pcm_frame;
+    ma_sound_get_cursor_in_pcm_frames(&ctx.current_song_sound, &current_pcm_frame);
+
+    ma_uint64 skip_pcm_frames = static_cast<ma_uint64>(seconds) * sample_rate;
+    if (skip_pcm_frames > current_pcm_frame)
+        current_pcm_frame = 0;
+    else
+        current_pcm_frame -= skip_pcm_frames;
+
+    ma_sound_seek_to_pcm_frame(&ctx.current_song_sound, current_pcm_frame);
 }
 
 void mp_toggle_shuffle()
@@ -1332,14 +1385,6 @@ void mp_play_next()
         mp_ctx.queue.pop_front();
         mp_play_song(song->id);
     }
-}
-
-void mp_go_backward_in_current_song()
-{
-}
-
-void mp_go_forward_in_current_song()
-{
 }
 
 Art mp_get_song_art(SongID song_id)
