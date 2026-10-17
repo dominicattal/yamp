@@ -624,7 +624,15 @@ static void execute_file(const char* path)
 
 static void db_init()
 {
-    sqlite3_open("build/yamp.db", &ctx.db);
+    //sqlite3_open("build/yamp.db", &ctx.db);
+    sqlite3_open_v2(
+        "build/yamp.db",
+        &ctx.db,
+        SQLITE_OPEN_READWRITE |
+        SQLITE_OPEN_CREATE |
+        SQLITE_OPEN_FULLMUTEX,
+        nullptr
+    );
     execute_file("assets/sql/schema.sql");
 
     sqlite3_stmt* stmt;
@@ -706,6 +714,12 @@ void mp_update()
 
 void mp_add_song(const std::string& song_path)
 {
+    if (!mp_ctx.adding_songs)
+    {
+        sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+        mp_ctx.adding_songs = true;
+    }
+
     TagLib::FileRef mp3_file_ref(song_path.c_str());
 
     if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
@@ -759,7 +773,7 @@ void mp_add_song(const std::string& song_path)
         free(art_data);
 
     song_id = db_get_song_id(song_path.c_str());
-
+    mp_ctx.added_songs.push_back(song_id);
     SPDLOG_INFO("Created song {} {}", song_id, title);
 
     AlbumID album_id{};
@@ -804,7 +818,7 @@ void mp_add_song(const std::string& song_path)
             }
 
             album_id = db_get_album_id(album_name.c_str());
-
+            mp_ctx.added_artists.push_back(album_id);
             SPDLOG_INFO("Create album {} {}", album_id, album_name);
         }
         db_create_album_song(album_id, song_id, track);
@@ -817,7 +831,7 @@ void mp_add_song(const std::string& song_path)
         {
             db_create_artist(artist_name.c_str());
             artist_id = db_get_artist_id(artist_name.c_str());
-
+            mp_ctx.added_artists.push_back(artist_id);
             SPDLOG_INFO("Create artist {} {}", artist_id, artist_name);
         }
 
@@ -832,6 +846,24 @@ void mp_add_songs(const std::vector<std::string>& song_paths)
 {
     for (const std::string& song_path : song_paths)
         mp_add_song(song_path);
+}
+
+void mp_commit_loaded_songs()
+{
+    sqlite3_exec(ctx.db, "COMMIT;", nullptr, nullptr, nullptr);
+    mp_ctx.adding_songs = false;
+    mp_ctx.added_songs.clear();
+    mp_ctx.added_artists.clear();
+    mp_ctx.added_albums.clear();
+}
+
+void mp_rollback_loaded_songs()
+{
+    sqlite3_exec(ctx.db, "ROLLBACK;", nullptr, nullptr, nullptr);
+    mp_ctx.adding_songs = false;
+    mp_ctx.added_songs.clear();
+    mp_ctx.added_artists.clear();
+    mp_ctx.added_albums.clear();
 }
 
 void mp_recursive_add_songs(const std::string& folder_path)

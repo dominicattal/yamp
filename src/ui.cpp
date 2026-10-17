@@ -2277,6 +2277,15 @@ static void draw_edit()
         ;
     if (ImGui::Button("Create Playlist"))
         ;
+    if (ImGui::Button("Commit Changes"))
+        mp_commit_loaded_songs();
+    if (ImGui::Button("Rollback Changes"))
+        mp_rollback_loaded_songs();
+
+    for (SongID song_id : mp_ctx.added_songs)
+    {
+        ImGui::Text("%d", song_id);
+    }
 }
 
 static void draw_lyrics()

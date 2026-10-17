@@ -161,6 +161,11 @@ struct MPContext {
     LoopMode loop_mode;
 
     std::vector<Pin> pins;
+
+    bool adding_songs;
+    std::vector<SongID> added_songs;
+    std::vector<ArtistID> added_artists;
+    std::vector<AlbumID> added_albums;
 };
 
 extern MPContext mp_ctx;
@@ -177,6 +182,9 @@ void mp_update();
 void mp_add_song(const std::string& song_path);
 void mp_add_songs(const std::vector<std::string>& song_paths);
 void mp_recursive_add_songs(const std::string& folder_path);
+// When finished adding song, call this to destroy objects in mp_ctx.loaded_songs
+void mp_commit_loaded_songs();
+void mp_rollback_loaded_songs();
 
 // Add a playlist to the database. Returns the id of the created playlist.
 LruCacheRef<Playlist> mp_create_playlist();
