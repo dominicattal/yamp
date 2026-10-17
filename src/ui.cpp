@@ -2260,7 +2260,7 @@ static void draw_edit()
         const std::vector<std::string> filters {"All Files", "*"};
         const pfd::opt options = pfd::opt::multiselect;
         std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
-        mp_add_songs(song_paths);
+        mp_add_songs(std::move(song_paths));
     }
     if (ImGui::Button("Add Folder")) 
     {
@@ -2282,9 +2282,20 @@ static void draw_edit()
     if (ImGui::Button("Rollback Changes"))
         mp_rollback_loaded_songs();
 
-    for (SongID song_id : mp_ctx.added_songs)
+    if (!mp_ctx.adding_songs)
     {
-        ImGui::Text("%d", song_id);
+        ImGui::Text("Default text");
+    }
+    else if (!mp_loading_added_songs())
+    {
+        ImGui::Text("Loading...");
+    }
+    else
+    {
+        for (SongID song_id : mp_ctx.added_songs)
+        {
+            ImGui::Text("%d", song_id);
+        }
     }
 }
 

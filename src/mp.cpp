@@ -16,6 +16,8 @@
 #include <spdlog/spdlog.h>
 #include <stb_image.h>
 #include <stb_image_resize2.h>
+#include <thread>
+#include <condition_variable>
 
 struct MPContextInternal {
     std::mt19937 mt;
@@ -24,6 +26,11 @@ struct MPContextInternal {
     ma_sound current_song_sound;
     bool current_song_loaded;
     bool song_ended;
+
+    std::deque<std::string> add_song_file_paths;
+    std::condition_variable_any add_song_cv;
+    std::mutex add_song_mutex;
+    std::jthread add_song_thread;
 };
 
 MPContext mp_ctx;
@@ -652,74 +659,8 @@ static void db_init()
     sqlite3_finalize(stmt);
 }
 
-void mp_init()
+static void add_song_from_path(const std::string& song_path)
 {
-    ctx.mt.seed(std::chrono::steady_clock::now().time_since_epoch().count());
-
-    mp_ctx.volume = 1.0f;
-    mp_ctx.shuffle = true;
-    db_init();
-    ma_result res;
-    res = ma_engine_init(NULL, &ctx.engine);
-    if (res != MA_SUCCESS)
-        exit(1);
-
-    std::vector<PinID> pin_ids = db_get_pins();
-    mp_ctx.pins.resize(pin_ids.size());
-    std::transform(pin_ids.begin(), pin_ids.end(), mp_ctx.pins.begin(),
-        [](PinID& pin_id) -> Pin
-        {
-            Pin pin{};
-            int id = mp_get_id(pin_id.uid);
-            pin.type = mp_get_uid_type(pin_id.uid);
-            pin.order = pin_id.order;
-            switch (pin.type)
-            {
-                case MPUID_SONG:
-                    pin.song = mp_get_song(id);
-                    break;
-                case MPUID_ALBUM:
-                    pin.album = mp_get_album(id);
-                    break;
-                case MPUID_ARTIST:
-                    pin.artist = mp_get_artist(id);
-                    break;
-                case MPUID_PLAYLIST:
-                    pin.playlist = mp_get_playlist(id);
-                    break;
-            }
-            return pin;
-        });
-}
-
-void mp_cleanup()
-{
-    if (ctx.current_song_loaded)
-        ma_sound_uninit(&ctx.current_song_sound);
-    ma_engine_uninit(&ctx.engine);
-    sqlite3_close(ctx.db);
-    SPDLOG_INFO("MP cleaned up");
-}
-
-void mp_update()
-{
-    if (mp_ctx.current_song != nullptr) {
-        ma_sound_get_cursor_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_cursor);
-    }
-    if (ctx.song_ended) {
-        mp_play_next();
-        ctx.song_ended = false;
-    }
-}
-
-void mp_add_song(const std::string& song_path)
-{
-    if (!mp_ctx.adding_songs)
-    {
-        sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-        mp_ctx.adding_songs = true;
-    }
-
     TagLib::FileRef mp3_file_ref(song_path.c_str());
 
     if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
@@ -740,7 +681,7 @@ void mp_add_song(const std::string& song_path)
     SongID song_id = db_get_song_id(song_path.c_str());
     if (song_id != INVALID_ID)
     {
-        SPDLOG_WARN("Song id %d already exists", song_id);
+        SPDLOG_WARN("Song id {} already exists", song_id);
         return;
     }
 
@@ -842,10 +783,70 @@ void mp_add_song(const std::string& song_path)
         db_create_artist_album(artist_id, album_id);
 }
 
-void mp_add_songs(const std::vector<std::string>& song_paths)
+static void add_song_worker_thread(std::stop_token stop)
 {
-    for (const std::string& song_path : song_paths)
-        mp_add_song(song_path);
+    while (true)
+    {
+        std::unique_lock lock(ctx.add_song_mutex);
+
+        ctx.add_song_cv.wait(lock, stop, []() { 
+                return !ctx.add_song_file_paths.empty();
+            });
+
+        if (stop.stop_requested())
+            return;
+
+        std::string song_path = ctx.add_song_file_paths.front();
+        add_song_from_path(song_path);
+        ctx.add_song_file_paths.pop_front();
+    }
+}
+
+void mp_add_song(std::string&& song_path)
+{
+    if (!mp_ctx.adding_songs)
+    {
+        sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+        mp_ctx.adding_songs = true;
+    }
+    std::lock_guard lock(ctx.add_song_mutex);
+    ctx.add_song_file_paths.push_back(std::move(song_path));
+    ctx.add_song_cv.notify_all();
+}
+
+void mp_add_songs(std::vector<std::string>&& song_paths)
+{
+    if (!mp_ctx.adding_songs)
+    {
+        sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+        mp_ctx.adding_songs = true;
+    }
+    std::lock_guard lock(ctx.add_song_mutex);
+    for (std::string& song_path : song_paths)
+        ctx.add_song_file_paths.push_back(std::move(song_path));
+    ctx.add_song_cv.notify_all();
+}
+
+void mp_recursive_add_songs(const std::string& folder_path)
+{
+    namespace fs = std::filesystem;
+
+    if (!fs::exists(std::filesystem::path{folder_path}))
+        return;
+
+    if (!mp_ctx.adding_songs)
+    {
+        sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+        mp_ctx.adding_songs = true;
+    }
+
+    fs::directory_options options = fs::directory_options::follow_directory_symlink;
+    fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
+
+    std::lock_guard lock(ctx.add_song_mutex);
+    for (auto const& dir_entry : entries)
+        ctx.add_song_file_paths.push_back(dir_entry.path().string());
+    ctx.add_song_cv.notify_all();
 }
 
 void mp_commit_loaded_songs()
@@ -866,17 +867,9 @@ void mp_rollback_loaded_songs()
     mp_ctx.added_albums.clear();
 }
 
-void mp_recursive_add_songs(const std::string& folder_path)
+bool mp_loading_added_songs()
 {
-    namespace fs = std::filesystem;
-
-    if (!fs::exists(std::filesystem::path{folder_path}))
-        return;
-
-    fs::directory_options options = fs::directory_options::follow_directory_symlink;
-    fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
-    for (auto const& dir_entry : entries)
-        mp_add_song(dir_entry.path().string());
+    return ctx.add_song_file_paths.size() == 0;
 }
 
 LruCacheRef<Playlist> mp_create_playlist()
@@ -1486,3 +1479,70 @@ int mp_get_id(MPUID uid)
 {
     return uid & MPUID_ID_MASK;
 }
+
+void mp_init()
+{
+    ctx.mt.seed(std::chrono::steady_clock::now().time_since_epoch().count());
+
+    mp_ctx.volume = 1.0f;
+    mp_ctx.shuffle = true;
+    db_init();
+    ma_result res;
+    res = ma_engine_init(NULL, &ctx.engine);
+    if (res != MA_SUCCESS)
+        exit(1);
+
+    std::vector<PinID> pin_ids = db_get_pins();
+    mp_ctx.pins.resize(pin_ids.size());
+    std::transform(pin_ids.begin(), pin_ids.end(), mp_ctx.pins.begin(),
+        [](PinID& pin_id) -> Pin
+        {
+            Pin pin{};
+            int id = mp_get_id(pin_id.uid);
+            pin.type = mp_get_uid_type(pin_id.uid);
+            pin.order = pin_id.order;
+            switch (pin.type)
+            {
+                case MPUID_SONG:
+                    pin.song = mp_get_song(id);
+                    break;
+                case MPUID_ALBUM:
+                    pin.album = mp_get_album(id);
+                    break;
+                case MPUID_ARTIST:
+                    pin.artist = mp_get_artist(id);
+                    break;
+                case MPUID_PLAYLIST:
+                    pin.playlist = mp_get_playlist(id);
+                    break;
+            }
+            return pin;
+        });
+
+    ctx.add_song_thread = std::jthread{add_song_worker_thread};
+}
+
+void mp_cleanup()
+{
+    if (ctx.current_song_loaded)
+        ma_sound_uninit(&ctx.current_song_sound);
+    ma_engine_uninit(&ctx.engine);
+    sqlite3_close(ctx.db);
+    SPDLOG_INFO("MP cleaned up");
+}
+
+void mp_update()
+{
+    if (mp_ctx.current_song != nullptr) {
+        ma_sound_get_cursor_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_cursor);
+    }
+    if (ctx.song_ended) {
+        mp_play_next();
+        ctx.song_ended = false;
+    }
+
+    if (mp_ctx.adding_songs)
+    {
+    }
+}
+
