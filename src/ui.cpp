@@ -871,10 +871,11 @@ static void update_textures()
 
         // if more songs are add than removed, then number of
         // texture slots used might blow up. otherwise, you could
-        // get away without unloading one texture every frame
+        // get away with unloading one texture every frame
         for (MPUID uid : ctx.unload_queue)
         {
-            delete_texture(ctx.textures.slot_map[uid]);
+            if (ctx.textures.slot_map[uid].idx != ctx.textures.default_album_art_slot.idx)
+                delete_texture(ctx.textures.slot_map[uid]);
             ctx.textures.slot_map.erase(ctx.textures.slot_map.find(uid));
         }
         ctx.unload_queue.clear();
@@ -2322,10 +2323,10 @@ static void draw_edit()
         page_result.num_pages = page_result.num_results / page_result.results_per_page;
 
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 15.0f);
-        if (ImGui::ArrowButton("Left", ImGuiDir_Left) && page_num > 0)
+        if (ImGui::ArrowButton("Left", ImGuiDir_Left))
             page_num--;
         ImGui::SameLine();
-        if (ImGui::ArrowButton("Right", ImGuiDir_Right) && page_num < page_result.num_pages)
+        if (ImGui::ArrowButton("Right", ImGuiDir_Right))
             page_num++;
 
         page_num = std::clamp(page_num, 0, page_result.num_pages);
@@ -2641,8 +2642,25 @@ static void draw_debug_info()
         ImGui::Text("Song History size: %ld", mp_ctx.song_history.size());
         ImGui::Text("Max num slots: %d", ctx.textures.num_slots);
         ImGui::Text("Num slots in use: %zd", ctx.textures.num_slots - ctx.textures.free_slot_textures.size());
-        if (ctx.textures.textures.size() > 0)
-            ImGui::Image(ctx.textures.textures[0], ImVec2(512, 512));
+
+        if (ctx.textures.textures.size() == 0)
+        {
+            ImGui::Text("No Textures");
+        }
+        else
+        {
+            static int texture_num = 0;
+            if (ImGui::ArrowButton("Left", ImGuiDir_Left))
+                texture_num--;
+            ImGui::SameLine();
+            if (ImGui::ArrowButton("Right", ImGuiDir_Right))
+                texture_num++;
+            texture_num = std::clamp(texture_num, 0, static_cast<int>(ctx.textures.textures.size()) - 1);
+            ImGui::SameLine();
+            ImGui::Text("Texture %d", texture_num + 1);
+            ImGui::Image(ctx.textures.textures[texture_num], ImVec2(512, 512));
+        }
+
         ImGui::End();
     }
     ImGui::PopStyleVar();
