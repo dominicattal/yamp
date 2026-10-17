@@ -26,11 +26,6 @@ struct MPContextInternal {
     ma_sound current_song_sound;
     bool current_song_loaded;
     bool song_ended;
-
-    std::deque<std::string> add_song_file_paths;
-    std::condition_variable_any add_song_cv;
-    std::mutex add_song_mutex;
-    std::vector<std::jthread> add_song_threads;
 };
 
 MPContext mp_ctx;
@@ -740,13 +735,15 @@ static void add_song_from_path(const std::string& song_path)
                             );
                     int album_art_size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
                     stbi_image_free(raw_art_data);
-                    SPDLOG_INFO("Loaded album art {}", fs_song_path.c_str());
 
                     db_create_album(album_name.c_str(), album_art_data, album_art_size);
                     if (album_art_data != nullptr)
                         free(album_art_data);
 
                     loaded_art = true;
+
+                    SPDLOG_INFO("Loaded album {} art {}", album_id, fs_song_path.c_str());
+
                     break;
                 }
             }
@@ -756,6 +753,8 @@ static void add_song_from_path(const std::string& song_path)
                 Art art = mp_get_song_art(song_id);
                 db_create_album(album_name.c_str(), art.data, art.size);
                 mp_free_art(&art);
+
+                SPDLOG_INFO("Loaded album {} art from song {}", album_id, song_id);
             }
 
             album_id = db_get_album_id(album_name.c_str());
@@ -783,28 +782,6 @@ static void add_song_from_path(const std::string& song_path)
         db_create_artist_album(artist_id, album_id);
 }
 
-static void add_song_worker_thread(std::stop_token stop)
-{
-    while (true)
-    {
-        std::string song_path;
-        {
-            std::unique_lock lock(ctx.add_song_mutex);
-
-            ctx.add_song_cv.wait(lock, stop, []() { 
-                    return !ctx.add_song_file_paths.empty();
-                });
-
-            if (stop.stop_requested())
-                return;
-
-            song_path = std::move(ctx.add_song_file_paths.front());
-            ctx.add_song_file_paths.pop_front();
-        }
-        add_song_from_path(song_path);
-    }
-}
-
 void mp_add_song(std::string&& song_path)
 {
     if (!mp_ctx.adding_songs)
@@ -812,9 +789,7 @@ void mp_add_song(std::string&& song_path)
         sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
         mp_ctx.adding_songs = true;
     }
-    std::lock_guard lock(ctx.add_song_mutex);
-    ctx.add_song_file_paths.push_back(std::move(song_path));
-    ctx.add_song_cv.notify_all();
+    add_song_from_path(song_path);
 }
 
 void mp_add_songs(std::vector<std::string>&& song_paths)
@@ -824,10 +799,8 @@ void mp_add_songs(std::vector<std::string>&& song_paths)
         sqlite3_exec(ctx.db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
         mp_ctx.adding_songs = true;
     }
-    std::lock_guard lock(ctx.add_song_mutex);
     for (std::string& song_path : song_paths)
-        ctx.add_song_file_paths.push_back(std::move(song_path));
-    ctx.add_song_cv.notify_all();
+        add_song_from_path(song_path);
 }
 
 void mp_recursive_add_songs(const std::string& folder_path)
@@ -845,11 +818,8 @@ void mp_recursive_add_songs(const std::string& folder_path)
 
     fs::directory_options options = fs::directory_options::follow_directory_symlink;
     fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
-
-    std::lock_guard lock(ctx.add_song_mutex);
     for (auto const& dir_entry : entries)
-        ctx.add_song_file_paths.push_back(dir_entry.path().string());
-    ctx.add_song_cv.notify_all();
+        add_song_from_path(dir_entry.path().string());
 }
 
 void mp_commit_loaded_songs()
@@ -1522,9 +1492,6 @@ void mp_init()
             }
             return pin;
         });
-
-    for (int i = 0; i < 4; i++)
-        ctx.add_song_threads.emplace_back(add_song_worker_thread);
 }
 
 void mp_cleanup()
@@ -1544,10 +1511,6 @@ void mp_update()
     if (ctx.song_ended) {
         mp_play_next();
         ctx.song_ended = false;
-    }
-
-    if (mp_ctx.adding_songs)
-    {
     }
 }
 

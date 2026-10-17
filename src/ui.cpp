@@ -996,6 +996,7 @@ void ui_cleanup()
     ctx.center.song_tracks.clear();
     ctx.center.songs.clear();
     ctx.center.albums.clear();
+    ctx.center.song.release();
     ctx.center.playlist.release();
     ctx.center.album.release();
     ctx.center.artist.release();
@@ -2316,10 +2317,22 @@ static void draw_edit()
         static int page_num = 0;
         
         SearchResult<Song> page_result{};
-        page_result.page_num = page_num;
         page_result.results_per_page = 20;
         page_result.num_results = mp_ctx.added_songs.size();
         page_result.num_pages = page_result.num_results / page_result.results_per_page;
+
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 15.0f);
+        if (ImGui::ArrowButton("Left", ImGuiDir_Left) && page_num > 0)
+            page_num--;
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("Right", ImGuiDir_Right) && page_num < page_result.num_pages)
+            page_num++;
+
+        page_num = std::clamp(page_num, 0, page_result.num_pages);
+        page_result.page_num = page_num;
+
+        ImGui::SameLine();
+        ImGui::Text("%d/%d (%d results)", page_result.page_num + 1, page_result.num_pages + 1, page_result.num_results);
 
         for (int i = page_result.page_num * page_result.results_per_page;
                 i < (page_result.page_num + 1) * page_result.results_per_page && i < page_result.num_results; i++)
