@@ -52,6 +52,7 @@ struct Song {
     uint64_t end_pcm_frame;
     SongID id;
     float length;
+    float volume;
 };
 
 struct SongTrack {

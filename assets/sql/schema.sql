@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS Songs (
     length REAL,
     begin_pcm_frame INTEGER,
     end_pcm_frame INTEGER,
+    volume REAL,
     lyrics TEXT
 );
 

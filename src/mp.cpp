@@ -112,7 +112,7 @@ static Song db_get_song_info(SongID song_id)
     const float length = static_cast<float>(sqlite3_column_double(stmt, 2));
     const uint64_t begin_pcm_frame = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
     const uint64_t end_pcm_frame = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
-    Song song{title, path, begin_pcm_frame, end_pcm_frame, song_id, length};
+    Song song{title, path, begin_pcm_frame, end_pcm_frame, song_id, length, 0.0f};
     sqlite3_finalize(stmt);
     return song;
 }

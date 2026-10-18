@@ -203,6 +203,13 @@ enum MenuPopupEnum {
     MENU_CLOSE_TABLE
 };
 
+enum ItemActiveEnum {
+    ITEM_INACTIVE,
+    ITEM_ACTIVE,
+    ITEM_ACTIVATED,
+    ITEM_DEACTIVATED,
+};
+
 struct CustomTableParams {
     int num_rows;
     int num_cols;
@@ -308,6 +315,27 @@ static bool imgui_aligned_text_button(const char* text, ImVec2 region_start, ImV
     char buf2[MAX_STRING_SIZE];
     snprintf(buf2, sizeof(buf2), "%s…", buf);
     return imgui_text_button(buf2);
+}
+
+static bool imgui_is_mouse_in_window_bounds()
+{
+    const ImVec2 mouse_pos = ImGui::GetMousePos();
+    const ImVec2 window_pos = ImGui::GetWindowPos();
+    const ImVec2 window_size = ImGui::GetWindowSize();
+    return mouse_pos.x >= window_pos.x
+        && mouse_pos.x <= window_pos.x + window_size.x
+        && mouse_pos.y >= window_pos.y
+        && mouse_pos.y <= window_pos.y + window_size.y;
+}
+
+static bool imgui_is_region_hovered(ImVec2 region_start, ImVec2 size)
+{
+    const ImVec2 mouse_pos = ImGui::GetMousePos();
+    return imgui_is_mouse_in_window_bounds()
+        && mouse_pos.x >= region_start.x 
+        && mouse_pos.x <= region_start.x + size.x
+        && mouse_pos.y >= region_start.y 
+        && mouse_pos.y <= region_start.y + size.y;
 }
 
 static void imgui_custom_table(CustomTableParams& params)
@@ -427,25 +455,57 @@ static void imgui_custom_table(CustomTableParams& params)
     ImGui::EndChild();
 }
 
-static bool imgui_is_mouse_in_window_bounds()
+static ItemActiveEnum imgui_custom_slider_float(const char* label, float* value, float min, float max, float width)
 {
-    const ImVec2 mouse_pos = ImGui::GetMousePos();
-    const ImVec2 window_pos = ImGui::GetWindowPos();
-    const ImVec2 window_size = ImGui::GetWindowSize();
-    return mouse_pos.x >= window_pos.x
-        && mouse_pos.x <= window_pos.x + window_size.x
-        && mouse_pos.y >= window_pos.y
-        && mouse_pos.y <= window_pos.y + window_size.y;
-}
+    (void)value; (void)min; (void)max;
+    ImVec2 origin = ImGui::GetCursorPos();
+    ImVec2 origin_screen = ImGui::GetCursorScreenPos();
+    float height = 5.0f;
+    ImVec2 size = ImVec2(width, height); 
+    float diff = max - min;
 
-static bool imgui_is_region_hovered(ImVec2 region_start, ImVec2 size)
-{
-    const ImVec2 mouse_pos = ImGui::GetMousePos();
-    return imgui_is_mouse_in_window_bounds()
-        && mouse_pos.x >= region_start.x 
-        && mouse_pos.x <= region_start.x + size.x
-        && mouse_pos.y >= region_start.y 
-        && mouse_pos.y <= region_start.y + size.y;
+    float value_x;
+    if (diff > 0.0f)
+        value_x = origin_screen.x + (*value - min) / diff * width;
+    else
+        value_x = origin_screen.x + min;
+
+    if (value_x - origin_screen.x > 1e-5)
+    {
+        ImGui::GetWindowDrawList()->AddRectFilled(
+                ImVec2(origin_screen.x, origin_screen.y),
+                ImVec2(value_x, origin_screen.y + size.y),
+                IM_COL32(0, 255, 0, 255));
+    }
+
+    if (origin_screen.x + width - value_x > 1e-5)
+    {
+        ImGui::GetWindowDrawList()->AddRectFilled(
+                ImVec2(value_x, origin_screen.y),
+                ImVec2(origin_screen.x + width, origin_screen.y + size.y),
+                IM_COL32(255, 0, 0, 255));
+    }
+
+    float button_padding = 5.0f;
+    ImGui::SetCursorPos(ImVec2(origin.x, origin.y));
+
+    ImGui::InvisibleButton(label, ImVec2(width, height + 2 * button_padding));
+
+    if (ImGui::IsItemHovered())
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+    if (ImGui::IsItemActive())
+    {
+        *value = std::clamp((ImGui::GetMousePos().x - origin_screen.x) / width * diff + min, min, max);
+    }
+
+    if (ImGui::IsItemDeactivated())
+        return ITEM_DEACTIVATED;
+    if (ImGui::IsItemActivated())
+        return ITEM_ACTIVATED;
+    if (ImGui::IsItemActive())
+        return ITEM_ACTIVE;
+    return ITEM_INACTIVE;
 }
 
 // *****************************
@@ -1237,6 +1297,7 @@ static void draw_song_info()
     ImVec2 origin = ImGui::GetCursorPos();
 
     static bool show_lyrics;
+    static bool show_mixer;
 
     const ImVec2 album_art_size = ImVec2(210, 210);
     const float album_art_padding = 10.0f;
@@ -1302,11 +1363,14 @@ static void draw_song_info()
         if (ImGui::ImageButton("Lyrics", ctx.textures.lyrics_button.id, ImVec2(32, 32)))
         {
             show_lyrics = true;
+            show_mixer = false;
         }
 
         ImGui::SameLine();
         if (ImGui::ImageButton("Mixer", ctx.textures.mixer_button.id, ImVec2(32, 32)))
         {
+            show_lyrics = false;
+            show_mixer = true;
         }
 
         ImGui::EndChild();
@@ -1321,6 +1385,18 @@ static void draw_song_info()
         static bool editing;
         static bool edited;
         editing ^= ImGui::Button("Edit");
+        ImGui::SameLine();
+        if (ImGui::Button("Clear"))
+        {
+            edited |= ctx.center.song_lyrics[0] != '\0';
+            ctx.center.song_lyrics[0] = '\0';
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset"))
+        {
+            mp_get_song_lyrics(song->id, ctx.center.song_lyrics, sizeof(ctx.center.song_lyrics));
+            edited = false;
+        }
         ImGui::SameLine();
         if (ImGui::Button("Save"))
         {
@@ -1338,14 +1414,12 @@ static void draw_song_info()
         if (editing)
         {
             ImGui::PushFont(NULL, 24.0f);
-            //ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
             edited |= ImGui::InputTextMultiline(
-                "##textarea",
-                ctx.center.song_lyrics,
-                sizeof(ctx.center.song_lyrics),
-                ImVec2(-1.0f, -1.0f)
+                    "##textarea",
+                    ctx.center.song_lyrics,
+                    sizeof(ctx.center.song_lyrics),
+                    ImVec2(-1.0f, -1.0f)
                 );
-            //ImGui::PopStyleVar();
             ImGui::PopFont();
         }
         else
@@ -1361,6 +1435,77 @@ static void draw_song_info()
             ImGui::PopFont();
         }
         ImGui::EndChild();
+    }
+    else if (show_mixer)
+    {
+        ImGui::Text("Mixer");
+        //ImGui::SliderFloat("Mixer", &ctx.center.song->volume, 0.0f, 2.0f, "%.2f");
+
+        GLTexture tex = ctx.textures.volume;
+        float volume_slider_size = 150.0f;
+        float volume_icon_size = 20.0f;
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+        ImGui::Image(tex.id, ImVec2(volume_icon_size, volume_icon_size));
+        ImGui::PopStyleVar();
+
+        ImGui::SameLine();
+        imgui_custom_slider_float("##Volume", &ctx.center.song->volume, 0.0f, 2.0f, volume_slider_size);
+
+        //static float dummy;
+        //ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        //ImGui::SliderFloat("##Bounds", &dummy, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_None);
+        
+        ImGui::Text("Playback");
+        ImVec2 origin_screen = ImGui::GetCursorScreenPos();
+        ImVec2 size = ImVec2(300.0f, 5.0f); 
+
+        ImU32 red = IM_COL32(255, 0, 0, 255);
+        ImU32 green = IM_COL32(0, 255, 0, 255);
+
+        float min = 0.0f;
+        float left = 1.0f;
+        float right = 3.0f;
+        float max = 4.0f;
+
+        float x1 = origin_screen.x + (left - min) / (max - min) * size.x;
+        float x2 = origin_screen.x + (right - min) / (max - min) * size.x;
+
+        if (left - min > 1e-5)
+        {
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImVec2(origin_screen.x, origin_screen.y),
+                    ImVec2(x1, origin_screen.y + size.y),
+                    red);
+        }
+
+        if (right - left > 1e-5)
+        {
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImVec2(x1, origin_screen.y),
+                    ImVec2(x2, origin_screen.y + size.y),
+                    green);
+        }
+
+        if (max - right > 1e-5)
+        {
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImVec2(x2, origin_screen.y),
+                    ImVec2(origin_screen.x + size.x, origin_screen.y + size.y),
+                    red);
+        }
+
+        //float button_padding = 5.0f;
+        //ImGui::SetCursorPos(ImVec2(origin.x, origin.y));
+
+        //ImGui::InvisibleButton("##leftbutton", ImVec2(width, height + 2 * button_padding));
+
+        //if (ImGui::IsItemHovered())
+        //    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+        //if (ImGui::IsItemActive())
+        //{
+        //    *value = std::clamp((ImGui::GetMousePos().x - origin_screen.x) / width * diff + min, min, max);
+        //}
     }
     ImGui::EndChild();
 }
@@ -2629,10 +2774,13 @@ static void draw_player(const ImVec2 size)
     int cursor = static_cast<int>(mp_ctx.current_song_cursor);
     int length = static_cast<int>(mp_ctx.current_song_length);
     snprintf(cursor_str, sizeof(cursor_str), "%d:%02d / %d:%02d", cursor / 60, cursor % 60, length / 60, length % 60);
-    ImGui::SetCursorPos(ImVec2(song_cursor_x, 20.0f));
-    ImGui::SetNextItemWidth(cursor_width);
-    if (ImGui::SliderFloat("##Cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, cursor_str, ImGuiSliderFlags_None))
+    ImGui::SetCursorPos(ImVec2(song_cursor_x, 10.0f));
+    ImGui::Text("%s", cursor_str);
+    ImGui::SetCursorPos(ImVec2(song_cursor_x, 10.0f + ImGui::CalcTextSize(cursor_str).y + 5.0f));
+    if (imgui_custom_slider_float("##cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, cursor_width))
+    {
         mp_update_cursor();
+    }
 
     const ImVec2 button_size = ImVec2(32.0f, 32.0f);
     float spacing = 16.0f;
@@ -2710,8 +2858,7 @@ static void draw_player(const ImVec2 size)
             mp_toggle_mute();
         ImGui::PopStyleVar();
         ImGui::SetCursorPos(ImVec2(size.x - volume_slider_size - right_edge_spacing, 20.0f));
-        ImGui::SetNextItemWidth(volume_slider_size);
-        if (ImGui::SliderFloat("##Volume", &mp_ctx.volume, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_None))
+        if (imgui_custom_slider_float("##volume", &mp_ctx.volume, 0.0f, 2.0f, volume_slider_size))
             mp_update_volume();
 
         ImVec2 uv0 = ImVec2(0,0);
