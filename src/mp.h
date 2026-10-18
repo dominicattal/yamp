@@ -48,8 +48,6 @@ enum LoopMode {
 struct Song {
     std::string title;
     std::string path;
-    uint64_t begin_pcm_frame;
-    uint64_t end_pcm_frame;
     SongID id;
     float length;
     float volume;
@@ -238,6 +236,7 @@ std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 
 void mp_get_song_lyrics(SongID song_id, char* lryics_buffer, size_t lyrics_buffer_size);
 void mp_update_song_lyrics(SongID song_id, const char* lyrics);
+void mp_update_song_volume(SongID song_id, float volume);
 
 void mp_pin_song(SongID song_id);
 void mp_pin_album(AlbumID album_id);

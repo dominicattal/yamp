@@ -4,9 +4,7 @@ CREATE TABLE IF NOT EXISTS Songs (
     path VARCHAR(256),
     cover BLOB,
     length REAL,
-    begin_pcm_frame INTEGER,
-    end_pcm_frame INTEGER,
-    volume REAL,
+    volume REAL DEFAULT 1.0,
     lyrics TEXT
 );
 

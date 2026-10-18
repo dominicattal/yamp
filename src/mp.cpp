@@ -75,7 +75,6 @@ static void db_get_song_lyrics(SongID song_id, char* lyrics_buffer, size_t lyric
 [[maybe_unused]] static void db_update_song_artist(SongID song_id, const char* artist);
 [[maybe_unused]] static void db_update_playlist(PlaylistID playlist_id, const char* new_name);
 static void db_update_album_length(AlbumID album_id);
-[[maybe_unused]] static void db_update_song_bounds(SongID song_id, ma_uint64 begin_pcm_frame, ma_uint64 end_pcm_frame);
 [[maybe_unused]] static void db_update_song_lyrics(SongID song_id, const char* lyrics);
 
 // Delete
@@ -102,7 +101,7 @@ static SongID db_get_song_id(const char* song_path)
 static Song db_get_song_info(SongID song_id)
 {
     sqlite3_stmt* stmt;
-    const char* query = "SELECT title, path, length, begin_pcm_frame, end_pcm_frame FROM Songs WHERE id=?1";
+    const char* query = "SELECT title, path, length, volume FROM Songs WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
     [[maybe_unused]] int res = sqlite3_step(stmt);
@@ -110,9 +109,8 @@ static Song db_get_song_info(SongID song_id)
     const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
     const char* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
     const float length = static_cast<float>(sqlite3_column_double(stmt, 2));
-    const uint64_t begin_pcm_frame = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
-    const uint64_t end_pcm_frame = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
-    Song song{title, path, begin_pcm_frame, end_pcm_frame, song_id, length, 0.0f};
+    const float volume = sqlite3_column_double(stmt, 3);
+    Song song{title, path, song_id, length, volume};
     sqlite3_finalize(stmt);
     return song;
 }
@@ -537,24 +535,23 @@ static void db_update_album_length(AlbumID album_id)
     sqlite3_finalize(stmt);
 }
 
-static void db_update_song_bounds(SongID song_id, uint64_t begin_pcm_frame, uint64_t end_pcm_frame)
-{
-    sqlite3_stmt* stmt;
-    const char* query = "UPDATE Songs SET begin_pcm_frame=?1, end_pcm_frame=?2 WHERE id=?3";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_int(stmt, 1, begin_pcm_frame);
-    sqlite3_bind_int(stmt, 2, end_pcm_frame);
-    sqlite3_bind_int(stmt, 3, song_id);
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-}
-
 static void db_update_song_lyrics(SongID song_id, const char* lyrics)
 {
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Songs SET lyrics=?1 WHERE id=?2";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, lyrics, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, song_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+static void db_update_song_volume(SongID song_id, float volume)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE Songs SET volume=?1 WHERE id=?2";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_double(stmt, 1, volume);
     sqlite3_bind_int(stmt, 2, song_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -929,12 +926,12 @@ void mp_play_song(SongID song_id)
     ma_sound_init_ex(&ctx.engine, &config, &ctx.current_song_sound);
     ma_sound_start(&ctx.current_song_sound);
     ma_sound_get_length_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_length);
-    mp_update_volume();
     ctx.current_song_loaded = true;
     mp_ctx.paused = false;
     mp_ctx.current_song = std::move(song);
     mp_ctx.current_song_artist = mp_get_artist_from_song(song_id);
     mp_ctx.current_song_album = mp_get_album_from_song(song_id);
+    mp_update_volume();
 
     db_get_song_lyrics(song_id, mp_ctx.current_song_lyrics, sizeof(mp_ctx.current_song_lyrics));
 }
@@ -1024,10 +1021,13 @@ void mp_toggle_autoplay()
 
 void mp_update_volume()
 {
+    if (mp_ctx.current_song == nullptr)
+        return;
+
     if (mp_ctx.mute)
         ma_sound_set_volume(&ctx.current_song_sound, 0.0f);
     else
-        ma_sound_set_volume(&ctx.current_song_sound, mp_ctx.volume);
+        ma_sound_set_volume(&ctx.current_song_sound, mp_ctx.volume * mp_ctx.current_song->volume);
 }
 
 void mp_toggle_mute()
@@ -1097,6 +1097,11 @@ void mp_play_album(AlbumID album_id)
     mp_play_next();
 }
 
+void mp_get_song_lyrics(SongID song_id, char* lyrics_buffer, size_t lyrics_buffer_size)
+{
+    db_get_song_lyrics(song_id, lyrics_buffer, lyrics_buffer_size);
+}
+
 void mp_update_song_lyrics(SongID song_id, const char* lyrics)
 {
     db_update_song_lyrics(song_id, lyrics);
@@ -1104,9 +1109,11 @@ void mp_update_song_lyrics(SongID song_id, const char* lyrics)
         snprintf(mp_ctx.current_song_lyrics, sizeof(mp_ctx.current_song_lyrics), "%s", lyrics);
 }
 
-void mp_get_song_lyrics(SongID song_id, char* lyrics_buffer, size_t lyrics_buffer_size)
+void mp_update_song_volume(SongID song_id, float volume)
 {
-    db_get_song_lyrics(song_id, lyrics_buffer, lyrics_buffer_size);
+    db_update_song_volume(song_id, volume);
+    if (mp_ctx.current_song != nullptr && mp_ctx.current_song->id == song_id)
+        mp_update_volume();
 }
 
 void mp_pin_song(SongID song_id)
