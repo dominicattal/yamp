@@ -30,6 +30,7 @@ using MPUID = uint64_t;
 #define MPUID_SHIFT 62
 #define MPUID_ID_MASK ((1ULL<<MPUID_SHIFT)-1)
 #define MPUID_TYPE_MASK (3ULL<<MPUID_SHIFT)
+#define MAX_LYRICS_SIZE (1<<15)
 
 enum MPUIDEnum : MPUID {
     MPUID_SONG,
@@ -47,6 +48,8 @@ enum LoopMode {
 struct Song {
     std::string title;
     std::string path;
+    uint64_t begin_pcm_frame;
+    uint64_t end_pcm_frame;
     SongID id;
     float length;
 };
@@ -125,6 +128,11 @@ struct MPContext {
     LruCacheRef<Song> current_song;
     LruCacheRef<Artist> current_song_artist;
     LruCacheRef<Album> current_song_album;
+    char current_song_lyrics[MAX_LYRICS_SIZE];
+
+    // in seconds
+    float current_song_cursor;
+    float current_song_length;
 
     // this stores songs the user explicity queues up
     std::deque<LruCacheRef<Song>> queue;
@@ -147,10 +155,6 @@ struct MPContext {
 
     bool mute;
     float volume;
-
-    // seconds
-    float current_song_cursor;
-    float current_song_length;
 
     // whether to play songs in random order. when this is on, music will play even
     // if the end of the queue is reached
@@ -230,6 +234,9 @@ LruCacheRef<std::vector<int>> mp_get_albums_from_artist(ArtistID artist_id);
 SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
 std::vector<LruCacheRef<Playlist>> mp_get_playlists();
+
+void mp_get_song_lyrics(SongID song_id, char* lryics_buffer, size_t lyrics_buffer_size);
+void mp_update_song_lyrics(SongID song_id, const char* lyrics);
 
 void mp_pin_song(SongID song_id);
 void mp_pin_album(AlbumID album_id);

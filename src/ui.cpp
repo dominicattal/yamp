@@ -127,6 +127,7 @@ struct UIContext {
         GLTexture close_button;
         GLTexture maximize_button;
         GLTexture round_rewind_button;
+        GLTexture mixer_button;
         GLTexture volume;
         GLTexture mute;
     } textures;
@@ -157,6 +158,8 @@ struct UIContext {
         std::vector<SongTrack> song_tracks;
         std::vector<LruCacheRef<Song>> songs;
         std::vector<LruCacheRef<Album>> albums;
+
+        char song_lyrics[MAX_LYRICS_SIZE];
 
         SearchResult<Song> search_result;
     } center;
@@ -635,6 +638,7 @@ static void reset_center_view_containers()
     ctx.center.song_tracks.clear();
     ctx.center.songs.clear();
     ctx.center.albums.clear();
+    ctx.center.song_lyrics[0] = '\0';
 }
 
 static void set_center_view_lyrics(const LruCacheRef<Song>& song)
@@ -686,6 +690,8 @@ static void set_center_view_song(LruCacheRef<Song>&& song)
     ctx.center.album = mp_get_album_from_song(song->id);
     ctx.center.song = std::move(song);
     reset_center_view_containers();
+
+    mp_get_song_lyrics(song->id, ctx.center.song_lyrics, sizeof(ctx.center.song_lyrics));
 
     push_history_entry(SHOW_CENTER_SONG, ctx.center.song->id);
 }
@@ -821,6 +827,7 @@ static void initialize_default_textures()
     initialize_default_texture(&ctx.textures.close_button.id, "assets/close-edited.png");
     initialize_default_texture(&ctx.textures.maximize_button.id, "assets/maximize-edited.png");
     initialize_default_texture(&ctx.textures.round_rewind_button.id, "assets/round-rewind-edited.png");
+    initialize_default_texture(&ctx.textures.mixer_button.id, "assets/mixer-edited.png");
     glGenTextures(1, &ctx.right.texture);
 }
 
@@ -1007,6 +1014,8 @@ void ui_cleanup()
 
     glfwDestroyWindow(ctx.window);
     glfwTerminate();
+
+    destroy_cache_references();
 
     SPDLOG_INFO("UI cleaned up");
 }
@@ -1227,6 +1236,8 @@ static void draw_song_info()
 
     ImVec2 origin = ImGui::GetCursorPos();
 
+    static bool show_lyrics;
+
     const ImVec2 album_art_size = ImVec2(210, 210);
     const float album_art_padding = 10.0f;
 
@@ -1286,8 +1297,72 @@ static void draw_song_info()
         {
             mp_pin_song(song->id);
         }
+
+        ImGui::SameLine();
+        if (ImGui::ImageButton("Lyrics", ctx.textures.lyrics_button.id, ImVec2(32, 32)))
+        {
+            show_lyrics = true;
+        }
+
+        ImGui::SameLine();
+        if (ImGui::ImageButton("Mixer", ctx.textures.mixer_button.id, ImVec2(32, 32)))
+        {
+        }
+
         ImGui::EndChild();
     }
+
+    ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
+    ImGui::Separator();
+    ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
+    ImGui::BeginChild("more_song_info", ImGui::GetContentRegionAvail());
+    if (show_lyrics)
+    {
+        static bool editing;
+        static bool edited;
+        editing ^= ImGui::Button("Edit");
+        ImGui::SameLine();
+        if (ImGui::Button("Save"))
+        {
+            mp_update_song_lyrics(ctx.center.song->id, ctx.center.song_lyrics);
+            edited = false;
+            editing = false;
+        }
+        if (edited)
+        {
+            ImGui::SameLine();
+            ImGui::Text("(Unsaved Changes)");
+        }
+
+        ImGui::BeginChild("lyrics", ImGui::GetContentRegionAvail());
+        if (editing)
+        {
+            ImGui::PushFont(NULL, 24.0f);
+            //ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+            edited |= ImGui::InputTextMultiline(
+                "##textarea",
+                ctx.center.song_lyrics,
+                sizeof(ctx.center.song_lyrics),
+                ImVec2(-1.0f, -1.0f)
+                );
+            //ImGui::PopStyleVar();
+            ImGui::PopFont();
+        }
+        else
+        {
+            const ImVec2 frame_padding = ImGui::GetStyle().FramePadding;
+            ImGui::PushFont(NULL, 24.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + frame_padding.x);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + frame_padding.y);
+            if (ctx.center.song_lyrics[0] == '\0')
+                ImGui::Text("No Lyrics");
+            else
+                ImGui::TextWrapped("%s", ctx.center.song_lyrics);
+            ImGui::PopFont();
+        }
+        ImGui::EndChild();
+    }
+    ImGui::EndChild();
 }
 
 static void draw_album_info()
@@ -2383,7 +2458,19 @@ static void draw_edit()
 
 static void draw_lyrics()
 {
-    ImGui::Text("Lyrics");
+    const float margin = 10.0f;
+    ImGui::SetWindowFontScale(1.5f); 
+    if (mp_ctx.current_song_lyrics[0] == '\0')
+    {
+        imgui_aligned_text("No Lyrics", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail(), ALIGN_CENTER, ALIGN_CENTER);
+    }
+    else
+    {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + margin);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + margin);
+        ImGui::TextWrapped("%s", mp_ctx.current_song_lyrics);
+    }
+    ImGui::SetWindowFontScale(1.0f); 
 }
 
 static void draw_center()

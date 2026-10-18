@@ -3,7 +3,10 @@ CREATE TABLE IF NOT EXISTS Songs (
     title VARCHAR(256),
     path VARCHAR(256),
     cover BLOB,
-    length REAL
+    length REAL,
+    begin_pcm_frame INTEGER,
+    end_pcm_frame INTEGER,
+    lyrics TEXT
 );
 
 CREATE TABLE IF NOT EXISTS Artists (
