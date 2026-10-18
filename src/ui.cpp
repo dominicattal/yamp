@@ -1451,67 +1451,6 @@ static void draw_song_info()
         ImGui::SameLine();
         if (imgui_custom_slider_float("##Volume", &ctx.center.song->volume, 0.0f, 2.0f, volume_slider_size))
             mp_update_song_volume(ctx.center.song->id, ctx.center.song->volume);
-
-        //static float dummy;
-        //ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        //ImGui::SliderFloat("##Bounds", &dummy, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_None);
-        
-        ImGui::Text("Playback");
-        ImVec2 origin = ImGui::GetCursorPos();
-        ImVec2 origin_screen = ImGui::GetCursorScreenPos();
-        ImVec2 size = ImVec2(300.0f, 5.0f); 
-
-        ImU32 red = IM_COL32(255, 0, 0, 255);
-        ImU32 green = IM_COL32(0, 255, 0, 255);
-
-        static float min = 0.0f;
-        static float left = 1.0f;
-        static float right = 3.0f;
-        static float max = 4.0f;
-
-        float x1 = origin_screen.x + (left - min) / (max - min) * size.x;
-        float x2 = origin_screen.x + (right - min) / (max - min) * size.x;
-
-        if (left - min > 1e-5)
-        {
-            ImGui::GetWindowDrawList()->AddRectFilled(
-                    ImVec2(origin_screen.x, origin_screen.y),
-                    ImVec2(x1, origin_screen.y + size.y),
-                    red);
-        }
-
-        if (right - left > 1e-5)
-        {
-            ImGui::GetWindowDrawList()->AddRectFilled(
-                    ImVec2(x1, origin_screen.y),
-                    ImVec2(x2, origin_screen.y + size.y),
-                    green);
-        }
-
-        if (max - right > 1e-5)
-        {
-            ImGui::GetWindowDrawList()->AddRectFilled(
-                    ImVec2(x2, origin_screen.y),
-                    ImVec2(origin_screen.x + size.x, origin_screen.y + size.y),
-                    red);
-        }
-
-        //float button_padding = 5.0f;
-        //ImGui::SetCursorPos(ImVec2(origin.x, origin.y));
-
-        ImVec2 button_size(5.0f, 11.0f);
-
-        ImGui::SetCursorPosX(origin.x + (left - min) / (max - min) * size.x - button_size.x / 2.0f);
-        ImGui::SetCursorPosY(origin.y - button_size.x / 2.0f);
-        ImGui::Button("##leftbutton", button_size);
-        if (ImGui::IsItemActive())
-            left = std::clamp((ImGui::GetMousePos().x - origin_screen.x) / size.x * (max - min) + min, min, right);
-
-        ImGui::SetCursorPosX(origin.x + (right - min) / (max - min) * size.x - button_size.x / 2.0f);
-        ImGui::SetCursorPosY(origin.y - button_size.x / 2.0f);
-        ImGui::Button("##rightbutton", button_size);
-        if (ImGui::IsItemActive())
-            right = std::clamp((ImGui::GetMousePos().x - origin_screen.x) / size.x * (max - min) + min, left, max);
     }
     ImGui::EndChild();
 }
