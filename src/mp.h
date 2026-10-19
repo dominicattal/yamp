@@ -18,6 +18,7 @@ using PlaylistID = int;
 using MPUID = uint64_t;
 
 #define INVALID_ID -1
+#define INVALID_YEAR 0
 #define HISTORY_MAX_SIZE 1000
 #define STRING_LENGTH 512
 #define TEXTURE_SIZE_BITS 12
@@ -49,6 +50,7 @@ struct Song {
     std::string title;
     std::string path;
     SongID id;
+    unsigned int year;
     float length;
     float volume;
 };
@@ -71,6 +73,7 @@ struct Artist {
 struct Album {
     std::string name;
     AlbumID id;
+    unsigned int year;
     float length;
 };
 
@@ -237,6 +240,15 @@ std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 void mp_get_song_lyrics(SongID song_id, char* lryics_buffer, size_t lyrics_buffer_size);
 void mp_update_song_lyrics(SongID song_id, const char* lyrics);
 void mp_update_song_volume(SongID song_id, float volume);
+void mp_update_song(SongID song_id, const char* title);
+void mp_update_album(AlbumID album_id, const char* name);
+void mp_update_artist(ArtistID artist_id, const char* name);
+
+void mp_pin_song(SongID song_id);
+void mp_pin_album(AlbumID album_id);
+void mp_pin_artist(ArtistID artist_id);
+void mp_pin_playlist(PlaylistID playlist_id);
+
 
 void mp_pin_song(SongID song_id);
 void mp_pin_album(AlbumID album_id);

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS Songs (
     cover BLOB,
     length REAL,
     volume REAL DEFAULT 1.0,
+    year INT,
     lyrics TEXT
 );
 
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS Albums (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(256) UNIQUE,
     cover BLOB,
+    year INT,
     length REAL
 );
 
