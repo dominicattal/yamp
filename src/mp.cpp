@@ -41,10 +41,14 @@ static void db_create_song(const char* title, const char* song_path, unsigned in
 static void db_create_album(const char* name, unsigned int year, const uint8_t* art, int art_size);
 static void db_create_artist(const char* name);
 static void db_create_playlist(const char* name);
+static AlbumID db_create_default_album();
+static ArtistID db_create_default_artist();
+static PlaylistID db_create_default_playlist();
 static void db_create_artist_song(int artist_id, SongID song_id);
 static void db_create_album_song(AlbumID album_id, SongID song_id, int track);
 static void db_create_playlist_song(PlaylistID playlist_id, SongID song_id, int track);
 static void db_create_artist_album(int artist_id, AlbumID album_id);
+static bool db_create_pin(int id, MPUIDEnum type);
 
 // Read
 static SongID db_get_song_id(const char* song_path);
@@ -65,10 +69,13 @@ static std::vector<SongTrackID> db_get_songs_from_playlist(PlaylistID playlist_i
 static std::vector<SongID> db_get_songs_from_artist(int artist_id);
 static std::vector<AlbumID> db_get_albums_from_artist(int artist_id);
 static std::vector<PlaylistID> db_get_playlists();
-static int db_get_num_playlists();
 static bool db_exists_artist_album(ArtistID artist_id, AlbumID album_id);
 static int db_get_random_song();
 static void db_get_song_lyrics(SongID song_id, char* lyrics_buffer, size_t lyrics_buffer_size);
+static int db_get_num_songs();
+static int db_get_num_albums();
+static int db_get_num_artists();
+static int db_get_num_playlists();
 
 // Update
 static void db_update_song(SongID song_id, const char* new_title);
@@ -143,7 +150,9 @@ static Album db_get_album_info(AlbumID album_id)
     [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     album.id = album_id;
-    album.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (name != nullptr)
+        album.name = name;
     album.length = sqlite3_column_double(stmt, 1);
     album.year = sqlite3_column_int(stmt, 2);
     sqlite3_finalize(stmt);
@@ -179,7 +188,9 @@ static Artist db_get_artist_info(ArtistID artist_id)
         SPDLOG_INFO("{}", artist_id);
     }
     assert(res == SQLITE_ROW);
-    artist.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (name != nullptr)
+        artist.name = name;
 
     return artist;
 }
@@ -319,17 +330,6 @@ static std::vector<PlaylistID> db_get_playlists()
     return playlists;
 }
 
-static int db_get_num_playlists()
-{
-    sqlite3_stmt* stmt;
-    const char* query = "SELECT COUNT(id) FROM Playlists";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_step(stmt);
-    int num_playlists = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-    return num_playlists;
-}
-
 static ArtistID db_get_artist_id(const char* name)
 {
     sqlite3_stmt* stmt;
@@ -350,6 +350,27 @@ static void db_create_artist(const char* name)
     sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+}
+
+static ArtistID db_create_default_artist()
+{
+    const char* query = "INSERT INTO Artists DEFAULT VALUES";
+    sqlite3_exec(ctx.db, query, nullptr, nullptr, nullptr);
+    return sqlite3_last_insert_rowid(ctx.db);
+}
+
+static PlaylistID db_create_default_playlist()
+{
+    const char* query = "INSERT INTO Playlists DEFAULT VALUES";
+    sqlite3_exec(ctx.db, query, nullptr, nullptr, nullptr);
+    return sqlite3_last_insert_rowid(ctx.db);
+}
+
+static AlbumID db_create_default_album()
+{
+    const char* query = "INSERT INTO Albums DEFAULT VALUES";
+    sqlite3_exec(ctx.db, query, nullptr, nullptr, nullptr);
+    return sqlite3_last_insert_rowid(ctx.db);
 }
 
 static void db_create_song(const char* title, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size)
@@ -633,6 +654,50 @@ static void db_get_song_lyrics(SongID song_id, char* lyrics_buffer, size_t lyric
     sqlite3_finalize(stmt);
 }
 
+static int db_get_num_songs()
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT COUNT(id) FROM Songs";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_step(stmt);
+    int num_songs = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    return num_songs;
+}
+
+static int db_get_num_albums()
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT COUNT(id) FROM Albums";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_step(stmt);
+    int num_albums = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    return num_albums;
+}
+
+static int db_get_num_artists()
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT COUNT(id) FROM Artists";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_step(stmt);
+    int num_artists = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    return num_artists;
+}
+
+static int db_get_num_playlists()
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT COUNT(id) FROM Playlists";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
+    sqlite3_step(stmt);
+    int num_playlists = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    return num_playlists;
+}
+
 static int db_get_num_pins()
 {
     sqlite3_stmt* stmt;
@@ -671,7 +736,7 @@ static void db_create_artist_album(ArtistID artist_id, AlbumID album_id)
     sqlite3_finalize(stmt);
 }
 
-static void db_create_pin(int id, MPUIDEnum type)
+static bool db_create_pin(int id, MPUIDEnum type)
 {
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Pins (id, mp_type, pin_order) VALUES (?1, ?2, ?3)";
@@ -679,8 +744,9 @@ static void db_create_pin(int id, MPUIDEnum type)
     sqlite3_bind_int(stmt, 1, id);
     sqlite3_bind_int(stmt, 2, type);
     sqlite3_bind_int(stmt, 3, db_get_num_pins() + 1);
-    sqlite3_step(stmt);
+    int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    return res == SQLITE_DONE;
 }
 
 // -----------------------
@@ -896,16 +962,6 @@ void mp_reset_loaded_songs()
     mp_ctx.added_songs.clear();
     mp_ctx.added_artists.clear();
     mp_ctx.added_albums.clear();
-}
-
-LruCacheRef<Playlist> mp_create_playlist()
-{
-    char default_playlist_name[64];
-    int num_playlists = db_get_num_playlists();
-    snprintf(default_playlist_name, sizeof(default_playlist_name), "Unnamed Playlist (%d)", num_playlists);
-    db_create_playlist(default_playlist_name);
-    PlaylistID playlist_id = db_get_playlist_id(default_playlist_name);
-    return mp_get_playlist(playlist_id);
 }
 
 void mp_rename_playlist(PlaylistID playlist_id, const char* new_playlist_name)
@@ -1179,9 +1235,47 @@ void mp_update_artist(ArtistID artist_id, const char* name)
     }
 }
 
+void mp_update_song_artist(SongID song_id, ArtistID artist_id)
+{
+    (void)song_id; (void)artist_id;
+}
+
+void mp_update_song_album(SongID song_id, AlbumID album_id)
+{
+    (void)song_id; (void)album_id;
+}
+
+void mp_update_album_artist(AlbumID album_id, ArtistID artist_id)
+{
+    (void)album_id; (void)artist_id;
+}
+
+LruCacheRef<Artist> mp_create_artist()
+{
+    ArtistID artist_id = db_create_default_artist();
+    db_update_artist(artist_id, std::format("Unnamed Artist #{}", artist_id).c_str());
+    return mp_get_artist(artist_id);
+}
+
+LruCacheRef<Album> mp_create_album()
+{
+    AlbumID album_id = db_create_default_album();
+    db_update_album(album_id, std::format("Unnamed Album #{}", album_id).c_str());
+    return mp_get_album(album_id);
+}
+
+LruCacheRef<Playlist> mp_create_playlist()
+{
+    PlaylistID playlist_id = db_create_default_playlist();
+    db_update_playlist(playlist_id, std::format("Unnamed Playlist #{}", playlist_id).c_str());
+    return mp_get_playlist(playlist_id);
+}
+
 void mp_pin_song(SongID song_id)
 {
-    db_create_pin(song_id, MPUID_SONG);
+    if (!db_create_pin(song_id, MPUID_SONG))
+        return;
+
     mp_ctx.pins.push_back(Pin{
                 .song = mp_get_song(song_id),
                 .album = nullptr,
@@ -1194,7 +1288,9 @@ void mp_pin_song(SongID song_id)
 
 void mp_pin_album(AlbumID album_id)
 {
-    db_create_pin(album_id, MPUID_ALBUM);
+    if (!db_create_pin(album_id, MPUID_ALBUM))
+        return;
+    
     mp_ctx.pins.push_back(Pin{
                 .song = nullptr,
                 .album = mp_get_album(album_id),
@@ -1207,7 +1303,9 @@ void mp_pin_album(AlbumID album_id)
 
 void mp_pin_artist(ArtistID artist_id)
 {
-    db_create_pin(artist_id, MPUID_ARTIST);
+    if (!db_create_pin(artist_id, MPUID_ARTIST))
+        return;
+
     mp_ctx.pins.push_back(Pin{
                 .song = nullptr,
                 .album = nullptr,
@@ -1220,7 +1318,9 @@ void mp_pin_artist(ArtistID artist_id)
 
 void mp_pin_playlist(PlaylistID playlist_id)
 {
-    db_create_pin(playlist_id, MPUID_PLAYLIST);
+    if (!db_create_pin(playlist_id, MPUID_PLAYLIST))
+        return;
+
     mp_ctx.pins.push_back(Pin{
                 .song = nullptr,
                 .album = nullptr,
@@ -1659,6 +1759,11 @@ void mp_init()
             }
             return pin;
         });
+
+    mp_ctx.num_songs = db_get_num_songs();
+    mp_ctx.num_albums = db_get_num_albums();
+    mp_ctx.num_artists = db_get_num_artists();
+    mp_ctx.num_playlists = db_get_num_playlists();
 }
 
 void mp_cleanup()

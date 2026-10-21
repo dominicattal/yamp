@@ -869,6 +869,7 @@ static void initialize_default_texture(GLuint* id, const char* path)
     FILE* fptr = fopen(path, "r");
     int width, height;
     unsigned char* data = stbi_load_from_file(fptr, &width, &height, &nc, 4);
+    assert(data);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     stbi_image_free(data);
     fclose(fptr);
@@ -889,28 +890,28 @@ static void initialize_default_texture_slot(const char* path)
 
 static void initialize_default_textures()
 {
-    initialize_default_texture_slot("assets/No-album-art.png");
-    initialize_default_texture(&ctx.textures.play_button.id, "assets/play-edited.png");
-    initialize_default_texture(&ctx.textures.queue_button.id, "assets/add-to-playlist.png");
-    initialize_default_texture(&ctx.textures.skip_button.id, "assets/skip.png");
-    initialize_default_texture(&ctx.textures.pause_button.id, "assets/pause.png");
-    initialize_default_texture(&ctx.textures.repeat_button.id, "assets/repeat-edited.png");
-    initialize_default_texture(&ctx.textures.shuffle_button.id, "assets/shuffle-edited.png");
-    initialize_default_texture(&ctx.textures.autoplay_button.id, "assets/autoplay-edited.png");
-    initialize_default_texture(&ctx.textures.volume.id, "assets/volume-up-edited.png");
-    initialize_default_texture(&ctx.textures.mute.id, "assets/mute-edited.png");
-    initialize_default_texture(&ctx.textures.show_queue_button.id, "assets/show-queue-edited.png");
-    initialize_default_texture(&ctx.textures.clear_queue_button.id, "assets/clear-queue.png");
-    initialize_default_texture(&ctx.textures.menu_button.id, "assets/menu-edited.png");
-    initialize_default_texture(&ctx.textures.pin_button.id, "assets/push-pin-edited.png");
-    initialize_default_texture(&ctx.textures.home_button.id, "assets/home-edited.png");
-    initialize_default_texture(&ctx.textures.pencil_button.id, "assets/pencil-edited.png");
-    initialize_default_texture(&ctx.textures.settings_button.id, "assets/setting-edited.png");
-    initialize_default_texture(&ctx.textures.lyrics_button.id, "assets/song-lyrics-edited.png");
-    initialize_default_texture(&ctx.textures.close_button.id, "assets/close-edited.png");
-    initialize_default_texture(&ctx.textures.maximize_button.id, "assets/maximize-edited.png");
-    initialize_default_texture(&ctx.textures.round_rewind_button.id, "assets/round-rewind-edited.png");
-    initialize_default_texture(&ctx.textures.mixer_button.id, "assets/mixer-edited.png");
+    initialize_default_texture_slot("assets/icons/No-album-art.png");
+    initialize_default_texture(&ctx.textures.play_button.id, "assets/icons/play.png");
+    initialize_default_texture(&ctx.textures.queue_button.id, "assets/icons/add-to-playlist.png");
+    initialize_default_texture(&ctx.textures.skip_button.id, "assets/icons/skip.png");
+    initialize_default_texture(&ctx.textures.pause_button.id, "assets/icons/pause.png");
+    initialize_default_texture(&ctx.textures.repeat_button.id, "assets/icons/repeat.png");
+    initialize_default_texture(&ctx.textures.shuffle_button.id, "assets/icons/shuffle.png");
+    initialize_default_texture(&ctx.textures.autoplay_button.id, "assets/icons/autoplay.png");
+    initialize_default_texture(&ctx.textures.volume.id, "assets/icons/volume-up.png");
+    initialize_default_texture(&ctx.textures.mute.id, "assets/icons/mute.png");
+    initialize_default_texture(&ctx.textures.show_queue_button.id, "assets/icons/show-queue.png");
+    initialize_default_texture(&ctx.textures.clear_queue_button.id, "assets/icons/clear-queue.png");
+    initialize_default_texture(&ctx.textures.menu_button.id, "assets/icons/menu.png");
+    initialize_default_texture(&ctx.textures.pin_button.id, "assets/icons/push-pin.png");
+    initialize_default_texture(&ctx.textures.home_button.id, "assets/icons/home.png");
+    initialize_default_texture(&ctx.textures.pencil_button.id, "assets/icons/pencil.png");
+    initialize_default_texture(&ctx.textures.settings_button.id, "assets/icons/setting.png");
+    initialize_default_texture(&ctx.textures.lyrics_button.id, "assets/icons/song-lyrics.png");
+    initialize_default_texture(&ctx.textures.close_button.id, "assets/icons/close.png");
+    initialize_default_texture(&ctx.textures.maximize_button.id, "assets/icons/maximize.png");
+    initialize_default_texture(&ctx.textures.round_rewind_button.id, "assets/icons/round-rewind.png");
+    initialize_default_texture(&ctx.textures.mixer_button.id, "assets/icons/mixer.png");
     glGenTextures(1, &ctx.right.texture);
 }
 
@@ -1505,11 +1506,6 @@ static void draw_album_info()
     assert(ctx.center.album != nullptr);
 
     std::vector<SongTrack>& tracks = ctx.center.song_tracks;
-    if (tracks.empty())
-    {
-        ImGui::Text("No songs in album");
-        return;
-    }
 
     LruCacheRef<Album>& album = ctx.center.album;
     LruCacheRef<Artist>& artist = ctx.center.artist;
@@ -1585,7 +1581,7 @@ static void draw_album_info()
         ImGui::SameLine();
         if (ImGui::ImageButton("Edit", ctx.textures.pencil_button.id, ImVec2(32, 32)))
         {
-            show_edit = true;
+            show_edit = !show_edit;
         }
 
         ImGui::SameLine();
@@ -1633,8 +1629,17 @@ static void draw_album_info()
         ImGui::Text("Album");
         ImGui::SameLine();
         edited |= ImGui::InputText("##Album", ctx.center.edit.album, sizeof(ctx.center.edit.album));
-        ImGui::Text("Artist - %s", ctx.center.edit.artist);
+        ImGui::Text("Artist - ");
+        ImGui::SameLine();
+        if (ImGui::Button(ctx.center.edit.artist))
+            ImGui::OpenPopup("artist_picker");
         ImGui::Text("Year - %s", ctx.center.edit.year);
+
+        if (ImGui::BeginPopup("artist_picker"))
+        {
+            ImGui::Text("!!!!");
+            ImGui::EndPopup();
+        }
 
         ImGui::EndChild();
     }
@@ -2136,6 +2141,7 @@ static void draw_artist_info_albums()
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padding);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
     ImVec2 origin = ImGui::GetCursorPos();
+    ImGui::Dummy({0.0f, 0.0f});
 
     for (size_t i = 0; i < albums.size(); i++)
     {
@@ -2363,7 +2369,8 @@ static void draw_artist_info()
     ImGui::SameLine();
     ImGui::BeginChild("artist_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
     ImGui::SetWindowFontScale(2.0f); 
-    imgui_aligned_text(artist->name.c_str(), ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
+    const char* artist_name = (artist->name.size() > 0) ? artist->name.c_str() : "<No Artist>";
+    imgui_aligned_text(artist_name, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
     ImGui::EndChild();
 
     ImGui::SetCursorPosX(origin.x + album_art_size.x + 2.0f * album_art_padding);
@@ -2405,9 +2412,6 @@ static void draw_artist_info()
 
     if (show_edit)
     {
-        ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
-        ImGui::Separator();
-        ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
         ImGui::BeginChild("edited", ImGui::GetContentRegionAvail());
 
         static bool edited;
@@ -2572,6 +2576,11 @@ static void draw_home()
 
 
     ImGui::Text("DB: %s", config.db_path.c_str());
+
+    ImGui::Text("# Songs = %d", mp_ctx.num_songs);
+    ImGui::Text("# Albums = %d", mp_ctx.num_albums);
+    ImGui::Text("# Artists = %d", mp_ctx.num_artists);
+    ImGui::Text("# Playlists = %d", mp_ctx.num_playlists);
 }
 
 static void draw_settings()
@@ -2613,11 +2622,20 @@ static void draw_edit()
     if (ImGui::Button("Create Song"))
         ;
     if (ImGui::Button("Create Album"))
-        ;
+    {
+        set_center_view_album(mp_create_album());
+        return;
+    }
     if (ImGui::Button("Create Artist"))
-        ;
+    {
+        set_center_view_artist(mp_create_artist());
+        return;
+    }
     if (ImGui::Button("Create Playlist"))
-        ;
+    {
+        set_center_view_playlist(mp_create_playlist());
+        return;
+    }
     if (ImGui::Button("Reset"))
         mp_reset_loaded_songs();
 
@@ -3100,7 +3118,7 @@ static void draw_imgui()
     ImGui::SetNextWindowSize(display_size);
     static bool window_open = true;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
-    ImGui::Begin("UMP", &window_open, window_flags);
+    ImGui::Begin("yamp", &window_open, window_flags);
 
     static bool player_open = true;
     float player_height = (player_open) ? 128.0f : 0.0f;

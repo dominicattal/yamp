@@ -132,6 +132,11 @@ struct MPContext {
     LruCacheRef<Album> current_song_album;
     char current_song_lyrics[MAX_LYRICS_SIZE];
 
+    int num_songs;
+    int num_albums;
+    int num_artists;
+    int num_playlists;
+
     // in seconds
     float current_song_cursor;
     float current_song_length;
@@ -194,7 +199,6 @@ void mp_recursive_add_songs(const std::string& folder_path);
 void mp_reset_loaded_songs();
 
 // Add a playlist to the database. Returns the id of the created playlist.
-LruCacheRef<Playlist> mp_create_playlist();
 void mp_rename_playlist(PlaylistID playlist_id, const char* new_playlist_name);
 
 // Immediately play a song
@@ -243,12 +247,13 @@ void mp_update_song_volume(SongID song_id, float volume);
 void mp_update_song(SongID song_id, const char* title);
 void mp_update_album(AlbumID album_id, const char* name);
 void mp_update_artist(ArtistID artist_id, const char* name);
+void mp_update_song_artist(SongID song_id, ArtistID artist_id);
+void mp_update_song_album(SongID song_id, AlbumID album_id);
+void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
 
-void mp_pin_song(SongID song_id);
-void mp_pin_album(AlbumID album_id);
-void mp_pin_artist(ArtistID artist_id);
-void mp_pin_playlist(PlaylistID playlist_id);
-
+LruCacheRef<Album> mp_create_album();
+LruCacheRef<Artist> mp_create_artist();
+LruCacheRef<Playlist> mp_create_playlist();
 
 void mp_pin_song(SongID song_id);
 void mp_pin_album(AlbumID album_id);

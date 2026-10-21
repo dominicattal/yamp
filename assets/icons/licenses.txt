@@ -1,0 +1,26 @@
+Page Url
+https://commons.wikimedia.org/wiki/File:No-album-art.png
+
+File URL
+https://upload.wikimedia.org/wikipedia/commons/3/3c/No-album-art.png?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=original
+
+Attribution
+Muvikui, CC BY-SA 4.0 <https://creativecommons.org/licenses/by-sa/4.0>, via Wikimedia Commons
+<a href="https://www.flaticon.com/free-icons/close" title="close icons">Close icons created by ariefstudio - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/autoplay" title="autoplay icons">Autoplay icons created by Fantasyou - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/home-button" title="home button icons">Home button icons created by Magnific - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/song-lyrics" title="song lyrics icons">Song lyrics icons created by riajulislam - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/queue" title="queue icons">Queue icons created by Vasundhara Infotech - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/pencil" title="pencil icons">Pencil icons created by Anggara - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/volume" title="volume icons">Volume icons created by Bharat Icons - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/random" title="random icons">Random icons created by Pixel perfect - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/play" title="play icons">Play icons created by Magnific - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/repeat" title="repeat icons">Repeat icons created by KP Arts - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/maximize" title="maximize icons">Maximize icons created by Ranah Pixel Studio - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/add-to-playlist" title="add to playlist icons">Add to playlist icons created by abdul allib - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/setting" title="setting icons">Setting icons created by Phoenix Group - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/mute" title="mute icons">Mute icons created by Bharat Icons - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/pause" title="pause icons">Pause icons created by Chanut - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/skip" title="skip icons">Skip icons created by WR Graphic Garage - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/push-pin" title="push pin icons">Push pin icons created by Us and Up - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/three-dots" title="three dots icons">Three dots icons created by Rakib Hassan Rahim - Flaticon</a>
