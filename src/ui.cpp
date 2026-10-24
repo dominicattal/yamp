@@ -288,6 +288,14 @@ static void imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 reg
     ImGui::Text("%s…", buf);
 }
 
+static bool imgui_image_button(ImTextureRef tex_ref, const ImVec2& image_size, const ImVec4& tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f), const ImVec2& uv0 = ImVec2(0.0f, 0.0f), const ImVec2& uv1 = ImVec2(1.0f, 1.0f))
+{
+    ImGui::ImageWithBg(tex_ref, image_size, uv0, uv1, ImVec4(0,0,0,0), tint_col);
+    if (ImGui::IsItemHovered())
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    return ImGui::IsItemClicked();
+}
+
 static bool imgui_aligned_text_button(const char* text, ImVec2 region_start, ImVec2 region_size, AlignmentEnum h_align = ALIGN_LEFT, AlignmentEnum v_align = ALIGN_TOP)
 {
     ImVec2 text_size = ImGui::CalcTextSize(text);
@@ -462,12 +470,11 @@ static void imgui_custom_table(CustomTableParams& params)
     ImGui::EndChild();
 }
 
-static ItemActiveEnum imgui_custom_slider_float(const char* label, float* value, float min, float max, float width)
+static ItemActiveEnum imgui_custom_slider_float(const char* label, float* value, float min, float max, float width, float height = 5.0f)
 {
     (void)value; (void)min; (void)max;
     ImVec2 origin = ImGui::GetCursorPos();
     ImVec2 origin_screen = ImGui::GetCursorScreenPos();
-    float height = 5.0f;
     ImVec2 size = ImVec2(width, height); 
     float diff = max - min;
 
@@ -1022,9 +1029,22 @@ void ui_init()
     //const char* font_file_path = "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf";
     const char* font_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Inter/Inter-VariableFont_opsz,wght.ttf";
     //const char* emoji_font_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Noto_Color_Emoji/NotoColorEmoji-Regular.ttf";
+
+    // make everything 0 so i dont deal with weird default formatting issues
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
     style.FontSizeBase = 18.0f;
+    style.WindowPadding = ImVec2(0.0f, 0.0f);
+    style.WindowBorderSize = 0.0f;
+    style.WindowTitleAlign = ImVec2(0.0f, 0.0f);
+    style.ChildBorderSize = 0.0f;
+    style.PopupBorderSize = 0.0f;
+    style.FramePadding = ImVec2(0.0f, 0.0f);
+    //style.ItemSpacing = ImVec2(0.0f, 0.0f);
+    style.ItemInnerSpacing = ImVec2(0.0f, 0.0f);
+    style.CellPadding = ImVec2(0.0f, 0.0f);
+    style.TabRounding = 0.0f;
+
     style.ScaleAllSizes(main_scale);
     style.FontScaleDpi = main_scale;
     style.WindowBorderSize = 0.0f;
@@ -1189,7 +1209,7 @@ static void draw_songs_with_all_info(SearchResult<Song>& search_result)
         [&center_song, &search_result](ImVec2 region_start, ImVec2 region_size, int row)
         {
             LruCacheRef<Song>& song = search_result.entries[row];
-            ImVec2 picture_size(48, 48);
+            ImVec2 picture_size(48.0f, 48.0f);
             GLTexture tex = get_texture_from_song(song->id);
             ImGui::SetCursorPos(region_start);
             const bool hovered = imgui_is_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
@@ -1208,14 +1228,7 @@ static void draw_songs_with_all_info(SearchResult<Song>& search_result)
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-                const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
-                const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
-                const ImVec4 bg_col = IMGUI_BLANK;
-                const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-                // IDK why ImGui::Image() doesnt work here maybe investigate some other time
-                //ImGui::Image(tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
-                ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
-                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                if (imgui_image_button(tex.id, play_button_size))
                 {
                     if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
                         mp_queue_song(song->id);
@@ -1225,7 +1238,7 @@ static void draw_songs_with_all_info(SearchResult<Song>& search_result)
                 ImGui::PopStyleVar();
                 ImGui::PopStyleColor(3);
             }
-            float padding = 5.0f;
+            const float padding = 5.0f;
             bool pressed = imgui_aligned_text_button(song->title.c_str(), ImVec2(region_start.x + picture_size.x + padding, region_start.y), ImVec2(region_size.x - picture_size.x - padding, region_size.y), ALIGN_LEFT, ALIGN_CENTER);
             if (pressed)
                 center_song = std::move(song);
@@ -1373,32 +1386,33 @@ static void draw_song_info()
         ImGui::SetCursorPosY(region_start.y + region_size.y - button_size.y - 2 * ImGui::GetStyle().FramePadding.y);
 
         GLTexture tex = ctx.textures.play_button;
-        if (ImGui::ImageButton("song_play", tex.id, ImVec2(32, 32)))
+        if (imgui_image_button(tex.id, button_size))
             mp_play_song(song->id);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 0.0f));
         ImGui::SameLine();
         tex = ctx.textures.queue_button;
-        if (ImGui::ImageButton("song_queue", tex.id, ImVec2(32, 32)))
+        if (imgui_image_button(tex.id, button_size))
             mp_queue_song(song->id);
 
         ImGui::SameLine();
-        if (ImGui::ImageButton("Pin", ctx.textures.pin_button.id, ImVec2(32, 32)))
-        {
+        if (imgui_image_button(ctx.textures.pin_button.id, button_size))
             mp_pin_song(song->id);
-        }
 
         ImGui::SameLine();
-        if (ImGui::ImageButton("Lyrics", ctx.textures.lyrics_button.id, ImVec2(32, 32)))
+        if (imgui_image_button(ctx.textures.lyrics_button.id, button_size))
         {
             show_lyrics = true;
             show_mixer = false;
         }
 
         ImGui::SameLine();
-        if (ImGui::ImageButton("Mixer", ctx.textures.pencil_button.id, ImVec2(32, 32)))
+        if (imgui_image_button(ctx.textures.pencil_button.id, button_size))
         {
             show_lyrics = false;
             show_mixer = true;
         }
+        ImGui::PopStyleVar();
 
         ImGui::EndChild();
     }
@@ -1486,10 +1500,10 @@ static void draw_song_info()
 
         GLTexture tex = ctx.textures.volume;
         float volume_slider_size = 150.0f;
-        float volume_icon_size = 20.0f;
+        ImVec2 volume_icon_size = ImVec2(20.0f, 20.0f);
         ImGui::Text("Mixer");
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-        ImGui::Image(tex.id, ImVec2(volume_icon_size, volume_icon_size));
+        ImGui::Image(tex.id, volume_icon_size);
         ImGui::PopStyleVar();
         ImGui::SameLine();
         if (imgui_custom_slider_float("##Volume", &ctx.center.song->volume, 0.0f, 2.0f, volume_slider_size))
@@ -1554,38 +1568,39 @@ static void draw_album_info()
         ImGui::SetWindowFontScale(1.0f); 
         ImVec2 button_size(32.0f, 32.0f);
         ImGui::SetCursorPosY(region_start.y + region_size.y - button_size.y - 2 * ImGui::GetStyle().FramePadding.y);
-        if (ImGui::ImageButton("Album Play", ctx.textures.play_button.id, button_size))
+        if (imgui_image_button(ctx.textures.play_button.id, button_size))
         {
             mp_ctx.shuffle = false;
             mp_play_album(album->id);
         }
 
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 0.0f));
         ImGui::SameLine();
-        if (ImGui::ImageButton("Album Shuffle", ctx.textures.shuffle_button.id, button_size))
+        if (imgui_image_button(ctx.textures.shuffle_button.id, button_size))
         {
             mp_ctx.shuffle = true;
             mp_play_album(album->id);
         }
 
         ImGui::SameLine();
-        if (ImGui::ImageButton("Album Queue", ctx.textures.queue_button.id, button_size))
+        if (imgui_image_button(ctx.textures.queue_button.id, button_size))
             for (const auto& [song, track] : tracks)
                 mp_queue_song(song->id);
 
         ImGui::SameLine();
-        if (ImGui::ImageButton("Pin", ctx.textures.pin_button.id, button_size))
+        if (imgui_image_button(ctx.textures.pin_button.id, button_size))
         {
             mp_pin_album(album->id);
         }
 
         ImGui::SameLine();
-        if (ImGui::ImageButton("Edit", ctx.textures.pencil_button.id, ImVec2(32, 32)))
+        if (imgui_image_button(ctx.textures.pencil_button.id, ImVec2(32, 32)))
         {
             show_edit = !show_edit;
         }
 
         ImGui::SameLine();
-        if (ImGui::ImageButton("Menu", ctx.textures.menu_button.id, button_size))
+        if (imgui_image_button(ctx.textures.menu_button.id, button_size))
             ImGui::OpenPopup("add_to_playlist_popup");
         if (ImGui::BeginPopup("add_to_playlist_popup"))
         {
@@ -1604,6 +1619,7 @@ static void draw_album_info()
             }
             ImGui::EndPopup();
         }
+        ImGui::PopStyleVar();
         ImGui::EndChild();
     }
 
@@ -2367,23 +2383,27 @@ static void draw_artist_info()
     ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 
     ImGui::SameLine();
-    ImGui::BeginChild("artist_view", ImVec2(ImGui::GetContentRegionAvail().x, 200));
+
+    ImVec2 region_start(
+            origin.x + album_art_size.x + 2 * album_art_padding,
+            origin.y + album_art_padding);
+    ImGui::SetCursorPos(region_start);
+    ImVec2 region_size(ImGui::GetContentRegionAvail().x, album_art_size.y);
+
+    ImGui::BeginChild("artist_view", region_size);
     ImGui::SetWindowFontScale(2.0f); 
     const char* artist_name = (artist->name.size() > 0) ? artist->name.c_str() : "<No Artist>";
     imgui_aligned_text(artist_name, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
-    ImGui::EndChild();
+    ImGui::SetWindowFontScale(1.0f); 
 
-    ImGui::SetCursorPosX(origin.x + album_art_size.x + 2.0f * album_art_padding);
-    ImGui::SetCursorPosY(origin.y + album_art_size.y + album_art_padding - 20.0f);
-    if (ImGui::ImageButton("Pin", ctx.textures.pin_button.id, ImVec2(32, 32)))
-    {
+    const ImVec2 button_size = ImVec2(32, 32);
+    ImGui::SetCursorPosY(origin.y + region_size.y - button_size.y - 2 * ImGui::GetStyle().FramePadding.y);
+    if (imgui_image_button(ctx.textures.pin_button.id, button_size))
         mp_pin_artist(artist->id);
-    }
+
     ImGui::SameLine();
-    if (ImGui::ImageButton("Edit", ctx.textures.pencil_button.id, ImVec2(32, 32)))
-    {
+    if (imgui_image_button(ctx.textures.pencil_button.id, button_size))
         show_edit = true;
-    }
 
     ImGui::SameLine();
     if (ImGui::Button((show_songs) ? "Songs" : "Albums"))
@@ -2405,6 +2425,8 @@ static void draw_artist_info()
         ImGui::SameLine();
         ImGui::Text("%d/%d (%d results)", ctx.center.search_result.page_num, ctx.center.search_result.num_pages, ctx.center.search_result.num_results);
     }
+
+    ImGui::EndChild();
 
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
     ImGui::Separator();
@@ -2434,6 +2456,77 @@ static void draw_artist_info()
         draw_artist_info_songs();
     else
         draw_artist_info_albums();
+}
+
+static void draw_artist_info_old()
+{
+    assert(ctx.center.type == SHOW_CENTER_ARTIST);
+
+    LruCacheRef<Artist>& artist = ctx.center.artist;
+
+    ImVec2 origin = ImGui::GetCursorPos();
+
+    const ImVec2 album_art_size = ImVec2(210, 210);
+    const float album_art_padding = 10.0f;
+
+    static bool show_songs;
+    static bool show_edit;
+
+    ImGui::SetCursorPosX(origin.x + album_art_padding);
+    ImGui::SetCursorPosY(origin.y + album_art_padding);
+
+    GLTexture tex = get_texture_default();
+    ImGui::ImageWithBg(tex.id, album_art_size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+    ImGui::SameLine();
+
+    ImVec2 region_start(
+            origin.x + album_art_size.x + 2 * album_art_padding,
+            origin.y + album_art_padding);
+    ImGui::SetCursorPos(region_start);
+    ImVec2 region_size(ImGui::GetContentRegionAvail().x, album_art_size.y);
+
+    ImGui::BeginChild("artist_view", region_size, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    region_start = ImGui::GetCursorPos();
+    ImGui::SetWindowFontScale(2.0f); 
+    imgui_aligned_text(artist->name.c_str(), region_start, region_size);
+
+    ImGui::SetWindowFontScale(1.0f); 
+    ImVec2 button_size(32.0f, 32.0f);
+    ImGui::SetCursorPosY(region_start.y + region_size.y - button_size.y - 2 * ImGui::GetStyle().FramePadding.y);
+    if (imgui_image_button(ctx.textures.pin_button.id, button_size))
+        mp_pin_artist(artist->id);
+
+    ImGui::SameLine();
+    if (imgui_image_button(ctx.textures.pencil_button.id, button_size))
+        show_edit = true;
+
+    ImGui::SameLine();
+    if (ImGui::Button((show_songs) ? "Songs" : "Albums"))
+    {
+        if (show_edit)
+            show_edit = false;
+        else
+            show_songs = !show_songs;
+    }
+
+    if (show_songs)
+    {
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("Left", ImGuiDir_Left) && ctx.center.search_result.page_num > 1)
+            ctx.center.search_result = mp_get_paginated_songs_from_artist(artist->id, SEARCH_RESULTS_PER_PAGE, --ctx.center.search_result.page_num);
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("Right", ImGuiDir_Right) && ctx.center.search_result.page_num < ctx.center.search_result.num_pages)
+            ctx.center.search_result = mp_get_paginated_songs_from_artist(artist->id, SEARCH_RESULTS_PER_PAGE, ++ctx.center.search_result.page_num);
+        ImGui::SameLine();
+        ImGui::Text("%d/%d (%d results)", ctx.center.search_result.page_num, ctx.center.search_result.num_pages, ctx.center.search_result.num_results);
+    }
+
+    ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
+    ImGui::Separator();
+    ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
+
+    ImGui::EndChild();
 }
 
 static void pop_history()
@@ -2481,24 +2574,25 @@ static void draw_header(ImVec2 size)
     ImVec2 button_size = ImVec2(32.0f, 32.0f);
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + 5.0f, (size.y - button_size.y - ImGui::GetStyle().FramePadding.y) / 2.0f));
 
-    ImVec2 uv0 = ImVec2(0.0f, 0.0f);
-    ImVec2 uv1 = ImVec2(1.0f, 1.0f);
-    ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    ImVec4 tint = (ctx.quick_access_open) ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-    if (ImGui::ImageButton("##pin", ctx.textures.pin_button.id, button_size, uv0, uv1, bg, tint))
+    float advance = 10.0f;
+    ImVec4 tint = (ctx.quick_access_open) ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+    if (imgui_image_button(ctx.textures.pin_button.id, button_size, tint))
         ctx.quick_access_open = !ctx.quick_access_open;
 
 
     ImGui::SameLine();
-    if (ImGui::ImageButton("##home", ctx.textures.home_button.id, button_size))
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + advance);
+    if (imgui_image_button(ctx.textures.home_button.id, button_size))
         set_center_view_home();
 
     ImGui::SameLine();
-    if (ImGui::ImageButton("##settings", ctx.textures.settings_button.id, button_size))
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + advance);
+    if (imgui_image_button(ctx.textures.settings_button.id, button_size))
         set_center_view_settings();
     
     ImGui::SameLine();
-    if (ImGui::ImageButton("##pencils", ctx.textures.pencil_button.id, button_size))
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + advance);
+    if (imgui_image_button(ctx.textures.pencil_button.id, button_size))
         set_center_view_edit();
 
     ImGui::SameLine();
@@ -2528,17 +2622,6 @@ static void draw_header(ImVec2 size)
     }
     if (ImGui::IsItemClicked())
         snprintf(ctx.search_query, sizeof(ctx.search_query), "");
-
-    //ImGui::SetCursorPos(ImVec2(size.x - 200.0f, 5.0f));
-    //if (ImGui::ImageButton("Minimize", ctx.textures.maximize_button.id, button_size))
-    //    glfwIconifyWindow(ctx.window);
-
-    //ImGui::SameLine();
-    //ImGui::ImageButton("Fullscreen", ctx.textures.maximize_button.id, button_size);
-
-    //ImGui::SameLine();
-    //ImGui::ImageButton("Close", ctx.textures.close_button.id, button_size);
-
 }
 
 static void draw_home()
@@ -2809,7 +2892,6 @@ static void draw_right_side()
 
 static void draw_player(const ImVec2 size)
 {
-    (void)size;
     ImGui::SetCursorPos(ImVec2(14, 14));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -2832,8 +2914,18 @@ static void draw_player(const ImVec2 size)
     float song_cursor_x = (size.x - cursor_width) / 2.0f;
 
     ImGui::SetCursorPos(song_info_offset);
-    if (imgui_aligned_text_button(song_text, song_info_offset, ImVec2(song_cursor_x - song_info_offset.x, ImGui::GetContentRegionAvail().y), ALIGN_LEFT, ALIGN_LEFT))
-        set_center_view_song(mp_get_song(mp_ctx.current_song->id));
+    {
+        const ImVec2 region_start = song_info_offset;
+        const ImVec2 region_size = ImVec2(song_cursor_x - song_info_offset.x, ImGui::GetContentRegionAvail().y);
+        if (mp_ctx.current_song != nullptr)
+        {
+            if (imgui_aligned_text_button(song_text, region_start, region_size, ALIGN_LEFT, ALIGN_LEFT))
+                set_center_view_song(mp_get_song(mp_ctx.current_song->id));
+        }
+        else
+            imgui_aligned_text(song_text, region_start, region_size, ALIGN_LEFT, ALIGN_LEFT);
+    }
+
     song_info_offset.y += ImGui::CalcTextSize(song_text).y + padding;
 
     if (mp_ctx.current_song_artist != nullptr)
@@ -2855,75 +2947,69 @@ static void draw_player(const ImVec2 size)
     int cursor = static_cast<int>(mp_ctx.current_song_cursor);
     int length = static_cast<int>(mp_ctx.current_song_length);
     snprintf(cursor_str, sizeof(cursor_str), "%d:%02d / %d:%02d", cursor / 60, cursor % 60, length / 60, length % 60);
-    ImGui::SetCursorPos(ImVec2(song_cursor_x, 10.0f));
+    ImGui::SetCursorPos(ImVec2(song_cursor_x, 15.0f));
     ImGui::Text("%s", cursor_str);
-    ImGui::SetCursorPos(ImVec2(song_cursor_x, 10.0f + ImGui::CalcTextSize(cursor_str).y + 5.0f));
+    ImGui::SetCursorPos(ImVec2(song_cursor_x, 15.0f + ImGui::CalcTextSize(cursor_str).y + 5.0f));
     if (imgui_custom_slider_float("##cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, cursor_width))
-    {
         mp_update_cursor();
-    }
 
     const ImVec2 button_size = ImVec2(32.0f, 32.0f);
-    float spacing = 16.0f;
+    float spacing = 20.0f;
     int num_buttons = 7;
     float width = 32.0f * num_buttons + spacing * (num_buttons - 1);
-    float advance = 32.0f + spacing;
+    float advance = button_size.x + spacing;
     float cursor_x = (size.x - width) / 2.0f;
-    float cursor_y = 50.0f;
-    bool key_pressed = !ImGui::GetIO().WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9));
+    float cursor_y = 60.0f;
+    constexpr float skip_time = 5.0f;
+    ImVec4 tmp_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
 
-    ImGui::SetCursorPos(ImVec2(cursor_x, 50.0f));
+    ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     {
-        ImVec2 uv0 = ImVec2(0,0);
-        ImVec2 uv1 = ImVec2(1,1);
-        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        ImVec4 tint{};
         if (mp_ctx.loop_mode == LOOP_GROUP)
-            tint.x = 1.0f;
+            tint = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
         else if (mp_ctx.loop_mode == LOOP_TRACK)
-            tint.y = 1.0f;
-        if (ImGui::ImageButton("Repeat Button", ctx.textures.repeat_button.id, button_size, uv0, uv1, bg, tint))
+            tint = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+        else
+            tint = ImVec4(0.0f, 0.0f, 1.0f, 1.0f);
+        if (imgui_image_button(ctx.textures.repeat_button.id, button_size, tint))
             mp_ctx.loop_mode = static_cast<LoopMode>((static_cast<int>(mp_ctx.loop_mode) + 1) % 3);
     }
 
-    constexpr float skip_time = 5.0f;
-
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-    if (ImGui::ImageButton("Round Previous Button", ctx.textures.round_rewind_button.id, button_size))
+    if (imgui_image_button(ctx.textures.round_rewind_button.id, button_size, tmp_col))
         mp_go_backward_in_current_song(skip_time);
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-    if (ImGui::ImageButton("Previous Button", ctx.textures.skip_button.id, button_size, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
+    if (imgui_image_button(ctx.textures.skip_button.id, button_size, tmp_col, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
         mp_play_previous();
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     tex = (mp_ctx.paused) ? ctx.textures.play_button : ctx.textures.pause_button;
-    if (ImGui::ImageButton("Pause/Resume Button", tex.id, ImVec2(32, 32)) || key_pressed)
+    const bool key_pressed = !ImGui::GetIO().WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_F9));
+    if (imgui_image_button(tex.id, button_size, tmp_col) || key_pressed)
         mp_pause_or_resume();
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-    if (ImGui::ImageButton("Next Button", ctx.textures.skip_button.id, button_size))
+    if (imgui_image_button(ctx.textures.skip_button.id, button_size, tmp_col))
         mp_play_next();
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-    if (ImGui::ImageButton("Round Next Button", ctx.textures.round_rewind_button.id, button_size, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
+    if (imgui_image_button(ctx.textures.round_rewind_button.id, button_size, tmp_col, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
         mp_go_forward_in_current_song(skip_time);
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     {
-        ImVec2 uv0 = ImVec2(0,0);
-        ImVec2 uv1 = ImVec2(1,1);
-        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-        ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-        if (mp_ctx.shuffle)
-            tint.x = 1.0f;
-        if (ImGui::ImageButton("Shuffle Button", ctx.textures.shuffle_button.id, button_size, uv0, uv1, bg, tint))
+        ImVec4 tint = (mp_ctx.shuffle)
+            ? ImVec4(1.0f, 0.0f, 0.0f, 1.0f)
+            : ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+        if (imgui_image_button(ctx.textures.shuffle_button.id, button_size, tint))
             mp_toggle_shuffle();
     }
 
@@ -2931,21 +3017,18 @@ static void draw_player(const ImVec2 size)
         GLTexture tex = (mp_ctx.mute) ? ctx.textures.mute : ctx.textures.volume;
         float right_edge_spacing = 10.0f;
         float icon_spacing = 4.0f;
-        float volume_slider_size = 150.0f;
-        float volume_icon_size = 20.0f;
-        ImGui::SetCursorPos(ImVec2(size.x - volume_slider_size - volume_icon_size - right_edge_spacing - icon_spacing, 20.0f));
+        ImVec2 volume_icon_size = ImVec2(20.0f, 20.0f);
+        float slider_y_offset = 30.0f;
+        ImVec2 slider_size = ImVec2(175.0f, 5.0f);
+        ImGui::SetCursorPos(ImVec2(size.x - slider_size.x - volume_icon_size.x - right_edge_spacing - icon_spacing, slider_y_offset));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-        if (ImGui::ImageButton("##Volume Button", tex.id, ImVec2(volume_icon_size, volume_icon_size)))
+        if (imgui_image_button(tex.id, volume_icon_size))
             mp_toggle_mute();
         ImGui::PopStyleVar();
-        ImGui::SetCursorPos(ImVec2(size.x - volume_slider_size - right_edge_spacing, 20.0f));
-        if (imgui_custom_slider_float("##volume", &mp_ctx.volume, 0.0f, 2.0f, volume_slider_size))
-            mp_update_volume();
 
-        ImVec2 uv0 = ImVec2(0,0);
-        ImVec2 uv1 = ImVec2(1,1);
-        ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-        ImVec4 tint = (ctx.right.type == SHOW_RIGHT_QUEUE) ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        ImGui::SetCursorPos(ImVec2(size.x - slider_size.x - right_edge_spacing, slider_y_offset + (volume_icon_size.x - slider_size.y) / 2.0f));
+        if (imgui_custom_slider_float("##volume", &mp_ctx.volume, 0.0f, 2.0f, slider_size.x, slider_size.y))
+            mp_update_volume();
 
         num_buttons = 4;
         width = 32.0f * num_buttons + spacing * (num_buttons - 1);
@@ -2954,27 +3037,28 @@ static void draw_player(const ImVec2 size)
 
         ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
         {
-            ImVec2 uv0 = ImVec2(0,0);
-            ImVec2 uv1 = ImVec2(1,1);
-            ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-            ImVec4 tint = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-            if (mp_ctx.autoplay)
-                tint.x = 1.0f;
-            if (ImGui::ImageButton("Autoplay Button", ctx.textures.autoplay_button.id, button_size, uv0, uv1, bg, tint))
+            ImVec4 tint = (mp_ctx.autoplay)
+                ? ImVec4(1.0f, 0.0f, 0.0f, 1.0f)
+                : ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+            if (imgui_image_button(ctx.textures.autoplay_button.id, button_size, tint))
                 mp_toggle_autoplay();
         }
         
         cursor_x += advance;
         ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-        if (ImGui::ImageButton("Lyrics", ctx.textures.lyrics_button.id, button_size))
+        if (imgui_image_button(ctx.textures.lyrics_button.id, button_size))
             set_center_view_lyrics(mp_ctx.current_song);
         cursor_x += advance;
         ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-        if (ImGui::ImageButton("Clear Queue Button", ctx.textures.clear_queue_button.id, button_size))
+        if (imgui_image_button(ctx.textures.clear_queue_button.id, button_size))
             mp_queue_clear();
         cursor_x += advance;
+
+        ImVec4 tint = (ctx.right.type == SHOW_RIGHT_QUEUE) 
+            ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+            : ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
         ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-        if (ImGui::ImageButton("Show Queue Button", ctx.textures.show_queue_button.id, button_size, uv0, uv1, bg, tint))
+        if (imgui_image_button(ctx.textures.show_queue_button.id, button_size, tint))
             toggle_right_view_queue();
     }
 }

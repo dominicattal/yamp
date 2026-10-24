@@ -1629,6 +1629,9 @@ void mp_free_art(Art* art)
 void mp_queue_clear()
 {
     mp_ctx.queue.clear();
+    mp_ctx.group_queue.clear();
+    mp_ctx.playing_group = false;
+    mp_ctx.group_id = INVALID_ID;
 }
 
 MPUID mp_get_song_uid(SongID song_id)
