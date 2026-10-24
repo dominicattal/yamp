@@ -949,11 +949,28 @@ void mp_recursive_add_songs(const std::string& folder_path)
     if (!fs::exists(std::filesystem::path{folder_path}))
         return;
 
-    mp_ctx.adding_songs = true;
+    mp_ctx.num_songs_to_add = 0;
+    mp_ctx.num_songs_added = 0;
+
     fs::directory_options options = fs::directory_options::follow_directory_symlink;
     fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
     for (auto const& dir_entry : entries)
+    {
+        (void)dir_entry;
+        mp_ctx.num_songs_to_add++;
+    }
+
+    entries = fs::recursive_directory_iterator(folder_path, options);
+    mp_ctx.adding_songs = true;
+    for (auto const& dir_entry : entries)
+    {
+        {
+            std::lock_guard lock{mp_ctx.adding_songs_mutex};
+            mp_ctx.adding_songs_current_path = dir_entry.path().string();
+        }
         add_song_from_path(dir_entry.path().string());
+        mp_ctx.num_songs_added++;
+    }
 }
 
 void mp_reset_loaded_songs()

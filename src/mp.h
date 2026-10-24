@@ -175,6 +175,10 @@ struct MPContext {
     std::vector<Pin> pins;
 
     bool adding_songs;
+    int num_songs_added;
+    int num_songs_to_add;
+    std::string adding_songs_current_path;
+    std::mutex adding_songs_mutex;
     std::vector<SongID> added_songs;
     std::vector<ArtistID> added_artists;
     std::vector<AlbumID> added_albums;

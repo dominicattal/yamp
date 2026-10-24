@@ -1124,24 +1124,49 @@ void ui_cleanup()
     SPDLOG_INFO("UI cleaned up");
 }
 
-static void draw_songs_with_all_info(SearchResult<Song>& search_result)
+struct DrawSongTableParams {
+    std::vector<SongTrack>* song_tracks;
+    std::vector<LruCacheRef<Song>>* songs;
+    std::vector<float*> column_offsets;
+    bool use_song_tracks = false;
+    bool show_track = false;
+    bool show_art = true;
+    bool show_title = true;
+    bool show_album = true;
+    bool show_artist = true;
+    bool show_length = true;
+};
+
+static void draw_songs_table(DrawSongTableParams& params)
 {
     LruCacheRef<Song> center_song = nullptr;
     LruCacheRef<Artist> center_artist = nullptr;
     LruCacheRef<Album> center_album = nullptr;
 
-    CustomTableParams params{};
-    params.num_cols = 4;
-    params.num_rows = static_cast<int>(search_result.entries.size());
-    params.header_row_height = 40.0f;
-    params.row_height = 48.0f;
-    params.table_width = ImGui::GetContentRegionAvail().x;
+    CustomTableParams custom_table_params{};
+    custom_table_params.num_cols = params.show_track 
+                                 + params.show_title
+                                 + params.show_album
+                                 + params.show_artist
+                                 + params.show_length;
+    assert(static_cast<size_t>(custom_table_params.num_cols) == params.column_offsets.size());
+    assert(!(params.use_song_tracks && !params.show_track));
+    assert(!(params.use_song_tracks && params.song_tracks == nullptr));
 
-    static float title_col_offset = 10.0f;
-    static float artist_col_offset = 300.0f;
-    static float album_col_offset = 550.0f;
-    static float length_col_right_offset = 100.0f;
-    float length_col_offset = params.table_width - length_col_right_offset;
+    if (params.use_song_tracks)
+        custom_table_params.num_rows = static_cast<int>(params.song_tracks->size());
+    else
+        custom_table_params.num_rows = static_cast<int>(params.songs->size());
+
+    custom_table_params.header_row_height = 40.0f;
+    custom_table_params.row_height = 48.0f;
+    custom_table_params.table_width = ImGui::GetContentRegionAvail().x;
+
+    //static float title_col_offset = 10.0f;
+    //static float artist_col_offset = 300.0f;
+    //static float album_col_offset = 550.0f;
+    //static float length_col_right_offset = 100.0f;
+    //float length_col_offset = custom_table_params.table_width - length_col_right_offset;
 
     static float title_col_width = 300.0f;
     static float artist_col_width = 300.0f;
@@ -1150,10 +1175,10 @@ static void draw_songs_with_all_info(SearchResult<Song>& search_result)
 
     static int selected_row = -1;
 
-    params.selected_row = &selected_row;
-    params.menu_popup_callback = [&search_result](int* selected_row) -> MenuPopupEnum
+    custom_table_params.selected_row = &selected_row;
+    custom_table_params.menu_popup_callback = [&params](int* selected_row) -> MenuPopupEnum
         {
-            LruCacheRef<Song>& song = search_result.entries[*selected_row];
+            LruCacheRef<Song>& song = params.songs->at(*selected_row);
             if (ImGui::Button("Show"))
             {
                 *selected_row = -1;
@@ -1198,108 +1223,191 @@ static void draw_songs_with_all_info(SearchResult<Song>& search_result)
             return MENU_END_POPUP;
         };
 
-    params.col_offsets.push_back(&title_col_offset);
-    params.col_widths.push_back(title_col_width);
-    params.header_row_col_callback.push_back(
-        [](ImVec2 region_start, ImVec2 region_size)
-        {
-            imgui_aligned_text("Title", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
-        });
-    params.body_row_col_callback.push_back(
-        [&center_song, &search_result](ImVec2 region_start, ImVec2 region_size, int row)
-        {
-            LruCacheRef<Song>& song = search_result.entries[row];
-            ImVec2 picture_size(48.0f, 48.0f);
-            GLTexture tex = get_texture_from_song(song->id);
-            ImGui::SetCursorPos(region_start);
-            const bool hovered = imgui_is_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
-            ImVec4 tint = (hovered) ? ImVec4(0.6f, 0.6f, 0.6f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-            ImGui::ImageWithBg(tex.id, picture_size, tex.uv0, tex.uv1, IMGUI_BLANK, tint);
-            if (hovered)
+    if (params.show_track)
+    {
+        custom_table_params.col_widths.push_back(50.0f);
+        custom_table_params.header_row_col_callback.push_back(
+            [](ImVec2 region_start, ImVec2 region_size)
             {
-                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                GLTexture tex = ctx.textures.play_button;
+                imgui_aligned_text("#", region_start, region_size, ALIGN_CENTER, ALIGN_CENTER);
+            });
+        custom_table_params.body_row_col_callback.push_back(
+            [&params](ImVec2 region_start, ImVec2 region_size, int row)
+            {
+                //imgui_aligned_text(std::to_string(tracks[row].track).c_str(), region_start, region_size, ALIGN_CENTER, ALIGN_CENTER);
+                auto& [song, track] = params.song_tracks->at(row);
                 ImVec2 play_button_size(18.0f, 18.0f);
-                ImVec2 play_button_pos(
-                        region_start.x + (picture_size.x - play_button_size.x) / 2.0f,
-                        region_start.y + (picture_size.y - play_button_size.y) / 2.0f);
-                ImGui::SetCursorPos(play_button_pos);
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-                if (imgui_image_button(tex.id, play_button_size))
+                ImGui::SetCursorPos(ImVec2(region_start.x + (region_size.x - play_button_size.x) / 2.0f, region_start.y + (region_size.y - play_button_size.y) / 2.0f));
+                ImVec2 screen_pos = ImGui::GetCursorScreenPos();
+                const bool hovered = imgui_is_region_hovered(screen_pos, play_button_size);
+                if (!hovered)
                 {
-                    if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
-                        mp_queue_song(song->id);
-                    else
-                        mp_play_song(song->id);
+                    std::string track_str = std::to_string(track);
+                    ImVec2 text_size = ImGui::CalcTextSize(track_str.c_str());
+                    ImGui::SetCursorPos(ImVec2(region_start.x + (region_size.x - text_size.x) / 2.0f, region_start.y + (region_size.y - text_size.y) / 2.0f));
+                    ImGui::Text("%s", track_str.c_str());
                 }
-                ImGui::PopStyleVar();
-                ImGui::PopStyleColor(3);
-            }
-            const float padding = 5.0f;
-            bool pressed = imgui_aligned_text_button(song->title.c_str(), ImVec2(region_start.x + picture_size.x + padding, region_start.y), ImVec2(region_size.x - picture_size.x - padding, region_size.y), ALIGN_LEFT, ALIGN_CENTER);
-            if (pressed)
-                center_song = std::move(song);
-        });
+                else
+                {
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                    GLTexture tex = ctx.textures.play_button;
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+                    const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
+                    const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
+                    const ImVec4 bg_col = IMGUI_BLANK;
+                    const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                    // IDK why ImGui::Image() doesnt work here maybe investigate some other time
+                    //ImGui::Image(tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+                    ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+                    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                    {
+                        if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+                            mp_queue_song(song->id);
+                        else
+                            mp_play_song(song->id);
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(3);
+                }
+            });
+    }
 
-    params.col_offsets.push_back(&artist_col_offset);
-    params.col_widths.push_back(artist_col_width);
-    params.header_row_col_callback.push_back(
-        [](ImVec2 region_start, ImVec2 region_size)
-        {
-            imgui_aligned_text("Artist", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
-        });
-    params.body_row_col_callback.push_back(
-        [&center_artist, &search_result](ImVec2 region_start, ImVec2 region_size, int row)
-        {
-            LruCacheRef<Song>& song = search_result.entries[row];
-            LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
-            if (artist == nullptr)
-                return;
-            if (imgui_aligned_text_button(artist->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
-                center_artist = std::move(artist);
-        });
+    if (params.show_title)
+    {
+        custom_table_params.col_widths.push_back(title_col_width);
+        custom_table_params.header_row_col_callback.push_back(
+            [](ImVec2 region_start, ImVec2 region_size)
+            {
+                imgui_aligned_text("Title", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
+            });
+        custom_table_params.body_row_col_callback.push_back(
+            [&center_song, &params](ImVec2 region_start, ImVec2 region_size, int row)
+            {
+                LruCacheRef<Song>& song = (params.use_song_tracks)
+                                    ? params.song_tracks->at(row).song
+                                    : params.songs->at(row);
 
-    params.col_offsets.push_back(&album_col_offset);
-    params.col_widths.push_back(album_col_width);
-    params.header_row_col_callback.push_back(
-        [](ImVec2 region_start, ImVec2 region_size)
-        {
-            imgui_aligned_text("Album", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
-        });
-    params.body_row_col_callback.push_back(
-        [&center_album, &search_result](ImVec2 region_start, ImVec2 region_size, int row)
-        {
-            LruCacheRef<Song>& song = search_result.entries[row];
-            LruCacheRef<Album> album = mp_get_album_from_song(song->id);
-            if (album == nullptr)
-                return;
-            if (imgui_aligned_text_button(album->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
-                center_album = std::move(album);
-        });
+                ImVec2 picture_size{};
+                GLTexture tex = get_texture_from_song(song->id);
+                ImGui::SetCursorPos(region_start);
+                const bool hovered = imgui_is_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
+                ImVec4 tint = (hovered) ? ImVec4(0.6f, 0.6f, 0.6f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                if (params.show_art)
+                {
+                    picture_size = ImVec2{48.0f, 48.0f};
+                    ImGui::ImageWithBg(tex.id, picture_size, tex.uv0, tex.uv1, IMGUI_BLANK, tint);
+                    if (hovered)
+                    {
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                        GLTexture tex = ctx.textures.play_button;
+                        ImVec2 play_button_size(18.0f, 18.0f);
+                        ImVec2 play_button_pos(
+                                region_start.x + (picture_size.x - play_button_size.x) / 2.0f,
+                                region_start.y + (picture_size.y - play_button_size.y) / 2.0f);
+                        ImGui::SetCursorPos(play_button_pos);
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+                        if (imgui_image_button(tex.id, play_button_size))
+                        {
+                            if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+                                mp_queue_song(song->id);
+                            else
+                                mp_play_song(song->id);
+                        }
+                        ImGui::PopStyleVar();
+                        ImGui::PopStyleColor(3);
+                    }
+                }
+                const float padding = 5.0f;
+                bool pressed = imgui_aligned_text_button(song->title.c_str(), ImVec2(region_start.x + picture_size.x + padding, region_start.y), ImVec2(region_size.x - picture_size.x - padding, region_size.y), ALIGN_LEFT, ALIGN_CENTER);
+                if (pressed)
+                    center_song = std::move(song);
+            });
+    }
 
-    params.col_offsets.push_back(&length_col_offset);
-    params.col_widths.push_back(length_col_width);
-    params.header_row_col_callback.push_back(
-        [](ImVec2 region_start, ImVec2 region_size)
-        {
-            imgui_aligned_text("Length", region_start, region_size, ALIGN_RIGHT, ALIGN_CENTER);
-        });
-    params.body_row_col_callback.push_back(
-        [&search_result](ImVec2 region_start, ImVec2 region_size, int row)
-        {
-            LruCacheRef<Song>& song = search_result.entries[row];
-            char length_str[256];
-            int length = static_cast<int>(song->length);
-            snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
-            imgui_aligned_text(length_str, region_start, region_size, ALIGN_RIGHT, ALIGN_CENTER);
-        });
+    if (params.show_artist)
+    {
+        custom_table_params.col_widths.push_back(artist_col_width);
+        custom_table_params.header_row_col_callback.push_back(
+            [](ImVec2 region_start, ImVec2 region_size)
+            {
+                imgui_aligned_text("Artist", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
+            });
+        custom_table_params.body_row_col_callback.push_back(
+            [&center_artist, &params](ImVec2 region_start, ImVec2 region_size, int row)
+            {
+                LruCacheRef<Song>& song = (params.use_song_tracks)
+                                    ? params.song_tracks->at(row).song
+                                    : params.songs->at(row);
 
-    imgui_custom_table(params);
+                LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
+                if (artist == nullptr)
+                    return;
+                if (imgui_aligned_text_button(artist->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
+                    center_artist = std::move(artist);
+            });
+    }
 
-    length_col_right_offset = params.table_width - length_col_offset;
+    if (params.show_album)
+    {
+        custom_table_params.col_widths.push_back(album_col_width);
+        custom_table_params.header_row_col_callback.push_back(
+            [](ImVec2 region_start, ImVec2 region_size)
+            {
+                imgui_aligned_text("Album", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
+            });
+        custom_table_params.body_row_col_callback.push_back(
+            [&center_album, &params](ImVec2 region_start, ImVec2 region_size, int row)
+            {
+                LruCacheRef<Song>& song = (params.use_song_tracks)
+                                    ? params.song_tracks->at(row).song
+                                    : params.songs->at(row);
+
+                LruCacheRef<Album> album = mp_get_album_from_song(song->id);
+                if (album == nullptr)
+                    return;
+                if (imgui_aligned_text_button(album->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
+                    center_album = std::move(album);
+            });
+    }
+
+    if (params.show_length)
+    {
+        custom_table_params.col_widths.push_back(length_col_width);
+        custom_table_params.header_row_col_callback.push_back(
+            [](ImVec2 region_start, ImVec2 region_size)
+            {
+                imgui_aligned_text("Length", region_start, region_size, ALIGN_RIGHT, ALIGN_CENTER);
+            });
+        custom_table_params.body_row_col_callback.push_back(
+            [&params](ImVec2 region_start, ImVec2 region_size, int row)
+            {
+                LruCacheRef<Song>& song = (params.use_song_tracks)
+                                    ? params.song_tracks->at(row).song
+                                    : params.songs->at(row);
+
+                char length_str[256];
+                int length = static_cast<int>(song->length);
+                snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
+                imgui_aligned_text(length_str, region_start, region_size, ALIGN_RIGHT, ALIGN_CENTER);
+            });
+    }
+
+    for (size_t i = 0; i < params.column_offsets.size() - 1; i++)
+        custom_table_params.col_offsets.push_back(params.column_offsets[i]);
+
+    float* org_right_column_offset = params.column_offsets.back();
+    float right_column_offset = custom_table_params.table_width - (*org_right_column_offset);
+    custom_table_params.col_offsets.push_back(&right_column_offset);
+
+    imgui_custom_table(custom_table_params);
+
+    *org_right_column_offset = custom_table_params.table_width - right_column_offset;
 
     if (center_song != nullptr)
         set_center_view_song(std::move(center_song));
@@ -1311,16 +1419,59 @@ static void draw_songs_with_all_info(SearchResult<Song>& search_result)
 
 static void draw_search_results()
 {
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 15.0f);
+    const float padding = 10.0f;
+    ImGui::SetCursorPos(ImVec2(padding, padding));
+
+    const int SEARCH_TYPE_SONGS = 0;
+    const int SEARCH_TYPE_ALBUMS = 1;
+    const int SEARCH_TYPE_ARTISTS = 2;
+    static int current_search_type = SEARCH_TYPE_SONGS;
+    const char* search_types[] = {
+        "Songs",
+        "Albums",
+        "Artist"
+    };
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5.0f, 0.0f));
+    ImGui::SetNextItemWidth(100.0f);
+    ImGui::Combo("##", &current_search_type, search_types, std::size(search_types)); 
+    if (ImGui::IsItemHovered())
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    ImGui::PopStyleVar();
+
+    ImGui::SameLine();
     if (ImGui::ArrowButton("Left", ImGuiDir_Left) && ctx.center.search_result.page_num > 1)
         ctx.center.search_result = mp_search_songs(ctx.search_query, SEARCH_RESULTS_PER_PAGE, --ctx.center.search_result.page_num);
+    if (ImGui::IsItemHovered())
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
     ImGui::SameLine();
     if (ImGui::ArrowButton("Right", ImGuiDir_Right) && ctx.center.search_result.page_num < ctx.center.search_result.num_pages)
         ctx.center.search_result = mp_search_songs(ctx.search_query, SEARCH_RESULTS_PER_PAGE, ++ctx.center.search_result.page_num);
+    if (ImGui::IsItemHovered())
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
     ImGui::SameLine();
     ImGui::Text("%d/%d (%d results)", ctx.center.search_result.page_num, ctx.center.search_result.num_pages, ctx.center.search_result.num_results);
 
-    draw_songs_with_all_info(ctx.center.search_result);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
+
+    if (current_search_type == SEARCH_TYPE_SONGS)
+    {
+        static float title_col_offset = 10.0f;
+        static float artist_col_offset = 300.0f;
+        static float album_col_offset = 550.0f;
+        static float length_col_right_offset = 100.0f;
+
+        DrawSongTableParams params{};
+        params.songs = &ctx.center.search_result.entries;
+        params.column_offsets = {&title_col_offset, &artist_col_offset, &album_col_offset, &length_col_right_offset};
+        draw_songs_table(params);
+    }
+    else if (current_search_type == SEARCH_TYPE_ALBUMS)
+        ImGui::Text("Albums");
+    else if (current_search_type == SEARCH_TYPE_ARTISTS)
+        ImGui::Text("Artists");
 }
 
 static void draw_song_info()
@@ -1661,6 +1812,22 @@ static void draw_album_info()
     }
     else
     {
+        static float track_col_offset = 10.0f;
+        static float title_col_offset = 70.0f;
+        static float length_col_right_offset = 100.0f;
+
+        DrawSongTableParams params{};
+        params.show_track = true;
+        params.show_album = false;
+        params.show_artist = false;
+        params.show_art = false;
+        params.use_song_tracks = true;
+        params.column_offsets = {&track_col_offset, &title_col_offset, &length_col_right_offset};
+        params.song_tracks = &ctx.center.song_tracks;
+
+        draw_songs_table(params);
+
+        /*
         LruCacheRef<Song> center_song = nullptr;
 
         CustomTableParams params{};
@@ -1816,6 +1983,7 @@ static void draw_album_info()
 
         if (center_song != nullptr)
             set_center_view_song(std::move(center_song));
+        */
     }
 }
 
@@ -2728,7 +2896,8 @@ static void draw_edit()
     }
     else if (prompt.has_value())
     {
-        ImGui::Text("Loading...");
+        std::lock_guard lock{mp_ctx.adding_songs_mutex};
+        ImGui::Text("%d / %d - %s", mp_ctx.num_songs_added, mp_ctx.num_songs_to_add, mp_ctx.adding_songs_current_path.c_str());
     }
     else
     {
@@ -2759,7 +2928,10 @@ static void draw_edit()
             page_result.entries.emplace_back(mp_get_song(mp_ctx.added_songs[i]));
         }
 
-        draw_songs_with_all_info(page_result);
+        DrawSongTableParams params{};
+        params.songs = &page_result.entries;
+
+        draw_songs_table(params);
 
         page_num = page_result.page_num;
     }
