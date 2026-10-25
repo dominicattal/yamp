@@ -24,3 +24,5 @@ Muvikui, CC BY-SA 4.0 <https://creativecommons.org/licenses/by-sa/4.0>, via Wiki
 <a href="https://www.flaticon.com/free-icons/skip" title="skip icons">Skip icons created by WR Graphic Garage - Flaticon</a>
 <a href="https://www.flaticon.com/free-icons/push-pin" title="push pin icons">Push pin icons created by Us and Up - Flaticon</a>
 <a href="https://www.flaticon.com/free-icons/three-dots" title="three dots icons">Three dots icons created by Rakib Hassan Rahim - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/shrink" title="shrink icons">Shrink icons created by Magnific - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/magnifying-glass" title="magnifying glass icons">Magnifying glass icons created by Royyan Wijaya - Flaticon</a>

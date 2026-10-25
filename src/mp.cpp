@@ -1383,6 +1383,41 @@ SearchResult<Song> mp_search_songs(const char* search_query, int results_per_pag
     return search_result;
 }
 
+SearchResult<Album> mp_search_albums(const char* search_query, int results_per_page, int page_num)
+{
+    SearchResult<Album> search_result{};
+    sqlite3_stmt* stmt;
+    const char* query;
+    char buffer[256];
+    snprintf(buffer, sizeof(buffer), "%%%s%%", search_query);
+
+    search_result.page_num = page_num;
+    search_result.results_per_page = results_per_page;
+
+    query = "SELECT COUNT(id) FROM Albums WHERE name LIKE ?1"; 
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
+    sqlite3_step(stmt);
+    search_result.num_results = sqlite3_column_int(stmt, 0);
+    search_result.num_pages = (search_result.num_results - 1) / search_result.results_per_page + 1;
+    sqlite3_finalize(stmt);
+
+    query = "SELECT id FROM Albums WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, results_per_page);
+    sqlite3_bind_int(stmt, 3, results_per_page * (page_num - 1));
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        int album_id = sqlite3_column_int(stmt, 0);
+        LruCacheRef<Album> album = mp_get_album(album_id);
+        assert(album != nullptr);
+        search_result.entries.push_back(std::move(album));
+    }
+    sqlite3_finalize(stmt);
+    return search_result;
+}
+
 SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num)
 {
     SearchResult<Song> search_result{};
