@@ -227,6 +227,8 @@ void mp_play_album(AlbumID album_id);
 // Search for songs based on query
 SearchResult<Song> mp_search_songs(const char* search_query, int results_per_page, int page_num);
 SearchResult<Album> mp_search_albums(const char* search_query, int results_per_page, int page_num);
+SearchResult<Artist> mp_search_artists(const char* search_query, int results_per_page, int page_num);
+SearchResult<Playlist> mp_search_playlists(const char* search_query, int results_per_page, int page_num);
 
 LruCacheRef<Song>       mp_get_song(SongID song_id);
 LruCacheRef<Album>      mp_get_album(AlbumID album_id);
