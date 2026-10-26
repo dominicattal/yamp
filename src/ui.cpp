@@ -27,6 +27,7 @@
 
 #define IMGUI_BLANK ImVec4(0.0f, 0.0f, 0.0f, 0.0f)
 #define SEARCH_RESULTS_PER_PAGE 20
+#define STRING_LENGTH 512
 
 enum ViewEnum {
     SHOW_RIGHT_NONE,
@@ -443,17 +444,16 @@ static void imgui_custom_table(CustomTableParams& params)
     ImGui::EndChild();
 }
 
-static ItemActiveEnum imgui_custom_slider_float(const char* label, float* value, float min, float max, float width, float height = 5.0f)
+static ItemActiveEnum imgui_custom_slider_float(const char* label, float* value, float min, float max, ImVec2 size)
 {
     (void)value; (void)min; (void)max;
     ImVec2 origin = ImGui::GetCursorPos();
     ImVec2 origin_screen = ImGui::GetCursorScreenPos();
-    ImVec2 size = ImVec2(width, height); 
     float diff = max - min;
 
     float value_x;
     if (diff > 0.0f)
-        value_x = origin_screen.x + (*value - min) / diff * width;
+        value_x = origin_screen.x + (*value - min) / diff * size.x;
     else
         value_x = origin_screen.x + min;
 
@@ -465,25 +465,25 @@ static ItemActiveEnum imgui_custom_slider_float(const char* label, float* value,
                 IM_COL32(0, 255, 0, 255));
     }
 
-    if (origin_screen.x + width - value_x > 1e-5)
+    if (origin_screen.x + size.x - value_x > 1e-5)
     {
         ImGui::GetWindowDrawList()->AddRectFilled(
                 ImVec2(value_x, origin_screen.y),
-                ImVec2(origin_screen.x + width, origin_screen.y + size.y),
+                ImVec2(origin_screen.x + size.x, origin_screen.y + size.y),
                 IM_COL32(255, 0, 0, 255));
     }
 
     float button_padding = 5.0f;
     ImGui::SetCursorPos(ImVec2(origin.x, origin.y));
 
-    ImGui::InvisibleButton(label, ImVec2(width, height + 2 * button_padding));
+    ImGui::InvisibleButton(label, ImVec2(size.x, size.y + 2 * button_padding));
 
     if (ImGui::IsItemHovered())
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 
     if (ImGui::IsItemActive())
     {
-        *value = std::clamp((ImGui::GetMousePos().x - origin_screen.x) / width * diff + min, min, max);
+        *value = std::clamp((ImGui::GetMousePos().x - origin_screen.x) / size.x * diff + min, min, max);
     }
 
     if (ImGui::IsItemDeactivated())
@@ -697,8 +697,8 @@ static void set_center_view_album(LruCacheRef<Album>&& album)
     ctx.center.album = std::move(album);
     reset_center_view_containers();
 
-    LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_album(ctx.center.album->id);
-    for (auto & [song_id, track] : *tracks)
+    std::vector<SongTrackID> tracks = mp_get_songs_from_album(ctx.center.album->id);
+    for (auto & [song_id, track] : tracks)
         ctx.center.song_tracks.emplace_back(mp_get_song(song_id), track);
 
     snprintf(ctx.center.edit.album, sizeof(ctx.center.edit.album), "%s", ctx.center.album->name.c_str());
@@ -718,8 +718,8 @@ static void set_center_view_playlist(LruCacheRef<Playlist>&& playlist)
     ctx.center.album = nullptr;
     reset_center_view_containers();
 
-    LruCacheRef<std::vector<SongTrackID>> tracks = mp_get_songs_from_playlist(ctx.center.playlist->id);
-    for (auto & [song_id, track] : *tracks)
+    std::vector<SongTrackID> tracks = mp_get_songs_from_playlist(ctx.center.playlist->id);
+    for (auto & [song_id, track] : tracks)
         ctx.center.song_tracks.emplace_back(mp_get_song(song_id), track);
 
     push_history_entry(SHOW_CENTER_PLAYLIST, ctx.center.playlist->id);
@@ -734,8 +734,8 @@ static void set_center_view_artist(LruCacheRef<Artist>&& artist)
     ctx.center.album = nullptr;
     reset_center_view_containers();
 
-    LruCacheRef<std::vector<int>> albums = mp_get_albums_from_artist(ctx.center.artist->id);
-    for (AlbumID album_id : *albums)
+    std::vector<AlbumID> albums = mp_get_albums_from_artist(ctx.center.artist->id);
+    for (AlbumID album_id : albums)
         ctx.center.albums.emplace_back(mp_get_album(album_id));
 
     ctx.center.song_search_result = mp_get_paginated_songs_from_artist(ctx.center.artist->id, SEARCH_RESULTS_PER_PAGE, 1);
@@ -1408,6 +1408,34 @@ static void draw_search_results()
         "Playlist"
     };
 
+    int page_num{};
+    int num_pages{};
+    int num_results{};
+    if (current_search_type == SEARCH_TYPE_SONG)
+    {
+        page_num = ctx.center.song_search_result.page_num;
+        num_pages = ctx.center.song_search_result.num_pages;
+        num_results = ctx.center.song_search_result.num_results;
+    }
+    else if (current_search_type == SEARCH_TYPE_ALBUM)
+    {
+        page_num = ctx.center.album_search_result.page_num;
+        num_pages = ctx.center.album_search_result.num_pages;
+        num_results = ctx.center.album_search_result.num_results;
+    }
+    else if (current_search_type == SEARCH_TYPE_ARTIST)
+    {
+        page_num = ctx.center.artist_search_result.page_num;
+        num_pages = ctx.center.artist_search_result.num_pages;
+        num_results = ctx.center.artist_search_result.num_results;
+    }
+    else if (current_search_type == SEARCH_TYPE_PLAYLIST)
+    {
+        page_num = ctx.center.playlist_search_result.page_num;
+        num_pages = ctx.center.playlist_search_result.num_pages;
+        num_results = ctx.center.playlist_search_result.num_results;
+    }
+
     ImGui::SetNextItemWidth(200.0f);
     if (ImGui::InputTextWithHint("##search_box", "Search...", ctx.search_query, sizeof(ctx.search_query))) 
     {
@@ -1443,7 +1471,7 @@ static void draw_search_results()
     ImGui::PopStyleVar();
 
     ImGui::SameLine();
-    if (ImGui::ArrowButton("Left", ImGuiDir_Left) && ctx.center.song_search_result.page_num > 1)
+    if (ImGui::ArrowButton("Left", ImGuiDir_Left) && page_num > 1)
     {
         if (current_search_type == SEARCH_TYPE_SONG)
             ctx.center.song_search_result = mp_search_songs(ctx.search_query, SEARCH_RESULTS_PER_PAGE, --ctx.center.song_search_result.page_num);
@@ -1458,7 +1486,7 @@ static void draw_search_results()
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 
     ImGui::SameLine();
-    if (ImGui::ArrowButton("Right", ImGuiDir_Right) && ctx.center.song_search_result.page_num < ctx.center.song_search_result.num_pages)
+    if (ImGui::ArrowButton("Right", ImGuiDir_Right) && page_num < num_pages)
     {
         if (current_search_type == SEARCH_TYPE_SONG)
             ctx.center.song_search_result = mp_search_songs(ctx.search_query, SEARCH_RESULTS_PER_PAGE, ++ctx.center.song_search_result.page_num);
@@ -1473,33 +1501,6 @@ static void draw_search_results()
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 
     ImGui::SameLine();
-    int page_num{};
-    int num_pages{};
-    int num_results{};
-    if (current_search_type == SEARCH_TYPE_SONG)
-    {
-        page_num = ctx.center.song_search_result.page_num;
-        num_pages = ctx.center.song_search_result.num_pages;
-        num_results = ctx.center.song_search_result.num_results;
-    }
-    else if (current_search_type == SEARCH_TYPE_ALBUM)
-    {
-        page_num = ctx.center.album_search_result.page_num;
-        num_pages = ctx.center.album_search_result.num_pages;
-        num_results = ctx.center.album_search_result.num_results;
-    }
-    else if (current_search_type == SEARCH_TYPE_ARTIST)
-    {
-        page_num = ctx.center.artist_search_result.page_num;
-        num_pages = ctx.center.artist_search_result.num_pages;
-        num_results = ctx.center.artist_search_result.num_results;
-    }
-    else if (current_search_type == SEARCH_TYPE_PLAYLIST)
-    {
-        page_num = ctx.center.playlist_search_result.page_num;
-        num_pages = ctx.center.playlist_search_result.num_pages;
-        num_results = ctx.center.playlist_search_result.num_results;
-    }
     ImGui::Text("%d/%d (%d results)", page_num, num_pages, num_results);
 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
@@ -1594,8 +1595,14 @@ static void draw_song_info()
 
     ImVec2 origin = ImGui::GetCursorPos();
 
-    static bool show_lyrics;
-    static bool show_mixer;
+    enum {
+        SHOW_NONE,
+        SHOW_LYRICS,
+        SHOW_EDIT,
+        SHOW_ALBUM_PICKER
+    };
+
+    static int show = SHOW_NONE;
 
     const ImVec2 album_art_size = ImVec2(210, 210);
     const float album_art_padding = 10.0f;
@@ -1662,17 +1669,12 @@ static void draw_song_info()
 
         ImGui::SameLine();
         if (imgui_image_button(ctx.textures.lyrics_button.id, button_size))
-        {
-            show_lyrics = true;
-            show_mixer = false;
-        }
+            show = SHOW_LYRICS;
 
         ImGui::SameLine();
         if (imgui_image_button(ctx.textures.pencil_button.id, button_size))
-        {
-            show_lyrics = false;
-            show_mixer = true;
-        }
+            show = SHOW_EDIT;
+
         ImGui::PopStyleVar();
 
         ImGui::EndChild();
@@ -1682,7 +1684,7 @@ static void draw_song_info()
     ImGui::Separator();
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
     ImGui::BeginChild("more_song_info", ImGui::GetContentRegionAvail());
-    if (show_lyrics)
+    if (show == SHOW_LYRICS)
     {
         static bool editing;
         static bool edited;
@@ -1738,40 +1740,149 @@ static void draw_song_info()
         }
         ImGui::EndChild();
     }
-    else if (show_mixer)
+    else if (show == SHOW_EDIT)
     {
         static bool edited;
 
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
+        float col_1_cursor_x = 10.0f;
+        float col_2_cursor_x = 120.0f;
+        ImGui::SetWindowFontScale(1.5f); 
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 8.0f));
+        ImGui::SetCursorPosX(col_1_cursor_x);
+        ImGui::Text("Song");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(col_2_cursor_x);
+        edited |= ImGui::InputText("##Song", ctx.center.edit.song, sizeof(ctx.center.edit.song));
+
+        ImGui::SetCursorPosX(col_1_cursor_x);
+        ImGui::Text("Album");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(col_2_cursor_x);
+        if (imgui_aligned_text_button(ctx.center.edit.album, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
+        {
+            show = SHOW_ALBUM_PICKER;
+            ctx.center.album_search_result = mp_search_albums(ctx.search_query, SEARCH_RESULTS_PER_PAGE, 1);
+        }
+
+        ImGui::SetCursorPosX(col_1_cursor_x);
+        ImGui::Text("Artist");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(col_2_cursor_x);
+        ImGui::Text("%s", ctx.center.edit.artist);
+
+        ImGui::SetCursorPosX(col_1_cursor_x);
+        ImGui::Text("Year");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(col_2_cursor_x);
+        ImGui::Text("%s", ctx.center.edit.year);
+
+        ImGui::SetCursorPosX(col_1_cursor_x);
+        ImGui::Text("Path");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(col_2_cursor_x);
+        ImGui::Text("%s", ctx.center.song->path.c_str());
+
+        GLTexture tex = ctx.textures.volume;
+        ImVec2 volume_slider_size = ImVec2(150.0f, 5.0f);
+        ImVec2 volume_icon_size = ImVec2(20.0f, 20.0f);
+        ImGui::SetCursorPosX(col_1_cursor_x);
+        ImGui::Text("Volume");
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(col_2_cursor_x);
+        ImGui::Image(tex.id, volume_icon_size);
+        ImGui::PopStyleVar();
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 4.0f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (volume_icon_size.y - volume_slider_size.y) / 2.0f);
+        if (imgui_custom_slider_float("##Volume", &ctx.center.song->volume, 0.0f, 2.0f, volume_slider_size))
+        {
+            mp_update_volume();
+            edited = true;
+        }
+
+        ImGui::SetCursorPosX(col_1_cursor_x);
         if (ImGui::Button("Save"))
         {
             mp_update_song(ctx.center.song->id, ctx.center.edit.song);
             mp_update_song_volume(ctx.center.song->id, ctx.center.song->volume);
             edited = false;
         }
-        ImGui::SameLine();
-        ImGui::Text("Info%s", (edited) ? " [Unsaved Changes]" : "");
-
-        ImGui::Text("Song");
-        ImGui::SameLine();
-        edited |= ImGui::InputText("##Song", ctx.center.edit.song, sizeof(ctx.center.edit.song));
-        ImGui::Text("Album - %s", ctx.center.edit.album);
-        ImGui::Text("Artist - %s", ctx.center.edit.artist);
-        ImGui::Text("Year - %s", ctx.center.edit.year);
-        ImGui::Text("Path - %s", ctx.center.song->path.c_str());
-
-        GLTexture tex = ctx.textures.volume;
-        float volume_slider_size = 150.0f;
-        ImVec2 volume_icon_size = ImVec2(20.0f, 20.0f);
-        ImGui::Text("Mixer");
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-        ImGui::Image(tex.id, volume_icon_size);
-        ImGui::PopStyleVar();
-        ImGui::SameLine();
-        if (imgui_custom_slider_float("##Volume", &ctx.center.song->volume, 0.0f, 2.0f, volume_slider_size))
+        if (edited)
         {
-            mp_update_volume();
-            edited = true;
+            ImGui::SameLine();
+            ImGui::Text(" [Unsaved Changes]");
         }
+
+        ImGui::SetCursorPosX(col_1_cursor_x);
+        if (ImGui::Button("Update Metadata"))
+            ;
+
+        ImGui::PopStyleVar();
+        ImGui::SetWindowFontScale(1.0f); 
+    }
+    else if (show == SHOW_ALBUM_PICKER)
+    {
+        const float padding = 10.0f;
+        int page_num = ctx.center.album_search_result.page_num;
+        int num_pages = ctx.center.album_search_result.num_pages;
+        int num_results = ctx.center.album_search_result.num_results;
+
+        ImGui::SetCursorPos(ImVec2(padding, padding));
+        ImGui::SetNextItemWidth(200.0f);
+        if (ImGui::InputTextWithHint("##search_box", "Search...", ctx.search_query, sizeof(ctx.search_query)))
+            ctx.center.album_search_result = mp_search_albums(ctx.search_query, SEARCH_RESULTS_PER_PAGE, 1);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5.0f, 0.0f));
+
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("Left", ImGuiDir_Left) && page_num > 1)
+            ctx.center.album_search_result = mp_search_albums(ctx.search_query, SEARCH_RESULTS_PER_PAGE, --ctx.center.album_search_result.page_num);
+        if (ImGui::IsItemHovered())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("Right", ImGuiDir_Right) && page_num > num_pages)
+            ctx.center.album_search_result = mp_search_albums(ctx.search_query, SEARCH_RESULTS_PER_PAGE, ++ctx.center.album_search_result.page_num);
+        if (ImGui::IsItemHovered())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+        ImGui::SameLine();
+        ImGui::Text("%d/%d (%d results)", page_num, num_pages, num_results);
+
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
+        ImGui::Separator();
+
+        ImGui::PopStyleVar();
+
+        ImVec2 region_start = ImGui::GetCursorPos();
+        region_start.x += 10.0f;
+        region_start.y += 10.0f;
+        ImVec2 region_size = ImGui::GetContentRegionAvail();
+        ImGui::PushFont(NULL, 32.0f);
+        ImVec2 image_size = ImVec2(64, 64);
+        float spacing = 10.0f;
+        for (LruCacheRef<Album>& test_album : ctx.center.album_search_result.entries)
+        {
+            ImGui::PushID(test_album->id);
+            GLTexture tex = get_texture_from_album(test_album->id);
+            float text_height = ImGui::CalcTextSize(test_album->name.c_str()).y;
+            ImGui::SetCursorPos(region_start);
+            imgui_image_button(tex.id, image_size, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), tex.uv0, tex.uv1);
+            if (imgui_aligned_text_button(test_album->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
+            {
+                mp_switch_song_album(song->id, test_album->id);
+                ctx.center.album = std::move(test_album);
+                snprintf(ctx.center.edit.album, sizeof(ctx.center.edit.album), "%s", ctx.center.album->name.c_str());
+                show = SHOW_EDIT;
+                ImGui::PopID();
+                break;
+            }
+            ImGui::PopID();
+            region_start.y += image_size.y + spacing;
+        }
+        ImGui::PopFont();
     }
     ImGui::EndChild();
 }
@@ -2917,7 +3028,7 @@ static void draw_player(const ImVec2 size)
     ImGui::SetCursorPos(ImVec2(song_cursor_x, 15.0f));
     ImGui::Text("%s", cursor_str);
     ImGui::SetCursorPos(ImVec2(song_cursor_x, 15.0f + ImGui::CalcTextSize(cursor_str).y + 5.0f));
-    if (imgui_custom_slider_float("##cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, cursor_width))
+    if (imgui_custom_slider_float("##cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, ImVec2(cursor_width, 5.0f)))
         mp_update_cursor();
 
     const ImVec2 button_size = ImVec2(32.0f, 32.0f);
@@ -2994,7 +3105,7 @@ static void draw_player(const ImVec2 size)
         ImGui::PopStyleVar();
 
         ImGui::SetCursorPos(ImVec2(size.x - slider_size.x - right_edge_spacing, slider_y_offset + (volume_icon_size.x - slider_size.y) / 2.0f));
-        if (imgui_custom_slider_float("##volume", &mp_ctx.volume, 0.0f, 1.0f, slider_size.x, slider_size.y))
+        if (imgui_custom_slider_float("##volume", &mp_ctx.volume, 0.0f, 1.0f, slider_size))
             mp_update_volume();
 
         num_buttons = 4;

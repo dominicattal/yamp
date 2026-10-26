@@ -16,6 +16,7 @@ find_package(TagLib 2.3.2 REQUIRED)
 add_executable(yamp
     ${CMAKE_HOME_DIRECTORY}/src/main.cpp
     ${CMAKE_HOME_DIRECTORY}/src/ui.cpp
+    ${CMAKE_HOME_DIRECTORY}/src/db.cpp
     ${CMAKE_HOME_DIRECTORY}/src/mp.cpp
     ${CMAKE_HOME_DIRECTORY}/src/stb.cpp
     ${CMAKE_HOME_DIRECTORY}/src/config.cpp

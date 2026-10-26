@@ -2,6 +2,7 @@
 #define MP_H
 
 #include "lru_cache.h"
+#include "db.h"
 #include <string>
 #include <string_view>
 #include <vector>
@@ -10,17 +11,7 @@
 #include <memory>
 #include <future>
 
-using GenericID = int;
-using SongID = int;
-using AlbumID = int;
-using ArtistID = int;
-using PlaylistID = int;
-using MPUID = uint64_t;
-
-#define INVALID_ID -1
-#define INVALID_YEAR 0
 #define HISTORY_MAX_SIZE 1000
-#define STRING_LENGTH 512
 #define TEXTURE_SIZE_BITS 12
 #define LARGE_COVER_ART_SIZE_BITS 8
 #define SMALL_COVER_ART_SIZE_BITS 6
@@ -28,59 +19,11 @@ using MPUID = uint64_t;
 #define LARGE_COVER_ART_SIZE (1<<LARGE_COVER_ART_SIZE_BITS)
 #define SMALL_COVER_ART_SIZE (1<<SMALL_COVER_ART_SIZE_BITS)
 #define SLOTS_PER_TEXTURE (1<<(TEXTURE_SIZE_BITS<<1)>>(LARGE_COVER_ART_SIZE_BITS<<1))
-#define MPUID_SHIFT 62
-#define MPUID_ID_MASK ((1ULL<<MPUID_SHIFT)-1)
-#define MPUID_TYPE_MASK (3ULL<<MPUID_SHIFT)
 #define MAX_LYRICS_SIZE (1<<15)
-
-enum MPUIDEnum : MPUID {
-    MPUID_SONG,
-    MPUID_ALBUM,
-    MPUID_ARTIST,
-    MPUID_PLAYLIST
-};
-
-enum LoopMode {
-    LOOP_NONE,
-    LOOP_GROUP,
-    LOOP_TRACK
-};
-
-struct Song {
-    std::string title;
-    std::string path;
-    SongID id;
-    unsigned int year;
-    float length;
-    float volume;
-};
 
 struct SongTrack {
     LruCacheRef<Song> song;
     int track;
-};
-
-struct SongTrackID {
-    SongID song_id;
-    int track;
-};
-
-struct Artist {
-    std::string name;
-    ArtistID id;
-};
-
-struct Album {
-    std::string name;
-    AlbumID id;
-    unsigned int year;
-    float length;
-};
-
-struct Playlist {
-    std::string name;
-    PlaylistID id;
-    float length;
 };
 
 struct Pin {
@@ -90,17 +33,6 @@ struct Pin {
     LruCacheRef<Playlist> playlist;
     MPUIDEnum type;
     int order;
-};
-
-struct PinID {
-    MPUID uid;
-    int order;
-};
-
-struct Art {
-    void* sqlite_stmt;
-    const uint8_t* data;
-    size_t size;
 };
 
 template<typename T>
@@ -122,10 +54,6 @@ struct MPContext {
     LruCache<ArtistID> song_artist;
     LruCache<AlbumID> song_album;
     LruCache<ArtistID> album_artist;
-    LruCache<std::vector<SongTrackID>> album_songs;
-    LruCache<std::vector<SongTrackID>> playlist_songs;
-    LruCache<std::vector<SongID>> artist_songs;
-    LruCache<std::vector<AlbumID>> artist_albums;
 
     LruCacheRef<Song> current_song;
     LruCacheRef<Artist> current_song_artist;
@@ -239,10 +167,10 @@ LruCacheRef<Artist>     mp_get_artist_from_song(SongID song_id);
 LruCacheRef<Album>      mp_get_album_from_song(SongID song_id);
 LruCacheRef<Artist>     mp_get_artist_from_album(AlbumID album_id);
 
-LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_album(AlbumID album_id);
-LruCacheRef<std::vector<SongTrackID>> mp_get_songs_from_playlist(int playlist_id);
-LruCacheRef<std::vector<int>> mp_get_songs_from_artist(ArtistID artist_id);
-LruCacheRef<std::vector<int>> mp_get_albums_from_artist(ArtistID artist_id);
+std::vector<SongTrackID> mp_get_songs_from_album(AlbumID album_id);
+std::vector<SongTrackID> mp_get_songs_from_playlist(int playlist_id);
+std::vector<SongID> mp_get_songs_from_artist(ArtistID artist_id);
+std::vector<AlbumID> mp_get_albums_from_artist(ArtistID artist_id);
 
 SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
@@ -261,6 +189,8 @@ void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
 LruCacheRef<Album> mp_create_album();
 LruCacheRef<Artist> mp_create_artist();
 LruCacheRef<Playlist> mp_create_playlist();
+
+void mp_switch_song_album(SongID song_id, AlbumID album_id);
 
 void mp_pin_song(SongID song_id);
 void mp_pin_album(AlbumID album_id);
