@@ -476,7 +476,7 @@ SearchResultID<AlbumID> db_search_albums(const char* search_query, int results_p
     search_result_id.num_pages = (search_result_id.num_results - 1) / search_result_id.results_per_page + 1;
     sqlite3_finalize(stmt);
 
-    query = "SELECT id FROM Albums WHERE title LIKE ?1 LIMIT ?2 OFFSET ?3";
+    query = "SELECT id FROM Albums WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, results_per_page);
@@ -507,7 +507,7 @@ SearchResultID<ArtistID> db_search_artists(const char* search_query, int results
     search_result_id.num_pages = (search_result_id.num_results - 1) / search_result_id.results_per_page + 1;
     sqlite3_finalize(stmt);
 
-    query = "SELECT id FROM Artists WHERE title LIKE ?1 LIMIT ?2 OFFSET ?3";
+    query = "SELECT id FROM Artists WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, results_per_page);
@@ -538,7 +538,7 @@ SearchResultID<PlaylistID> db_search_playlists(const char* search_query, int res
     search_result_id.num_pages = (search_result_id.num_results - 1) / search_result_id.results_per_page + 1;
     sqlite3_finalize(stmt);
 
-    query = "SELECT id FROM Playlists WHERE title LIKE ?1 LIMIT ?2 OFFSET ?3";
+    query = "SELECT id FROM Playlists WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, results_per_page);

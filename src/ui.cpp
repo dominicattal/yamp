@@ -25,9 +25,30 @@
 // Global Constants, Variables, Types
 // *****************************
 
-#define IMGUI_BLANK ImVec4(0.0f, 0.0f, 0.0f, 0.0f)
 #define SEARCH_RESULTS_PER_PAGE 20
 #define STRING_LENGTH 512
+
+#define TRANSPARENT ImVec4(0.0f, 0.0f, 0.0f, 0.0f)
+#define BLACK ImVec4(0.0f, 0.0f, 0.0f, 1.0f)
+#define WHITE ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+#define GRAY ImVec4(0.6f, 0.6f, 0.6f, 0.6f)
+#define LIGHT_GRAY ImVec4(0.8f, 0.8f, 0.8f, 0.8f)
+#define RED ImVec4(1.0f, 0.0f, 0.0f, 1.0f)
+#define ORANGE ImVec4(1.0f, 0.5f, 0.0f, 1.0f)
+#define GREEN ImVec4(0.0f, 1.0f, 0.0f, 1.0f)
+#define BLUE ImVec4(0.0f, 0.0f, 1.0f, 1.0f)
+#define YELLOW ImVec4(1.0f, 1.0f, 0.0f, 1.0f)
+#define PURPLE ImVec4(1.0f, 0.0f, 1.0f, 1.0f)
+#define CYAN ImVec4(0.0f, 1.0f, 1.0f, 1.0f)
+#define SELECTED_COLOR_1 RED
+#define SELECTED_COLOR_2 GREEN
+#define UNSELECTED_COLOR WHITE
+
+#define UV0 ImVec2(0.0f, 0.0f)
+#define UV1 ImVec2(1.0f, 1.0f)
+
+#define UV0_INVERTED_HORIZONTALLY ImVec2(1.0f, 0.0f)
+#define UV1_INVERTED_HORIZONTALLY ImVec2(0.0f, 1.0f)
 
 enum ViewEnum {
     SHOW_RIGHT_NONE,
@@ -218,7 +239,7 @@ static bool imgui_text_button(const char* text)
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
 
     ImVec2 cursor_pos = ImGui::GetCursorPos();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, BLACK);
     ImGui::Text("%s", text);
     ImGui::PopStyleColor();
     const bool hovered = ImGui::IsItemHovered();
@@ -226,7 +247,7 @@ static bool imgui_text_button(const char* text)
     if (hovered)
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 
-    if (hovered) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+    if (hovered) ImGui::PushStyleColor(ImGuiCol_Text, LIGHT_GRAY);
     ImGui::SetCursorPos(cursor_pos);
     ImGui::Text("%s", text);
     if (hovered) ImGui::PopStyleColor();
@@ -270,9 +291,9 @@ static void imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 reg
     ImGui::Text("%s…", buf);
 }
 
-static bool imgui_image_button(ImTextureRef tex_ref, const ImVec2& image_size, const ImVec4& tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f), const ImVec2& uv0 = ImVec2(0.0f, 0.0f), const ImVec2& uv1 = ImVec2(1.0f, 1.0f))
+static bool imgui_image_button(ImTextureRef tex_ref, const ImVec2& image_size, const ImVec4& tint_col = WHITE, const ImVec2& uv0 = UV0, const ImVec2& uv1 = UV1)
 {
-    ImGui::ImageWithBg(tex_ref, image_size, uv0, uv1, ImVec4(0,0,0,0), tint_col);
+    ImGui::ImageWithBg(tex_ref, image_size, uv0, uv1, BLACK, tint_col);
     if (ImGui::IsItemHovered())
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     return ImGui::IsItemClicked();
@@ -1160,17 +1181,13 @@ static void draw_song_table(DrawSongTableParams& params)
                 {
                     ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
                     GLTexture tex = ctx.textures.play_button;
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button, BLACK);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, BLACK);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, BLACK);
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-                    const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
-                    const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
-                    const ImVec4 bg_col = IMGUI_BLANK;
-                    const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-                    // IDK why ImGui::Image() doesnt work here maybe investigate some other time
-                    //ImGui::Image(tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
-                    ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+                    const ImVec4 bg_col = TRANSPARENT;
+                    const ImVec4 tint_col = WHITE;
+                    ImGui::ImageButton("Play", tex.id, play_button_size, UV0, UV1, bg_col, tint_col);
                     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
                     {
                         if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
@@ -1206,8 +1223,8 @@ static void draw_song_table(DrawSongTableParams& params)
                     picture_size = ImVec2{48.0f, 48.0f};
                     const bool hovered = imgui_is_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
                     GLTexture tex = get_texture_from_song(song->id);
-                    ImVec4 tint = (hovered) ? ImVec4(0.6f, 0.6f, 0.6f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-                    ImGui::ImageWithBg(tex.id, picture_size, tex.uv0, tex.uv1, IMGUI_BLANK, tint);
+                    ImVec4 tint = (hovered) ? GRAY : WHITE;
+                    ImGui::ImageWithBg(tex.id, picture_size, tex.uv0, tex.uv1, TRANSPARENT, tint);
                     if (hovered)
                     {
                         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -1217,9 +1234,9 @@ static void draw_song_table(DrawSongTableParams& params)
                                 region_start.x + (picture_size.x - play_button_size.x) / 2.0f,
                                 region_start.y + (picture_size.y - play_button_size.y) / 2.0f);
                         ImGui::SetCursorPos(play_button_pos);
-                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Button, BLACK);
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, BLACK);
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, BLACK);
                         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
                         if (imgui_image_button(tex.id, play_button_size) || ImGui::IsMouseClicked(ImGuiMouseButton_Left))
                         {
@@ -1346,7 +1363,7 @@ static void draw_album_table(std::vector<LruCacheRef<Album>>& albums, bool compa
             ImGui::PushID(album->id);
             ImGui::SetCursorPos(ImVec2(origin.x, origin.y));
             GLTexture tex = get_texture_from_album(album->id);
-            if (imgui_image_button(tex.id, album_art_size, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), tex.uv0, tex.uv1))
+            if (imgui_image_button(tex.id, album_art_size, WHITE, tex.uv0, tex.uv1))
             {
                 center_album = std::move(album);
                 ImGui::PopID();
@@ -1377,7 +1394,7 @@ static void draw_album_table(std::vector<LruCacheRef<Album>>& albums, bool compa
             GLTexture tex = get_texture_from_album(album->id);
             float text_height = ImGui::CalcTextSize(album->name.c_str()).y;
             ImGui::SetCursorPos(region_start);
-            imgui_image_button(tex.id, image_size, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), tex.uv0, tex.uv1);
+            imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
             if (imgui_aligned_text_button(album->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
             {
                 center_album = std::move(album);
@@ -1540,7 +1557,7 @@ static void draw_search_results()
             GLTexture tex = get_texture_default();
             float text_height = ImGui::CalcTextSize(artist->name.c_str()).y;
             ImGui::SetCursorPos(region_start);
-            imgui_image_button(tex.id, image_size, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), tex.uv0, tex.uv1);
+            imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
             if (imgui_aligned_text_button(artist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
             {
                 set_center_view_artist(std::move(artist));
@@ -1570,7 +1587,7 @@ static void draw_search_results()
             GLTexture tex = get_texture_default();
             float text_height = ImGui::CalcTextSize(playlist->name.c_str()).y;
             ImGui::SetCursorPos(region_start);
-            imgui_image_button(tex.id, image_size, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), tex.uv0, tex.uv1);
+            imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
             if (imgui_aligned_text_button(playlist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
             {
                 set_center_view_playlist(std::move(playlist));
@@ -1611,7 +1628,7 @@ static void draw_song_info()
     ImGui::SetCursorPosY(origin.y + album_art_padding);
     const ImVec2 size = ImVec2(210, 210);
     GLTexture tex = get_texture_from_song(song->id);
-    ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, BLACK);
 
     ImGui::SameLine();
     {
@@ -1869,7 +1886,7 @@ static void draw_song_info()
             GLTexture tex = get_texture_from_album(test_album->id);
             float text_height = ImGui::CalcTextSize(test_album->name.c_str()).y;
             ImGui::SetCursorPos(region_start);
-            imgui_image_button(tex.id, image_size, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), tex.uv0, tex.uv1);
+            imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
             if (imgui_aligned_text_button(test_album->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
             {
                 mp_switch_song_album(song->id, test_album->id);
@@ -1905,7 +1922,7 @@ static void draw_album_info()
     ImGui::SetCursorPosY(origin.y + album_art_padding);
     
     GLTexture tex = get_texture_from_album(ctx.center.album->id);
-    ImGui::ImageWithBg(tex.id, album_art_size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(tex.id, album_art_size, tex.uv0, tex.uv1, BLACK);
 
     static bool show_edit;
 
@@ -2063,7 +2080,7 @@ static void draw_playlist_info()
 
     const ImVec2 size = ImVec2(210, 210);
     GLTexture tex = get_texture_from_slot(ctx.textures.default_album_art_slot);
-    ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, BLACK);
 
     ImGui::SameLine();
     {
@@ -2221,17 +2238,13 @@ static void draw_playlist_info()
             else
             {
                 GLTexture tex = ctx.textures.play_button;
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_Button, BLACK);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, BLACK);
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, BLACK);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-                const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
-                const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
-                const ImVec4 bg_col = IMGUI_BLANK;
-                const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-                // IDK why ImGui::Image() doesnt work here maybe investigate some other time
-                //ImGui::Image(tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
-                ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+                const ImVec4 bg_col = TRANSPARENT;
+                const ImVec4 tint_col = WHITE;
+                ImGui::ImageButton("Play", tex.id, play_button_size, UV0, UV1, bg_col, tint_col);
                 if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
                 {
                     if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
@@ -2413,8 +2426,8 @@ static void draw_artist_info_songs()
             GLTexture tex = get_texture_from_song(song->id);
             ImGui::SetCursorPos(region_start);
             const bool hovered = imgui_is_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
-            ImVec4 tint = (hovered) ? ImVec4(0.6f, 0.6f, 0.6f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-            ImGui::ImageWithBg(tex.id, picture_size, tex.uv0, tex.uv1, IMGUI_BLANK, tint);
+            ImVec4 tint = (hovered) ? GRAY : WHITE;
+            ImGui::ImageWithBg(tex.id, picture_size, tex.uv0, tex.uv1, TRANSPARENT, tint);
             if (hovered)
             {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -2424,17 +2437,14 @@ static void draw_artist_info_songs()
                         region_start.x + (picture_size.x - play_button_size.x) / 2.0f,
                         region_start.y + (picture_size.y - play_button_size.y) / 2.0f);
                 ImGui::SetCursorPos(play_button_pos);
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_Button, BLACK);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, BLACK);
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, BLACK);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-                const ImVec2 uv0 = ImVec2(0.0f, 0.0f);
-                const ImVec2 uv1 = ImVec2(1.0f, 1.0f);
-                const ImVec4 bg_col = IMGUI_BLANK;
-                const ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                const ImVec4 bg_col = TRANSPARENT;
+                const ImVec4 tint_col = WHITE;
                 // IDK why ImGui::Image() doesnt work here maybe investigate some other time
-                //ImGui::Image(tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
-                ImGui::ImageButton("Play", tex.id, play_button_size, uv0, uv1, bg_col, tint_col);
+                ImGui::ImageButton("Play", tex.id, play_button_size, UV0, UV1, bg_col, tint_col);
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
                 {
                     if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
@@ -2517,7 +2527,7 @@ static void draw_artist_info()
 
     const ImVec2 size = ImVec2(210, 210);
     GLTexture tex = get_texture_default();
-    ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, BLACK);
 
     ImGui::SameLine();
 
@@ -2655,7 +2665,7 @@ static void draw_header(ImVec2 size)
 
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + advance, (size.y - button_size.y) / 2.0f));
 
-    ImVec4 tint = (ctx.quick_access_open) ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+    ImVec4 tint = (ctx.quick_access_open) ? SELECTED_COLOR_1 : WHITE;
     if (imgui_image_button(ctx.textures.pin_button.id, button_size, tint))
         ctx.quick_access_open = !ctx.quick_access_open;
 
@@ -2686,11 +2696,8 @@ static void draw_header(ImVec2 size)
     if (history_non_empty)
         ImGui::BeginDisabled();
 
-    const ImVec2 uv0 = ImVec2(1.0f, 0.0f);
-    const ImVec2 uv1 = ImVec2(0.0f, 1.0f);
-    tint = ImVec4(1,1,1,1);
     ImGui::SetCursorPos(ImVec2(size.x - button_size.x * 2 - advance * 3, (size.y - button_size.y) / 2.0f));
-    if (imgui_image_button(ctx.textures.play_button.id, button_size, tint, uv0, uv1))
+    if (imgui_image_button(ctx.textures.play_button.id, button_size, WHITE, UV0_INVERTED_HORIZONTALLY, UV1_INVERTED_HORIZONTALLY))
         pop_history();
     ImGui::SameLine();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + advance);
@@ -2953,13 +2960,13 @@ static void draw_right_side_queue()
         };
 
     for (const LruCacheRef<Song> & song : mp_ctx.queue)
-        list_song(song, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+        list_song(song, RED);
 
     for (const auto& [song, track] : mp_ctx.group_queue)
-        list_song(song, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+        list_song(song, GREEN);
     
     for (const LruCacheRef<Song>& song : mp_ctx.autoplay_queue)
-        list_song(song, ImVec4(0.0f, 0.0f, 1.0f, 1.0f));
+        list_song(song, BLUE);
 }
 
 static void draw_right_side()
@@ -2977,7 +2984,7 @@ static void draw_player(const ImVec2 size)
     GLTexture tex = (mp_ctx.current_song != nullptr) 
         ? get_texture_from_song(mp_ctx.current_song->id)
         : get_texture_default();
-    ImGui::ImageWithBg(tex.id, album_art_size, tex.uv0, tex.uv1, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+    ImGui::ImageWithBg(tex.id, album_art_size, tex.uv0, tex.uv1, BLACK);
     ImGui::PopStyleVar();
     ImGui::PopStyleVar();
 
@@ -3039,17 +3046,17 @@ static void draw_player(const ImVec2 size)
     float cursor_x = (size.x - width) / 2.0f;
     float cursor_y = 60.0f;
     constexpr float skip_time = 5.0f;
-    ImVec4 tmp_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    ImVec4 tmp_col = WHITE;
 
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     {
         ImVec4 tint{};
         if (mp_ctx.loop_mode == LOOP_GROUP)
-            tint = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+            tint = SELECTED_COLOR_1;
         else if (mp_ctx.loop_mode == LOOP_TRACK)
-            tint = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+            tint = SELECTED_COLOR_2;
         else
-            tint = ImVec4(0.0f, 0.0f, 1.0f, 1.0f);
+            tint = UNSELECTED_COLOR;
         if (imgui_image_button(ctx.textures.repeat_button.id, button_size, tint))
             mp_ctx.loop_mode = static_cast<LoopMode>((static_cast<int>(mp_ctx.loop_mode) + 1) % 3);
     }
@@ -3061,7 +3068,7 @@ static void draw_player(const ImVec2 size)
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-    if (imgui_image_button(ctx.textures.skip_button.id, button_size, tmp_col, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
+    if (imgui_image_button(ctx.textures.skip_button.id, button_size, tmp_col, UV0_INVERTED_HORIZONTALLY, UV1_INVERTED_HORIZONTALLY))
         mp_play_previous();
 
     cursor_x += advance;
@@ -3078,15 +3085,15 @@ static void draw_player(const ImVec2 size)
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-    if (imgui_image_button(ctx.textures.round_rewind_button.id, button_size, tmp_col, ImVec2(1.0f, 0.0f), ImVec2(0.0f, 1.0f)))
+    if (imgui_image_button(ctx.textures.round_rewind_button.id, button_size, tmp_col, UV0_INVERTED_HORIZONTALLY, UV1_INVERTED_HORIZONTALLY))
         mp_go_forward_in_current_song(skip_time);
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     {
         ImVec4 tint = (mp_ctx.shuffle)
-            ? ImVec4(1.0f, 0.0f, 0.0f, 1.0f)
-            : ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+            ? SELECTED_COLOR_1
+            : UNSELECTED_COLOR;
         if (imgui_image_button(ctx.textures.shuffle_button.id, button_size, tint))
             mp_toggle_shuffle();
     }
@@ -3116,8 +3123,8 @@ static void draw_player(const ImVec2 size)
         ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
         {
             ImVec4 tint = (mp_ctx.autoplay)
-                ? ImVec4(1.0f, 0.0f, 0.0f, 1.0f)
-                : ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+                ? SELECTED_COLOR_1
+                : UNSELECTED_COLOR;
             if (imgui_image_button(ctx.textures.autoplay_button.id, button_size, tint))
                 mp_toggle_autoplay();
         }
@@ -3133,8 +3140,8 @@ static void draw_player(const ImVec2 size)
         cursor_x += advance;
 
         ImVec4 tint = (ctx.right.type == SHOW_RIGHT_QUEUE) 
-            ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
-            : ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+            ? SELECTED_COLOR_1
+            : UNSELECTED_COLOR;
         ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
         if (imgui_image_button(ctx.textures.show_queue_button.id, button_size, tint))
             toggle_right_view_queue();
@@ -3143,7 +3150,7 @@ static void draw_player(const ImVec2 size)
 
 static void draw_debug_info()
 {
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, GRAY);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
     ImGui::SetNextWindowPos(ImVec2(200, 200), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiCond_FirstUseEver);
@@ -3195,26 +3202,26 @@ static void draw_left_side()
     auto list_pin = [&row, &root_pos, &row_advance, padding](const Pin& pin)
         {
             GLTexture tex = get_texture_default();
-            ImVec4 color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+            ImVec4 color = WHITE;
             if (pin.type == MPUID_SONG)
             {
                 tex = get_texture_from_song(pin.song->id);
-                color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+                color = YELLOW;
             }
             if (pin.type == MPUID_ALBUM)
             {
                 tex = get_texture_from_album(pin.album->id);
-                color = ImVec4(1.0f, 0.0f, 1.0f, 1.0f);
+                color = PURPLE;
             }
             if (pin.type == MPUID_ARTIST)
             {
                 tex = get_texture_default();
-                color = ImVec4(0.0f, 1.0f, 1.0f, 1.0f);
+                color = CYAN;
             }
             if (pin.type == MPUID_PLAYLIST)
             {
                 tex = get_texture_from_playlist(pin.playlist->id);
-                color = ImVec4(1.0f, 0.7f, 0.0f, 1.0f);
+                color = ORANGE;
             }
 
             ImGui::SetCursorPos(ImVec2(root_pos.x + padding, root_pos.y + row * row_advance));
