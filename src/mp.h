@@ -177,9 +177,9 @@ SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int re
 std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 
 void mp_get_song_lyrics(SongID song_id, char* lryics_buffer, size_t lyrics_buffer_size);
+void mp_update_song(Song& song);
 void mp_update_song_lyrics(SongID song_id, const char* lyrics);
-void mp_update_song_volume(SongID song_id, float volume);
-void mp_update_song(SongID song_id, const char* title);
+void mp_update_song_art(SongID song_id, Art* art);
 void mp_update_album(AlbumID album_id, const char* name);
 void mp_update_artist(ArtistID artist_id, const char* name);
 void mp_update_song_artist(SongID song_id, ArtistID artist_id);
@@ -189,8 +189,6 @@ void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
 LruCacheRef<Album> mp_create_album();
 LruCacheRef<Artist> mp_create_artist();
 LruCacheRef<Playlist> mp_create_playlist();
-
-void mp_switch_song_album(SongID song_id, AlbumID album_id);
 
 void mp_pin_song(SongID song_id);
 void mp_pin_album(AlbumID album_id);

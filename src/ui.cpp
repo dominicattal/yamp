@@ -28,6 +28,8 @@
 #define SEARCH_RESULTS_PER_PAGE 20
 #define STRING_LENGTH 512
 
+#define LARGE_IMAGE_SIZE ImVec2(210, 210)
+
 #define TRANSPARENT ImVec4(0.0f, 0.0f, 0.0f, 0.0f)
 #define BLACK ImVec4(0.0f, 0.0f, 0.0f, 1.0f)
 #define WHITE ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
@@ -43,6 +45,7 @@
 #define SELECTED_COLOR_1 RED
 #define SELECTED_COLOR_2 GREEN
 #define UNSELECTED_COLOR WHITE
+#define EMPTY_STR "<Empty>"
 
 #define UV0 ImVec2(0.0f, 0.0f)
 #define UV1 ImVec2(1.0f, 1.0f)
@@ -62,7 +65,7 @@ enum ViewEnum {
     SHOW_CENTER_PLAYLIST,
     SHOW_CENTER_ARTIST,
     SHOW_CENTER_LYRICS,
-    SHOW_CENTER_SEARCH_RESULT
+    SHOW_CENTER_SEARCH
 };
 
 enum SearchResultEnum {
@@ -105,6 +108,8 @@ struct UIContext {
         std::unordered_map<MPUID, Slot> slot_map;
         // Slot for the default album art
         Slot default_album_art_slot;
+        // Slot for editing
+        Slot edit_slot;
 
         GLTexture play_button;
         GLTexture queue_button;
@@ -162,7 +167,11 @@ struct UIContext {
             char song[512];
             char artist[512];
             char album[512];
+            char song_path[512];
             char year[32];
+            ArtistID artist_id;
+            AlbumID album_id;
+            Art art;
         } edit;
 
         char song_lyrics[MAX_LYRICS_SIZE];
@@ -191,6 +200,10 @@ struct UIContext {
     char search_query[256];
 
     bool window_maximized;
+
+    // for file dialogs
+    std::optional<std::future<std::string>> prompt;
+    std::function<void()> prompt_callback;
 };
 
 static UIContext ctx;
@@ -293,7 +306,7 @@ static void imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 reg
 
 static bool imgui_image_button(ImTextureRef tex_ref, const ImVec2& image_size, const ImVec4& tint_col = WHITE, const ImVec2& uv0 = UV0, const ImVec2& uv1 = UV1)
 {
-    ImGui::ImageWithBg(tex_ref, image_size, uv0, uv1, BLACK, tint_col);
+    ImGui::ImageWithBg(tex_ref, image_size, uv0, uv1, TRANSPARENT, tint_col);
     if (ImGui::IsItemHovered())
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     return ImGui::IsItemClicked();
@@ -561,6 +574,26 @@ static GLTexture get_texture_default()
     return get_texture_from_slot(ctx.textures.default_album_art_slot);
 }
 
+static GLTexture get_texture_edit()
+{
+    return get_texture_from_slot(ctx.textures.edit_slot);
+}
+
+static void copy_texture_slot(Slot& dst, Slot& src)
+{
+    glCopyImageSubData(
+            src.tex, GL_TEXTURE_2D, 0, src.xoff, src.yoff, 0,
+            dst.tex, GL_TEXTURE_2D, 0, dst.xoff, dst.yoff, 0,
+            LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 1
+        );
+}
+
+static void update_texture_slot(Slot& slot, const uint8_t* art_data)
+{
+    glBindTexture(GL_TEXTURE_2D, slot.tex);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, slot.xoff, slot.yoff, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, GL_RGBA, GL_UNSIGNED_BYTE, art_data);
+}
+
 static GLTexture get_texture_from_song(SongID song_id)
 {
     MPUID uid = mp_get_song_uid(song_id);
@@ -611,11 +644,10 @@ static Slot get_slot()
     return slot;
 }
 
-static Slot create_texture(const unsigned char* data)
+static Slot create_texture(const uint8_t* data)
 {
     Slot slot = get_slot();
-    glBindTexture(GL_TEXTURE_2D, slot.tex);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, slot.xoff, slot.yoff, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    update_texture_slot(slot, data);
     return slot;
 }
 
@@ -646,6 +678,11 @@ static void reset_center_view_containers()
     ctx.center.edit.artist[0] = '\0';
     ctx.center.edit.album[0] = '\0';
     ctx.center.edit.year[0] = '\0';
+    ctx.center.edit.song_path[0] = '\0';
+    ctx.center.edit.album_id = INVALID_ID;
+    ctx.center.edit.artist_id = INVALID_ID;
+    if (ctx.center.edit.art.data != nullptr)
+        mp_free_art(&ctx.center.edit.art);
 }
 
 static void set_center_view_lyrics(const LruCacheRef<Song>& song)
@@ -701,10 +738,28 @@ static void set_center_view_song(LruCacheRef<Song>&& song)
     mp_get_song_lyrics(song->id, ctx.center.song_lyrics, sizeof(ctx.center.song_lyrics));
     snprintf(ctx.center.edit.song, sizeof(ctx.center.edit.song), "%s", ctx.center.song->title.c_str());
     if (ctx.center.artist != nullptr)
+    {
         snprintf(ctx.center.edit.artist, sizeof(ctx.center.edit.artist), "%s", ctx.center.artist->name.c_str());
+        ctx.center.edit.artist_id = ctx.center.artist->id;
+    }
     if (ctx.center.album != nullptr)
+    {
         snprintf(ctx.center.edit.album, sizeof(ctx.center.edit.album), "%s", ctx.center.album->name.c_str());
+        ctx.center.edit.album_id = ctx.center.album->id;
+    }
+    snprintf(ctx.center.edit.song_path, sizeof(ctx.center.edit.song_path), "%s", ctx.center.song->path.c_str());
     snprintf(ctx.center.edit.year, sizeof(ctx.center.edit.year), "%d", ctx.center.song->year);
+
+    MPUID uid = mp_get_song_uid(ctx.center.song->id);
+    if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+    {
+        ctx.center.edit.art = mp_get_song_art(ctx.center.song->id);
+        copy_texture_slot(ctx.textures.edit_slot, ctx.textures.slot_map[uid]);
+    }
+    else
+    {
+        copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_art_slot);
+    }
 
     push_history_entry(SHOW_CENTER_SONG, ctx.center.song->id);
 }
@@ -767,7 +822,7 @@ static void set_center_view_artist(LruCacheRef<Artist>&& artist)
 
 static void set_center_view_search_result()
 {
-    ctx.center.type = SHOW_CENTER_SEARCH_RESULT;
+    ctx.center.type = SHOW_CENTER_SEARCH;
     ctx.center.song = nullptr;
     ctx.center.artist = nullptr;
     ctx.center.playlist = nullptr;
@@ -816,6 +871,7 @@ static void initialize_default_texture_slot(const char* path)
                 NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
                 STBIR_4CHANNEL);
     ctx.textures.default_album_art_slot = create_texture(resized_data);
+    ctx.textures.edit_slot = create_texture(resized_data);
     stbi_image_free(data);
     free(resized_data);
 }
@@ -1616,7 +1672,8 @@ static void draw_song_info()
         SHOW_NONE,
         SHOW_LYRICS,
         SHOW_EDIT,
-        SHOW_ALBUM_PICKER
+        SHOW_ALBUM_PICKER,
+        SHOW_ARTIST_PICKER
     };
 
     static int show = SHOW_NONE;
@@ -1626,9 +1683,8 @@ static void draw_song_info()
 
     ImGui::SetCursorPosX(origin.x + album_art_padding);
     ImGui::SetCursorPosY(origin.y + album_art_padding);
-    const ImVec2 size = ImVec2(210, 210);
     GLTexture tex = get_texture_from_song(song->id);
-    ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, BLACK);
+    ImGui::ImageWithBg(tex.id, LARGE_IMAGE_SIZE, tex.uv0, tex.uv1, BLACK);
 
     ImGui::SameLine();
     {
@@ -1662,7 +1718,7 @@ static void draw_song_info()
         }
         int length = static_cast<int>(ctx.center.song->length);
         if (song->year != INVALID_YEAR)
-            ImGui::Text("%u • %d:%02d", album->year, length / 60, length % 60);
+            ImGui::Text("%u • %d:%02d", song->year, length / 60, length % 60);
         else
             ImGui::Text("%d:%02d", length / 60, length % 60);
 
@@ -1697,45 +1753,48 @@ static void draw_song_info()
         ImGui::EndChild();
     }
 
+    static bool edited_song;
+    static bool edited_art;
+
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
     ImGui::Separator();
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
     ImGui::BeginChild("more_song_info", ImGui::GetContentRegionAvail());
     if (show == SHOW_LYRICS)
     {
-        static bool editing;
-        static bool edited;
-        editing ^= ImGui::Button("Edit");
+        static bool editing_lyrics;
+        static bool edited_lyrics;
+        editing_lyrics ^= ImGui::Button("Edit");
         ImGui::SameLine();
         if (ImGui::Button("Clear"))
         {
-            edited |= ctx.center.song_lyrics[0] != '\0';
+            edited_lyrics |= ctx.center.song_lyrics[0] != '\0';
             ctx.center.song_lyrics[0] = '\0';
         }
         ImGui::SameLine();
         if (ImGui::Button("Reset"))
         {
             mp_get_song_lyrics(song->id, ctx.center.song_lyrics, sizeof(ctx.center.song_lyrics));
-            edited = false;
+            edited_lyrics = false;
         }
         ImGui::SameLine();
         if (ImGui::Button("Save"))
         {
             mp_update_song_lyrics(ctx.center.song->id, ctx.center.song_lyrics);
-            edited = false;
-            editing = false;
+            edited_lyrics = false;
+            editing_lyrics = false;
         }
-        if (edited)
+        if (edited_lyrics)
         {
             ImGui::SameLine();
             ImGui::Text("(Unsaved Changes)");
         }
 
         ImGui::BeginChild("lyrics", ImGui::GetContentRegionAvail());
-        if (editing)
+        if (editing_lyrics)
         {
             ImGui::PushFont(NULL, 24.0f);
-            edited |= ImGui::InputTextMultiline(
+            edited_lyrics |= ImGui::InputTextMultiline(
                     "##textarea",
                     ctx.center.song_lyrics,
                     sizeof(ctx.center.song_lyrics),
@@ -1759,8 +1818,6 @@ static void draw_song_info()
     }
     else if (show == SHOW_EDIT)
     {
-        static bool edited;
-
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
         float col_1_cursor_x = 10.0f;
         float col_2_cursor_x = 120.0f;
@@ -1770,35 +1827,107 @@ static void draw_song_info()
         ImGui::Text("Song");
         ImGui::SameLine();
         ImGui::SetCursorPosX(col_2_cursor_x);
-        edited |= ImGui::InputText("##Song", ctx.center.edit.song, sizeof(ctx.center.edit.song));
+        ImGui::PushItemWidth(300.0f);
+        edited_song |= ImGui::InputText("##Song", ctx.center.edit.song, sizeof(ctx.center.edit.song));
 
         ImGui::SetCursorPosX(col_1_cursor_x);
-        ImGui::Text("Album");
+        if (imgui_aligned_text_button("Album", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
+        {
+            ctx.center.edit.album[0] = '\0';
+            ctx.center.edit.album_id = INVALID_ID;
+            edited_song = true;
+        }
         ImGui::SameLine();
         ImGui::SetCursorPosX(col_2_cursor_x);
-        if (imgui_aligned_text_button(ctx.center.edit.album, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
+        const bool album_name_empty = ctx.center.edit.album[0] == '\0';
+        if (album_name_empty)
+            ImGui::PushStyleColor(ImGuiCol_Text, CYAN);
+        if (imgui_aligned_text_button((album_name_empty) ? EMPTY_STR : ctx.center.edit.album, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
         {
             show = SHOW_ALBUM_PICKER;
             ctx.center.album_search_result = mp_search_albums(ctx.search_query, SEARCH_RESULTS_PER_PAGE, 1);
         }
+        if (album_name_empty)
+            ImGui::PopStyleColor();
 
-        ImGui::SetCursorPosX(col_1_cursor_x);
-        ImGui::Text("Artist");
-        ImGui::SameLine();
-        ImGui::SetCursorPosX(col_2_cursor_x);
-        ImGui::Text("%s", ctx.center.edit.artist);
+        if (ctx.center.edit.album_id == INVALID_ID)
+        {
+            ImGui::SetCursorPosX(col_1_cursor_x);
+            if (imgui_aligned_text_button("Artist", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
+            {
+                ctx.center.edit.artist[0] = '\0';
+                ctx.center.edit.artist_id = INVALID_ID;
+                edited_song = true;
+            }
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(col_2_cursor_x);
+            const bool artist_name_empty = ctx.center.edit.artist[0] == '\0';
+            if (artist_name_empty)
+                ImGui::PushStyleColor(ImGuiCol_Text, CYAN);
+            if (imgui_aligned_text_button((artist_name_empty) ? EMPTY_STR : ctx.center.edit.artist, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
+            {
+                if (ctx.center.edit.album_id == INVALID_ID)
+                {
+                    show = SHOW_ARTIST_PICKER;
+                    ctx.center.artist_search_result = mp_search_artists(ctx.search_query, SEARCH_RESULTS_PER_PAGE, 1);
+                }
+            }
+            if (artist_name_empty)
+                ImGui::PopStyleColor();
+        }
+        else
+        {
+            ImGui::SetCursorPosX(col_1_cursor_x);
+            ImGui::Text("Artist");
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(col_2_cursor_x);
+            ImGui::Text("%s", ctx.center.edit.artist);
+        }
 
         ImGui::SetCursorPosX(col_1_cursor_x);
         ImGui::Text("Year");
         ImGui::SameLine();
         ImGui::SetCursorPosX(col_2_cursor_x);
-        ImGui::Text("%s", ctx.center.edit.year);
+        ImGui::PushItemWidth(300.0f);
+        edited_song |= ImGui::InputText("##Year", ctx.center.edit.year, sizeof(ctx.center.edit.year));
 
         ImGui::SetCursorPosX(col_1_cursor_x);
-        ImGui::Text("Path");
+        if (imgui_aligned_text_button("Path", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
+        {
+            ctx.center.edit.song_path[0] = '\0';
+            edited_song = true;
+        }
         ImGui::SameLine();
         ImGui::SetCursorPosX(col_2_cursor_x);
-        ImGui::Text("%s", ctx.center.song->path.c_str());
+        const bool song_path_empty = ctx.center.edit.song_path[0] == '\0';
+        if (song_path_empty)
+            ImGui::PushStyleColor(ImGuiCol_Text, CYAN);
+        if (imgui_aligned_text_button((song_path_empty) ? EMPTY_STR : ctx.center.edit.song_path, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
+        {
+            ctx.prompt = std::async(std::launch::async,
+                []() -> std::string
+                {
+                    const std::string title{"Choose mp3"};
+                    const std::string default_path = pfd::path::home();
+                    const std::vector<std::string> filters {"MP3 File", "*.mp3"};
+                    const pfd::opt options = pfd::opt::none;
+                    std::vector<std::string> db_path = pfd::open_file(title, default_path, filters, options).result();
+                    return (db_path.size() > 0) ? std::move(db_path.front()) : std::string{};
+                });
+
+            ctx.prompt_callback = []()
+                {
+                    std::string db_path = ctx.prompt->get();
+                    if (db_path.size() > 0)
+                    {
+                        snprintf(ctx.center.edit.song_path, sizeof(ctx.center.edit.song_path), "%s", db_path.c_str());
+                        edited_song = true;
+                        edited_art = true;
+                    }
+                };
+        }
+        if (song_path_empty)
+            ImGui::PopStyleColor();
 
         GLTexture tex = ctx.textures.volume;
         ImVec2 volume_slider_size = ImVec2(150.0f, 5.0f);
@@ -1816,17 +1945,126 @@ static void draw_song_info()
         if (imgui_custom_slider_float("##Volume", &ctx.center.song->volume, 0.0f, 2.0f, volume_slider_size))
         {
             mp_update_volume();
-            edited = true;
+            edited_song = true;
+        }
+
+        GLTexture edit_tex = get_texture_edit();
+        ImGui::SetCursorPosX(col_1_cursor_x);
+        if (imgui_aligned_text_button("Cover", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
+        {
+            mp_free_art(&ctx.center.edit.art);
+            copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_art_slot);
+            edited_song = true;
+            edited_art = true;
+        }
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(col_2_cursor_x);
+        if (imgui_image_button(edit_tex.id, LARGE_IMAGE_SIZE, WHITE, edit_tex.uv0, edit_tex.uv1) && !ctx.prompt.has_value())
+        {
+            ctx.prompt = std::async(std::launch::async,
+                []() -> std::string {
+                    const std::string title{"Choose file"};
+                    const std::string default_path = pfd::path::home();
+                    const std::vector<std::string> filters {"JPG", "*.jpg"};
+                    const pfd::opt options = pfd::opt::none;
+                    std::vector<std::string> path = pfd::open_file(title, default_path, filters, options).result();
+                    if (path.size() > 0)
+                    {
+                        int width, height, nc;
+                        uint8_t* raw_art_data = stbi_load(path.front().c_str(), &width, &height, &nc, 4);
+                        mp_free_art(&ctx.center.edit.art);
+                        ctx.center.edit.art.data = stbir_resize_uint8_linear(
+                                    raw_art_data, width, height, 0,
+                                    NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
+                                    STBIR_4CHANNEL
+                                );
+                        ctx.center.edit.art.size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4 * sizeof(uint8_t);
+                        stbi_image_free(raw_art_data);
+                        return std::move(path.front());
+                    }
+                    return std::string{};
+                });
+            ctx.prompt_callback = 
+                []()
+                {
+                    std::string path = ctx.prompt->get();
+                    if (path.size() > 0)
+                    {
+                        update_texture_slot(ctx.textures.edit_slot, ctx.center.edit.art.data);
+                        edited_song = true;
+                        edited_art = true;
+                    }
+                    else
+                    {
+                        SPDLOG_INFO("Choose album art cancelled");
+                    }
+                };
         }
 
         ImGui::SetCursorPosX(col_1_cursor_x);
         if (ImGui::Button("Save"))
         {
-            mp_update_song(ctx.center.song->id, ctx.center.edit.song);
-            mp_update_song_volume(ctx.center.song->id, ctx.center.song->volume);
-            edited = false;
+            Song song{};
+            song.id = ctx.center.song->id;
+            song.title = ctx.center.edit.song;
+            song.year = std::atoi(ctx.center.edit.year);
+            song.volume = ctx.center.song->volume;
+            song.path = ctx.center.edit.song_path;
+            mp_update_song(song);
+            if (edited_art)
+            {
+                mp_update_song_art(ctx.center.song->id, &ctx.center.edit.art);
+                MPUID uid = mp_get_song_uid(ctx.center.song->id);
+                if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+                    copy_texture_slot(ctx.textures.slot_map[uid], ctx.textures.edit_slot);
+                edited_art = false;
+            }
+            mp_update_song_album(ctx.center.song->id, ctx.center.edit.album_id);
+            mp_update_song_artist(ctx.center.song->id, ctx.center.edit.artist_id);
+
+            if (ctx.center.edit.album_id == INVALID_ID)
+                ctx.center.album = nullptr;
+            else
+                ctx.center.album = mp_get_album(ctx.center.edit.album_id);
+
+            if (ctx.center.edit.artist_id == INVALID_ID)
+                ctx.center.artist = nullptr;
+            else
+                ctx.center.artist = mp_get_artist(ctx.center.edit.artist_id);
+
+            edited_song = false;
         }
-        if (edited)
+        ImGui::SetCursorPosX(col_1_cursor_x);
+        if (ImGui::Button("Reset"))
+        {
+            snprintf(ctx.center.edit.song, sizeof(ctx.center.edit.song), "%s", ctx.center.song->title.c_str());
+            if (ctx.center.artist != nullptr)
+            {
+                snprintf(ctx.center.edit.artist, sizeof(ctx.center.edit.artist), "%s", ctx.center.artist->name.c_str());
+                ctx.center.edit.artist_id = ctx.center.artist->id;
+            }
+            if (ctx.center.album != nullptr)
+            {
+                snprintf(ctx.center.edit.album, sizeof(ctx.center.edit.album), "%s", ctx.center.album->name.c_str());
+                ctx.center.edit.album_id = ctx.center.album->id;
+            }
+            snprintf(ctx.center.edit.song_path, sizeof(ctx.center.edit.song_path), "%s", ctx.center.song->path.c_str());
+            snprintf(ctx.center.edit.year, sizeof(ctx.center.edit.year), "%d", ctx.center.song->year);
+
+            MPUID uid = mp_get_song_uid(ctx.center.song->id);
+            if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+            {
+                ctx.center.edit.art = mp_get_song_art(ctx.center.song->id);
+                copy_texture_slot(ctx.textures.edit_slot, ctx.textures.slot_map[uid]);
+            }
+            else
+            {
+                copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_art_slot);
+            }
+
+            edited_song = false;
+        }
+        if (edited_song)
         {
             ImGui::SameLine();
             ImGui::Text(" [Unsaved Changes]");
@@ -1889,9 +2127,74 @@ static void draw_song_info()
             imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
             if (imgui_aligned_text_button(test_album->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
             {
-                mp_switch_song_album(song->id, test_album->id);
-                ctx.center.album = std::move(test_album);
-                snprintf(ctx.center.edit.album, sizeof(ctx.center.edit.album), "%s", ctx.center.album->name.c_str());
+                edited_song = true;
+                ctx.center.edit.album_id = test_album->id;
+                snprintf(ctx.center.edit.album, sizeof(ctx.center.edit.album), "%s", test_album->name.c_str());
+                LruCacheRef<Artist> artist = mp_get_artist_from_album(test_album->id);
+                ctx.center.edit.artist_id = artist->id;
+                snprintf(ctx.center.edit.artist, sizeof(ctx.center.edit.artist), "%s", artist->name.c_str());
+                show = SHOW_EDIT;
+                ImGui::PopID();
+                break;
+            }
+            ImGui::PopID();
+            region_start.y += image_size.y + spacing;
+        }
+        ImGui::PopFont();
+    }
+    else if (show == SHOW_ARTIST_PICKER)
+    {
+        const float padding = 10.0f;
+        int page_num = ctx.center.artist_search_result.page_num;
+        int num_pages = ctx.center.artist_search_result.num_pages;
+        int num_results = ctx.center.artist_search_result.num_results;
+
+        ImGui::SetCursorPos(ImVec2(padding, padding));
+        ImGui::SetNextItemWidth(200.0f);
+        if (ImGui::InputTextWithHint("##search_box", "Search...", ctx.search_query, sizeof(ctx.search_query)))
+            ctx.center.artist_search_result = mp_search_artists(ctx.search_query, SEARCH_RESULTS_PER_PAGE, 1);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5.0f, 0.0f));
+
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("Left", ImGuiDir_Left) && page_num > 1)
+            ctx.center.artist_search_result = mp_search_artists(ctx.search_query, SEARCH_RESULTS_PER_PAGE, --ctx.center.artist_search_result.page_num);
+        if (ImGui::IsItemHovered())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("Right", ImGuiDir_Right) && page_num > num_pages)
+            ctx.center.artist_search_result = mp_search_artists(ctx.search_query, SEARCH_RESULTS_PER_PAGE, ++ctx.center.artist_search_result.page_num);
+        if (ImGui::IsItemHovered())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+        ImGui::SameLine();
+        ImGui::Text("%d/%d (%d results)", page_num, num_pages, num_results);
+
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
+        ImGui::Separator();
+
+        ImGui::PopStyleVar();
+
+        ImVec2 region_start = ImGui::GetCursorPos();
+        region_start.x += 10.0f;
+        region_start.y += 10.0f;
+        ImVec2 region_size = ImGui::GetContentRegionAvail();
+        ImGui::PushFont(NULL, 32.0f);
+        ImVec2 image_size = ImVec2(64, 64);
+        float spacing = 10.0f;
+        for (LruCacheRef<Artist>& test_artist : ctx.center.artist_search_result.entries)
+        {
+            ImGui::PushID(test_artist->id);
+            GLTexture tex = get_texture_default();
+            float text_height = ImGui::CalcTextSize(test_artist->name.c_str()).y;
+            ImGui::SetCursorPos(region_start);
+            imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
+            if (imgui_aligned_text_button(test_artist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
+            {
+                edited_song = true;
+                ctx.center.edit.artist_id = test_artist->id;
+                snprintf(ctx.center.edit.artist, sizeof(ctx.center.edit.artist), "%s", test_artist->name.c_str());
                 show = SHOW_EDIT;
                 ImGui::PopID();
                 break;
@@ -2672,22 +2975,26 @@ static void draw_header(ImVec2 size)
 
     ImGui::SameLine();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + advance);
-    if (imgui_image_button(ctx.textures.home_button.id, button_size))
+    tint = (ctx.center.type == SHOW_CENTER_HOME) ? SELECTED_COLOR_1 : WHITE;
+    if (imgui_image_button(ctx.textures.home_button.id, button_size, tint))
         set_center_view_home();
 
     ImGui::SameLine();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + advance);
-    if (imgui_image_button(ctx.textures.settings_button.id, button_size))
+    tint = (ctx.center.type == SHOW_CENTER_SETTINGS) ? SELECTED_COLOR_1 : WHITE;
+    if (imgui_image_button(ctx.textures.settings_button.id, button_size, tint))
         set_center_view_settings();
     
     ImGui::SameLine();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + advance);
-    if (imgui_image_button(ctx.textures.pencil_button.id, button_size))
+    tint = (ctx.center.type == SHOW_CENTER_EDIT) ? SELECTED_COLOR_1 : WHITE;
+    if (imgui_image_button(ctx.textures.pencil_button.id, button_size, tint))
         set_center_view_edit();
 
     ImGui::SameLine();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + advance);
-    if (imgui_image_button(ctx.textures.search.id, button_size))
+    tint = (ctx.center.type == SHOW_CENTER_SEARCH) ? SELECTED_COLOR_1 : WHITE;
+    if (imgui_image_button(ctx.textures.search.id, button_size, tint))
         set_center_view_search_result();
 
     ImGui::SameLine();
@@ -2712,35 +3019,31 @@ static void draw_home()
 {
     ImGui::Text("Home");
 
-    static std::optional<std::future<std::string>> prompt{};
-    if (ImGui::Button("Change DB") && !prompt.has_value()) 
+    if (ImGui::Button("Change DB")) 
     {
-        prompt = std::async(std::launch::async,
+        ctx.prompt = std::async(std::launch::async,
             []() -> std::string {
                 const std::string title {"Choose database"};
                 const std::string default_path = pfd::path::home();
                 const std::vector<std::string> filters {"SQLite DB", "*.db"};
                 const pfd::opt options = pfd::opt::none;
                 std::vector<std::string> db_path = pfd::open_file(title, default_path, filters, options).result();
-                return (db_path.size() > 0) ? db_path.front() : "";
+                return (db_path.size() > 0) ? std::move(db_path.front()) : std::string{};
             });
+        ctx.prompt_callback = []()
+            {
+                std::string db_path = ctx.prompt->get();
+                if (db_path.size() > 0)
+                {
+                    destroy_cache_references();
+                    mp_change_db(db_path);
+                }
+                else
+                {
+                    SPDLOG_INFO("Change db prompt cancelled");
+                }
+            };
     }
-
-    if (prompt.has_value() && prompt->wait_for(std::chrono::nanoseconds(0)) == std::future_status::ready)
-    {
-        std::string db_path = prompt->get();
-        if (db_path.size() > 0)
-        {
-            destroy_cache_references();
-            mp_change_db(db_path);
-        }
-        else
-        {
-            SPDLOG_INFO("Change db prompt cancelled");
-        }
-        prompt.reset();
-    }
-
 
     ImGui::Text("DB: %s", config.db_path.c_str());
 
@@ -2757,33 +3060,31 @@ static void draw_settings()
 
 static void draw_edit()
 {
-    static std::optional<std::future<void>> prompt{};
-    if (ImGui::Button("Add Song") && !prompt.has_value()) 
+    if (ImGui::Button("Add Song")) 
     {
-        prompt = std::async(std::launch::async,
-            []() {
+        ctx.prompt = std::async(std::launch::async,
+            []() -> std::string
+            {
                 const std::string title {"Choose files to read"};
                 const std::string default_path = pfd::path::home();
                 const std::vector<std::string> filters {"All Files", "*"};
                 const pfd::opt options = pfd::opt::multiselect;
                 std::vector<std::string> song_paths = pfd::open_file(title, default_path, filters, options).result();
                 mp_add_songs(std::move(song_paths));
+                return {};
             });
     }
-    if (ImGui::Button("Add Folder") && !prompt.has_value()) 
+    if (ImGui::Button("Add Folder")) 
     {
-        prompt = std::async(std::launch::async,
-            []() {
+        ctx.prompt = std::async(std::launch::async,
+            []() -> std::string
+            {
                 const std::string title {"Select Any Directory"};
                 const std::string default_path = pfd::path::home();
                 const std::string folder_path = pfd::select_folder(title, default_path).result();
                 mp_recursive_add_songs(folder_path);
+                return {};
             });
-    }
-
-    if (prompt.has_value() && prompt->wait_for(std::chrono::nanoseconds(0)) == std::future_status::ready)
-    {
-        prompt.reset();
     }
 
     if (ImGui::Button("Create Song"))
@@ -2810,7 +3111,7 @@ static void draw_edit()
     {
         ImGui::Text("Default text");
     }
-    else if (prompt.has_value())
+    else if (ctx.prompt.has_value())
     {
         std::lock_guard lock{mp_ctx.adding_songs_mutex};
         ImGui::Text("%d / %d - %s", mp_ctx.num_songs_added, mp_ctx.num_songs_to_add, mp_ctx.adding_songs_current_path.c_str());
@@ -2844,8 +3145,14 @@ static void draw_edit()
             page_result.entries.emplace_back(mp_get_song(mp_ctx.added_songs[i]));
         }
 
+        static float title_col_offset = 10.0f;
+        static float artist_col_offset = 300.0f;
+        static float album_col_offset = 550.0f;
+        static float length_col_right_offset = 100.0f;
+
         DrawSongTableParams params{};
         params.songs = &page_result.entries;
+        params.column_offsets = {&title_col_offset, &artist_col_offset, &album_col_offset, &length_col_right_offset};
 
         draw_song_table(params);
 
@@ -2898,7 +3205,7 @@ static void draw_center()
         case SHOW_CENTER_ARTIST:
             draw_artist_info();
             break;
-        case SHOW_CENTER_SEARCH_RESULT:
+        case SHOW_CENTER_SEARCH:
             draw_search_results();
             break;
         default:
@@ -3400,6 +3707,14 @@ void ui_loop()
         draw_imgui();
         double end = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         ctx.debug.fps = end - start;
+
+        if (ctx.prompt.has_value() && ctx.prompt->wait_for(std::chrono::nanoseconds(0)) == std::future_status::ready)
+        {
+            if (ctx.prompt_callback != nullptr)
+                ctx.prompt_callback();
+            ctx.prompt_callback = nullptr;
+            ctx.prompt.reset();
+        }
 
         glfwSwapBuffers(ctx.window);
     }

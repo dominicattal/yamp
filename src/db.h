@@ -145,13 +145,14 @@ SearchResultID<PlaylistID> db_search_playlists(const char* search_query, int res
 SearchResultID<SongID> db_search_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
 // Update
-void db_update_song(SongID song_id, const char* new_title);
+void db_update_song(Song& song);
+void db_update_song_art(SongID song_id, Art* art);
+void db_update_song_lyrics(SongID song_id, const char* lyrics);
 void db_update_album(AlbumID album_id, const char* new_name);
 void db_update_artist(ArtistID artist_id, const char* new_name);
 void db_update_song_artist(SongID song_id, const char* artist);
 void db_update_playlist(PlaylistID playlist_id, const char* new_name);
 void db_update_album_length(AlbumID album_id);
-void db_update_song_lyrics(SongID song_id, const char* lyrics);
 void db_update_song_volume(SongID song_id, float volume);
 
 // Delete

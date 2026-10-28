@@ -445,6 +445,11 @@ void mp_update_song_lyrics(SongID song_id, const char* lyrics)
         snprintf(mp_ctx.current_song_lyrics, sizeof(mp_ctx.current_song_lyrics), "%s", lyrics);
 }
 
+void mp_update_song_art(SongID song_id, Art* art)
+{
+    db_update_song_art(song_id, art);
+}
+
 void mp_update_song_volume(SongID song_id, float volume)
 {
     db_update_song_volume(song_id, volume);
@@ -452,13 +457,16 @@ void mp_update_song_volume(SongID song_id, float volume)
         mp_update_volume();
 }
 
-void mp_update_song(SongID song_id, const char* title)
+void mp_update_song(Song& song)
 {
-    db_update_song(song_id, title);
-    LruCacheRef<Song> song = mp_ctx.songs.get(song_id);
-    if (song != nullptr)
+    db_update_song(song);
+    LruCacheRef<Song> song_cache_ref = mp_ctx.songs.get(song.id);
+    if (song_cache_ref != nullptr)
     {
-        song->title = title;
+        song_cache_ref->title = std::move(song.title);
+        song_cache_ref->volume = song.volume;
+        song_cache_ref->path = std::move(song.path);
+        song_cache_ref->year = song.year;
     }
 }
 
@@ -516,11 +524,6 @@ LruCacheRef<Playlist> mp_create_playlist()
     PlaylistID playlist_id = db_create_default_playlist();
     db_update_playlist(playlist_id, std::format("Unnamed Playlist #{}", playlist_id).c_str());
     return mp_get_playlist(playlist_id);
-}
-
-void mp_switch_song_album(SongID song_id, AlbumID album_id)
-{
-    (void)song_id; (void)album_id;
 }
 
 void mp_pin_song(SongID song_id)

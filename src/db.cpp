@@ -194,6 +194,8 @@ Album db_get_album_info(AlbumID album_id)
 void db_free_art(Art* art)
 {
     sqlite3_finalize(static_cast<sqlite3_stmt*>(art->sqlite_stmt));
+    art->data = nullptr;
+    art->sqlite_stmt = nullptr;
 }
 
 Art db_get_album_art(AlbumID album_id)
@@ -579,12 +581,26 @@ SearchResultID<SongID> db_search_songs_from_artist(ArtistID artist_id, int resul
     return search_result_id;
 }
 
-void db_update_song(SongID song_id, const char* new_title)
+void db_update_song(Song& song)
 {
     sqlite3_stmt* stmt;
-    const char* query = "UPDATE Songs SET title=?1 WHERE id=?2";
+    const char* query = "UPDATE Songs SET title=?1, year=?2, volume=?3, path=?4 WHERE id=?5";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, new_title, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, song.title.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, song.year);
+    sqlite3_bind_double(stmt, 3, song.volume);
+    sqlite3_bind_text(stmt, 4, song.path.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 5, song.id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void db_update_song_art(SongID song_id, Art* art)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE Songs SET cover=?1 WHERE id=?2";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_blob(stmt, 1, art->data, art->size, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, song_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
