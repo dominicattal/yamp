@@ -262,7 +262,8 @@ void mp_play_song(SongID song_id)
     mp_ctx.current_song = std::move(song);
     mp_ctx.current_song_artist = mp_get_artist_from_song(song_id);
     mp_ctx.current_song_album = mp_get_album_from_song(song_id);
-    mp_update_volume();
+    if (mp_ctx.current_song != nullptr)
+        mp_update_volume(mp_ctx.current_song->volume);
 
     db_get_song_lyrics(song_id, mp_ctx.current_song_lyrics, sizeof(mp_ctx.current_song_lyrics));
 }
@@ -355,21 +356,19 @@ void mp_toggle_autoplay()
         mp_play_next();
 }
 
-void mp_update_volume()
+void mp_update_volume(float volume)
 {
-    if (mp_ctx.current_song == nullptr)
-        return;
-
     if (mp_ctx.mute)
         ma_sound_set_volume(&ctx.current_song_sound, 0.0f);
     else
-        ma_sound_set_volume(&ctx.current_song_sound, mp_ctx.volume * mp_ctx.current_song->volume);
+        ma_sound_set_volume(&ctx.current_song_sound, mp_ctx.volume * volume);
 }
 
 void mp_toggle_mute()
 {
     mp_ctx.mute = !mp_ctx.mute;
-    mp_update_volume();
+    if (mp_ctx.current_song != nullptr)
+        mp_update_volume(mp_ctx.current_song->volume);
 }
 
 void mp_update_cursor()
@@ -454,7 +453,7 @@ void mp_update_song_volume(SongID song_id, float volume)
 {
     db_update_song_volume(song_id, volume);
     if (mp_ctx.current_song != nullptr && mp_ctx.current_song->id == song_id)
-        mp_update_volume();
+        mp_update_volume(volume);
 }
 
 void mp_update_song(Song& song)

@@ -172,6 +172,10 @@ struct UIContext {
             ArtistID artist_id;
             AlbumID album_id;
             Art art;
+
+            // this actually stores the volume before any edits so
+            // that the volume may be reset
+            float volume;
         } edit;
 
         char song_lyrics[MAX_LYRICS_SIZE];
@@ -749,6 +753,8 @@ static void set_center_view_song(LruCacheRef<Song>&& song)
     }
     snprintf(ctx.center.edit.song_path, sizeof(ctx.center.edit.song_path), "%s", ctx.center.song->path.c_str());
     snprintf(ctx.center.edit.year, sizeof(ctx.center.edit.year), "%d", ctx.center.song->year);
+
+    ctx.center.edit.volume = ctx.center.song->volume;
 
     MPUID uid = mp_get_song_uid(ctx.center.song->id);
     if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
@@ -1933,7 +1939,13 @@ static void draw_song_info()
         ImVec2 volume_slider_size = ImVec2(150.0f, 5.0f);
         ImVec2 volume_icon_size = ImVec2(20.0f, 20.0f);
         ImGui::SetCursorPosX(col_1_cursor_x);
-        ImGui::Text("Volume");
+        if (imgui_aligned_text_button("Volume", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
+        {
+            ctx.center.song->volume = 1.0f;
+            if (mp_ctx.current_song != nullptr && ctx.center.song->id == mp_ctx.current_song->id)
+                mp_update_volume(ctx.center.song->volume);
+            edited_song = true;
+        }
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
         ImGui::SameLine();
         ImGui::SetCursorPosX(col_2_cursor_x);
@@ -1944,7 +1956,8 @@ static void draw_song_info()
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (volume_icon_size.y - volume_slider_size.y) / 2.0f);
         if (imgui_custom_slider_float("##Volume", &ctx.center.song->volume, 0.0f, 2.0f, volume_slider_size))
         {
-            mp_update_volume();
+            if (mp_ctx.current_song != nullptr && ctx.center.song->id == mp_ctx.current_song->id)
+                mp_update_volume(ctx.center.song->volume);
             edited_song = true;
         }
 
@@ -2032,6 +2045,7 @@ static void draw_song_info()
             else
                 ctx.center.artist = mp_get_artist(ctx.center.edit.artist_id);
 
+            ctx.center.edit.volume = song.volume;
             edited_song = false;
         }
         ImGui::SetCursorPosX(col_1_cursor_x);
@@ -2061,6 +2075,9 @@ static void draw_song_info()
             {
                 copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_art_slot);
             }
+            ctx.center.song->volume = ctx.center.edit.volume;
+            if (mp_ctx.current_song != nullptr && ctx.center.song->id == mp_ctx.current_song->id)
+                mp_update_volume(ctx.center.song->volume);
 
             edited_song = false;
         }
@@ -3420,7 +3437,10 @@ static void draw_player(const ImVec2 size)
 
         ImGui::SetCursorPos(ImVec2(size.x - slider_size.x - right_edge_spacing, slider_y_offset + (volume_icon_size.x - slider_size.y) / 2.0f));
         if (imgui_custom_slider_float("##volume", &mp_ctx.volume, 0.0f, 1.0f, slider_size))
-            mp_update_volume();
+        {
+            if (mp_ctx.current_song != nullptr)
+                mp_update_volume(mp_ctx.current_song->volume);
+        }
 
         num_buttons = 4;
         width = 32.0f * num_buttons + spacing * (num_buttons - 1);

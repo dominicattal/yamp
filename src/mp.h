@@ -144,8 +144,9 @@ void mp_pause_or_resume();
 
 void mp_toggle_shuffle();
 void mp_toggle_autoplay();
-void mp_update_volume();
 void mp_update_cursor();
+// multiplied by the context volume
+void mp_update_volume(float volume);
 
 void mp_toggle_mute();
 
