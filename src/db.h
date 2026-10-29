@@ -99,6 +99,7 @@ void db_create_song(const char* title, const char* song_path, unsigned int year,
 void db_create_album(const char* name, unsigned int year, const uint8_t* art, int art_size);
 void db_create_artist(const char* name);
 void db_create_playlist(const char* name);
+SongID db_create_default_song();
 AlbumID db_create_default_album();
 ArtistID db_create_default_artist();
 PlaylistID db_create_default_playlist();

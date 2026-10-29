@@ -463,6 +463,16 @@ void mp_update_song_volume(SongID song_id, float volume)
 
 void mp_update_song(Song& song)
 {
+    TagLib::FileRef mp3_file_ref(song.path.c_str());
+    if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
+        SPDLOG_ERROR("Could not read {}", song.path);
+        return;
+    }
+    TagLib::Tag* tag = mp3_file_ref.tag();
+    assert(tag);
+    TagLib::AudioProperties* properties = mp3_file_ref.audioProperties();
+    song.length = properties->lengthInMilliseconds() / 1000.0;
+
     db_update_song(song);
     LruCacheRef<Song> song_cache_ref = mp_ctx.songs.get(song.id);
     if (song_cache_ref != nullptr)
@@ -471,6 +481,7 @@ void mp_update_song(Song& song)
         song_cache_ref->volume = song.volume;
         song_cache_ref->path = std::move(song.path);
         song_cache_ref->year = song.year;
+        song_cache_ref->length = song.length;
     }
 }
 
@@ -517,6 +528,15 @@ LruCacheRef<Artist> mp_create_artist()
     artist.name = std::format("Unnamed Artist #{}", artist.id);
     db_update_artist(artist);
     return mp_get_artist(artist.id);
+}
+
+LruCacheRef<Song> mp_create_song()
+{
+    Song song{};
+    song.id = db_create_default_song();
+    song.title = std::format("Unnamed Song #{}", song.id);
+    db_update_song(song);
+    return mp_get_song(song.id);
 }
 
 LruCacheRef<Album> mp_create_album()

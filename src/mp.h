@@ -188,6 +188,7 @@ void mp_update_song_artist(SongID song_id, ArtistID artist_id);
 void mp_update_song_album(SongID song_id, AlbumID album_id);
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
 
+LruCacheRef<Song> mp_create_song();
 LruCacheRef<Album> mp_create_album();
 LruCacheRef<Artist> mp_create_artist();
 LruCacheRef<Playlist> mp_create_playlist();

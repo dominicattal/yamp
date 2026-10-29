@@ -405,6 +405,13 @@ PlaylistID db_create_default_playlist()
     return sqlite3_last_insert_rowid(ctx.db);
 }
 
+SongID db_create_default_song()
+{
+    const char* query = "INSERT INTO Songs DEFAULT VALUES";
+    sqlite3_exec(ctx.db, query, nullptr, nullptr, nullptr);
+    return sqlite3_last_insert_rowid(ctx.db);
+}
+
 AlbumID db_create_default_album()
 {
     const char* query = "INSERT INTO Albums DEFAULT VALUES";
@@ -584,13 +591,14 @@ SearchResultID<SongID> db_search_songs_from_artist(ArtistID artist_id, int resul
 void db_update_song(Song& song)
 {
     sqlite3_stmt* stmt;
-    const char* query = "UPDATE Songs SET title=?1, year=?2, volume=?3, path=?4 WHERE id=?5";
+    const char* query = "UPDATE Songs SET title=?1, year=?2, volume=?3, path=?4, length=?5 WHERE id=?6";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, song.title.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, song.year);
     sqlite3_bind_double(stmt, 3, song.volume);
     sqlite3_bind_text(stmt, 4, song.path.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 5, song.id);
+    sqlite3_bind_double(stmt, 5, song.length);
+    sqlite3_bind_int(stmt, 6, song.id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }

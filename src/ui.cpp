@@ -3212,7 +3212,10 @@ static void draw_edit()
     }
 
     if (ImGui::Button("Create Song"))
-        ;
+    {
+        set_center_view_song(mp_create_song());
+        return;
+    }
     if (ImGui::Button("Create Album"))
     {
         set_center_view_album(mp_create_album());
