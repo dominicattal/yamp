@@ -181,8 +181,9 @@ void mp_get_song_lyrics(SongID song_id, char* lryics_buffer, size_t lyrics_buffe
 void mp_update_song(Song& song);
 void mp_update_song_lyrics(SongID song_id, const char* lyrics);
 void mp_update_song_art(SongID song_id, Art* art);
-void mp_update_album(AlbumID album_id, const char* name);
-void mp_update_artist(ArtistID artist_id, const char* name);
+void mp_update_album(Album& album);
+void mp_update_artist(Artist& artist);
+void mp_update_album_art(AlbumID album_id, Art* art);
 void mp_update_song_artist(SongID song_id, ArtistID artist_id);
 void mp_update_song_album(SongID song_id, AlbumID album_id);
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);

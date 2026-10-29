@@ -449,6 +449,11 @@ void mp_update_song_art(SongID song_id, Art* art)
     db_update_song_art(song_id, art);
 }
 
+void mp_update_album_art(AlbumID album_id, Art* art)
+{
+    db_update_album_art(album_id, art);
+}
+
 void mp_update_song_volume(SongID song_id, float volume)
 {
     db_update_song_volume(song_id, volume);
@@ -469,23 +474,24 @@ void mp_update_song(Song& song)
     }
 }
 
-void mp_update_album(AlbumID album_id, const char* name)
+void mp_update_album(Album& album)
 {
-    db_update_album(album_id, name);
-    LruCacheRef<Album> album = mp_ctx.albums.get(album_id);
-    if (album != nullptr)
+    db_update_album(album);
+    LruCacheRef<Album> album_cache_ref = mp_ctx.albums.get(album.id);
+    if (album_cache_ref != nullptr)
     {
-        album->name = name;
+        album_cache_ref->name = std::move(album.name);
+        album_cache_ref->year = album.year;
     }
 }
 
-void mp_update_artist(ArtistID artist_id, const char* name)
+void mp_update_artist(Artist& artist)
 {
-    db_update_artist(artist_id, name);
-    LruCacheRef<Artist> artist = mp_ctx.artists.get(artist_id);
-    if (artist != nullptr)
+    db_update_artist(artist);
+    LruCacheRef<Artist> artist_cache_ref = mp_ctx.artists.get(artist.id);
+    if (artist_cache_ref != nullptr)
     {
-        artist->name = name;
+        artist_cache_ref->name = artist.name;
     }
 }
 
@@ -506,16 +512,20 @@ void mp_update_album_artist(AlbumID album_id, ArtistID artist_id)
 
 LruCacheRef<Artist> mp_create_artist()
 {
-    ArtistID artist_id = db_create_default_artist();
-    db_update_artist(artist_id, std::format("Unnamed Artist #{}", artist_id).c_str());
-    return mp_get_artist(artist_id);
+    Artist artist{};
+    artist.id = db_create_default_artist();
+    artist.name = std::format("Unnamed Artist #{}", artist.id);
+    db_update_artist(artist);
+    return mp_get_artist(artist.id);
 }
 
 LruCacheRef<Album> mp_create_album()
 {
-    AlbumID album_id = db_create_default_album();
-    db_update_album(album_id, std::format("Unnamed Album #{}", album_id).c_str());
-    return mp_get_album(album_id);
+    Album album{};
+    album.id = db_create_default_album();
+    album.name = std::format("Unnamed Album #{}", album.id);
+    db_update_album(album);
+    return mp_get_album(album.id);
 }
 
 LruCacheRef<Playlist> mp_create_playlist()

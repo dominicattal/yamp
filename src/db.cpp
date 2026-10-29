@@ -606,24 +606,36 @@ void db_update_song_art(SongID song_id, Art* art)
     sqlite3_finalize(stmt);
 }
 
-void db_update_album(AlbumID album_id, const char* new_name)
+void db_update_album(Album& album)
 {
     sqlite3_stmt* stmt;
-    const char* query = "UPDATE Albums SET name=?1 WHERE id=?2";
+    const char* query = "UPDATE Albums SET name=?1, year=?2 WHERE id=?3";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, album.name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, album.year);
+    sqlite3_bind_int(stmt, 3, album.id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void db_update_album_art(AlbumID album_id, Art* art)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE Albums SET cover=?1 WHERE id=?2";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_blob(stmt, 1, art->data, art->size, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, album_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
 
-void db_update_artist(ArtistID artist_id, const char* new_name)
+void db_update_artist(Artist& artist)
 {
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Artists SET name=?1 WHERE id=?2";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 2, artist_id);
+    sqlite3_bind_text(stmt, 1, artist.name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, artist.id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
