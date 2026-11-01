@@ -15,6 +15,7 @@ using PlaylistID = int;
 using MPUID = uint64_t;
 
 #define INVALID_ID -1
+#define INVALID_TRACK 0
 #define INVALID_YEAR 0
 
 enum MPUIDEnum : MPUID {
@@ -95,10 +96,10 @@ void db_cleanup();
 void db_switch(const std::string& db_path);
 
 // Create
-void db_create_song(const char* title, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size);
-void db_create_album(const char* name, unsigned int year, const uint8_t* art, int art_size);
-void db_create_artist(const char* name);
-void db_create_playlist(const char* name);
+SongID db_create_song(const char* title, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size);
+AlbumID db_create_album(const char* name, unsigned int year, const uint8_t* art, int art_size);
+ArtistID db_create_artist(const char* name);
+PlaylistID db_create_playlist(const char* name);
 SongID db_create_default_song();
 AlbumID db_create_default_album();
 ArtistID db_create_default_artist();
@@ -124,6 +125,7 @@ Playlist db_get_playlist_info(PlaylistID playlist_id);
 AlbumID db_get_album_from_song(SongID song_id);
 ArtistID db_get_artist_from_song(SongID song_id);
 ArtistID db_get_artist_from_album(AlbumID album_id);
+int db_get_song_track(SongID song_id);
 std::vector<SongTrackID> db_get_songs_from_album(AlbumID album_id);
 std::vector<SongTrackID> db_get_songs_from_playlist(PlaylistID playlist_id);
 std::vector<SongID> db_get_songs_from_artist(int artist_id);

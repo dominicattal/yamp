@@ -159,21 +159,23 @@ SearchResult<Album> mp_search_albums(const char* search_query, int results_per_p
 SearchResult<Artist> mp_search_artists(const char* search_query, int results_per_page, int page_num);
 SearchResult<Playlist> mp_search_playlists(const char* search_query, int results_per_page, int page_num);
 
-LruCacheRef<Song>       mp_get_song(SongID song_id);
-LruCacheRef<Album>      mp_get_album(AlbumID album_id);
-LruCacheRef<Artist>     mp_get_artist(ArtistID artist_id);
-LruCacheRef<Playlist>   mp_get_playlist(int playlist_id);
+SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
-LruCacheRef<Artist>     mp_get_artist_from_song(SongID song_id);
-LruCacheRef<Album>      mp_get_album_from_song(SongID song_id);
-LruCacheRef<Artist>     mp_get_artist_from_album(AlbumID album_id);
+LruCacheRef<Song> mp_get_song(SongID song_id);
+LruCacheRef<Album> mp_get_album(AlbumID album_id);
+LruCacheRef<Artist> mp_get_artist(ArtistID artist_id);
+LruCacheRef<Playlist> mp_get_playlist(int playlist_id);
+
+LruCacheRef<Artist> mp_get_artist_from_song(SongID song_id);
+LruCacheRef<Album> mp_get_album_from_song(SongID song_id);
+LruCacheRef<Artist> mp_get_artist_from_album(AlbumID album_id);
+
+int mp_get_song_track(SongID song_id);
 
 std::vector<SongTrackID> mp_get_songs_from_album(AlbumID album_id);
 std::vector<SongTrackID> mp_get_songs_from_playlist(int playlist_id);
 std::vector<SongID> mp_get_songs_from_artist(ArtistID artist_id);
 std::vector<AlbumID> mp_get_albums_from_artist(ArtistID artist_id);
-
-SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
 std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 
@@ -185,7 +187,7 @@ void mp_update_album(Album& album);
 void mp_update_artist(Artist& artist);
 void mp_update_album_art(AlbumID album_id, Art* art);
 void mp_update_song_artist(SongID song_id, ArtistID artist_id);
-void mp_update_song_album(SongID song_id, AlbumID album_id);
+void mp_update_song_album(SongID song_id, AlbumID album_id, int track);
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
 
 LruCacheRef<Song> mp_create_song();

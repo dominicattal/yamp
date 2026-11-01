@@ -81,7 +81,7 @@ static void add_song_from_path(const std::string& song_path)
         };
 
     set_song_art_data();
-    db_create_song(title.c_str(), song_path.c_str(), year, song_length, art_data, art_size);
+    song_id = db_create_song(title.c_str(), song_path.c_str(), year, song_length, art_data, art_size);
     if (art_data != nullptr)
         free(art_data);
 
@@ -113,13 +113,13 @@ static void add_song_from_path(const std::string& song_path)
                     int album_art_size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
                     stbi_image_free(raw_art_data);
 
-                    db_create_album(album_name.c_str(), year, album_art_data, album_art_size);
+                    album_id = db_create_album(album_name.c_str(), year, album_art_data, album_art_size);
                     if (album_art_data != nullptr)
                         free(album_art_data);
 
                     loaded_art = true;
 
-                    SPDLOG_INFO("Loaded album {} art {}", album_id, fs_song_path.c_str());
+                    SPDLOG_INFO("Loaded album {} art {}", album_name.c_str(), fs_song_path.c_str());
 
                     break;
                 }
@@ -128,7 +128,7 @@ static void add_song_from_path(const std::string& song_path)
             if (!loaded_art)
             {
                 Art art = mp_get_song_art(song_id);
-                db_create_album(album_name.c_str(), year, art.data, art.size);
+                album_id = db_create_album(album_name.c_str(), year, art.data, art.size);
                 mp_free_art(&art);
 
                 SPDLOG_INFO("Loaded album {} art from song {}", album_id, song_id);
@@ -136,7 +136,7 @@ static void add_song_from_path(const std::string& song_path)
 
             album_id = db_get_album_id(album_name.c_str());
             mp_ctx.added_artists.push_back(album_id);
-            SPDLOG_INFO("Create album {} {}", album_id, album_name);
+            SPDLOG_INFO("Created album {} {}", album_id, album_name);
         }
         db_create_album_song(album_id, song_id, track);
     }
@@ -149,7 +149,7 @@ static void add_song_from_path(const std::string& song_path)
             db_create_artist(artist_name.c_str());
             artist_id = db_get_artist_id(artist_name.c_str());
             mp_ctx.added_artists.push_back(artist_id);
-            SPDLOG_INFO("Create artist {} {}", artist_id, artist_name);
+            SPDLOG_INFO("Created artist {} {}", artist_id, artist_name);
         }
 
         db_create_artist_song(artist_id, song_id);
@@ -511,9 +511,9 @@ void mp_update_song_artist(SongID song_id, ArtistID artist_id)
     (void)song_id; (void)artist_id;
 }
 
-void mp_update_song_album(SongID song_id, AlbumID album_id)
+void mp_update_song_album(SongID song_id, AlbumID album_id, int track)
 {
-    (void)song_id; (void)album_id;
+    (void)song_id; (void)album_id; (void)track;
 }
 
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id)
@@ -780,6 +780,11 @@ LruCacheRef<Artist> mp_get_artist_from_album(AlbumID album_id)
     if (artist_id == nullptr)
         artist_id = mp_ctx.album_artist.put(album_id, db_get_artist_from_album(album_id));
     return mp_get_artist(*artist_id);
+}
+
+int mp_get_song_track(SongID song_id)
+{
+    return db_get_song_track(song_id);
 }
 
 std::vector<SongTrackID> mp_get_songs_from_album(AlbumID album_id)

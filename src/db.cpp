@@ -13,6 +13,70 @@ struct {
     sqlite3* db;
 } ctx;
 
+const char* schema = R"(
+    CREATE TABLE IF NOT EXISTS Songs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title VARCHAR(256),
+        path VARCHAR(256),
+        cover BLOB,
+        length REAL,
+        volume REAL DEFAULT 1.0,
+        year INT,
+        lyrics TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS Artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(256)
+    );
+
+    CREATE TABLE IF NOT EXISTS Albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(256),
+        cover BLOB,
+        year INT,
+        length REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS Playlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(256),
+        length REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS ArtistAlbum (
+        artist_id INTEGER,
+        album_id INTEGER,
+        PRIMARY KEY (artist_id, album_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS ArtistSong (
+        artist_id INTEGER,
+        song_id INTEGER,
+        PRIMARY KEY (artist_id, song_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS AlbumSong (
+        album_id INTEGER,
+        song_id INTEGER PRIMARY KEY,
+        track INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS PlaylistSong (
+        playlist_id INTEGER,
+        song_id INTEGER,
+        track INTEGER,
+        PRIMARY KEY (playlist_id, song_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS Pins (
+        id INTEGER,
+        mp_type INTEGER,
+        pin_order INTEGER,
+        PRIMARY KEY (id, mp_type)
+    );
+)";
+
 static void execute_file(const char* path)
 {
     auto size = std::filesystem::file_size(path);
@@ -65,34 +129,26 @@ int db_get_id(MPUID uid)
 
 void db_init()
 {
-    //sqlite3_open("build/yamp.db", &ctx.db);
-    sqlite3_open_v2(
-        config.db_path.c_str(),
-        &ctx.db,
-        SQLITE_OPEN_READWRITE |
-        SQLITE_OPEN_CREATE |
-        SQLITE_OPEN_FULLMUTEX,
-        nullptr
-    );
-    execute_file("assets/sql/schema.sql");
+    sqlite3_open("build/yamp.db", &ctx.db);
+
+    // need concurrent writes when reading songs from file dialog
+    //sqlite3_open_v2(
+    //    config.db_path.c_str(),
+    //    &ctx.db,
+    //    SQLITE_OPEN_READWRITE |
+    //    SQLITE_OPEN_CREATE |
+    //    SQLITE_OPEN_FULLMUTEX,
+    //    nullptr
+    //);
+
+    char* error_msg{};
+    sqlite3_exec(ctx.db, schema, NULL, NULL, &error_msg);
+    if (error_msg != NULL) {
+        SPDLOG_INFO("SQLite3 error: {}", error_msg);
+        sqlite3_free(error_msg);
+    }
 
     SPDLOG_INFO("DB at {} loaded successfully", config.db_path);
-
-    sqlite3_stmt* stmt;
-    const char* query = "SELECT COUNT(id) FROM Songs";
-    sqlite3_prepare(ctx.db, query, -1, &stmt, NULL);
-    [[maybe_unused]] int res = sqlite3_step(stmt);
-    if (res != SQLITE_ROW) {
-        sqlite3_finalize(stmt);
-        return;
-    }
-    int num_rows = sqlite3_column_int(stmt, 0);
-    SPDLOG_INFO("num rows: {}", num_rows);
-    // load the example data
-    if (num_rows == 0) {
-        //execute_file("assets/sql/insert.sql");
-    }
-    sqlite3_finalize(stmt);
 }
 
 void db_cleanup()
@@ -222,10 +278,6 @@ Artist db_get_artist_info(ArtistID artist_id)
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, artist_id);
     [[maybe_unused]] int res = sqlite3_step(stmt);
-    if (res != SQLITE_ROW)
-    {
-        SPDLOG_INFO("{}", artist_id);
-    }
     assert(res == SQLITE_ROW);
     const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
     if (name != nullptr)
@@ -285,6 +337,18 @@ ArtistID db_get_artist_from_album(AlbumID album_id)
     ArtistID artist_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : INVALID_ID;
     sqlite3_finalize(stmt);
     return artist_id;
+}
+
+int db_get_song_track(SongID song_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT track FROM AlbumSong WHERE song_id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, song_id);
+    int res = sqlite3_step(stmt);
+    int track = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : INVALID_TRACK;
+    sqlite3_finalize(stmt);
+    return track;
 }
 
 std::vector<SongTrackID> db_get_songs_from_album(AlbumID album_id)
@@ -381,7 +445,7 @@ ArtistID db_get_artist_id(const char* name)
     return artist_id;
 }
 
-void db_create_artist(const char* name)
+ArtistID db_create_artist(const char* name)
 {
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Artists (name) VALUES (?1)";
@@ -389,6 +453,7 @@ void db_create_artist(const char* name)
     sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    return sqlite3_last_insert_rowid(ctx.db);
 }
 
 ArtistID db_create_default_artist()
@@ -419,7 +484,7 @@ AlbumID db_create_default_album()
     return sqlite3_last_insert_rowid(ctx.db);
 }
 
-void db_create_song(const char* title, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size)
+SongID db_create_song(const char* title, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size)
 {
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Songs (title, path, year, length, cover) VALUES (?1, ?2, ?3, ?4, ?5);";
@@ -433,6 +498,7 @@ void db_create_song(const char* title, const char* song_path, unsigned int year,
     sqlite3_finalize(stmt);
     if (res == SQLITE_CONSTRAINT)
         SPDLOG_WARN("song title={} path={} exists in db already", title, song_path);
+    return sqlite3_last_insert_rowid(ctx.db);
 }
 
 SearchResultID<SongID> db_search_songs(const char* search_query, int results_per_page, int page_num)
@@ -599,7 +665,7 @@ void db_update_song(Song& song)
     sqlite3_bind_text(stmt, 4, song.path.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_double(stmt, 5, song.length);
     sqlite3_bind_int(stmt, 6, song.id);
-    sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
 
@@ -740,7 +806,7 @@ AlbumID db_get_album_id(const char* name)
     return album_id;
 }
 
-void db_create_album(const char* name, unsigned int year, const uint8_t* art, int art_size)
+AlbumID db_create_album(const char* name, unsigned int year, const uint8_t* art, int art_size)
 {
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Albums (name, year, cover) VALUES (?1, ?2, ?3)";
@@ -750,6 +816,7 @@ void db_create_album(const char* name, unsigned int year, const uint8_t* art, in
     sqlite3_bind_blob(stmt, 3, art, art_size, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    return sqlite3_last_insert_rowid(ctx.db);
 }
 
 void db_create_album_song(AlbumID album_id, SongID song_id, int track)
@@ -777,7 +844,7 @@ PlaylistID db_get_playlist_id(const char* name)
     return playlist_id;
 }
 
-void db_create_playlist(const char* name)
+PlaylistID db_create_playlist(const char* name)
 {
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Playlists (name) VALUES (?1)";
@@ -785,6 +852,7 @@ void db_create_playlist(const char* name)
     sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    return sqlite3_last_insert_rowid(ctx.db);
 }
 
 void db_update_playlist(PlaylistID playlist_id, const char* new_name)
