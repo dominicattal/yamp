@@ -151,6 +151,8 @@ SearchResultID<SongID> db_search_songs_from_artist(ArtistID artist_id, int resul
 void db_update_song(Song& song);
 void db_update_song_art(SongID song_id, Art* art);
 void db_update_song_lyrics(SongID song_id, const char* lyrics);
+void db_update_song_artist(SongID song_id, AlbumID artist_id);
+void db_update_song_album(SongID song_id, AlbumID album_id, int track);
 void db_update_album(Album& album);
 void db_update_album_art(AlbumID album_id, Art* art);
 void db_update_artist(Artist& artist);

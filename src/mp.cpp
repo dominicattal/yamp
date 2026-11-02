@@ -501,19 +501,23 @@ void mp_update_artist(Artist& artist)
     db_update_artist(artist);
     LruCacheRef<Artist> artist_cache_ref = mp_ctx.artists.get(artist.id);
     if (artist_cache_ref != nullptr)
-    {
         artist_cache_ref->name = artist.name;
-    }
 }
 
 void mp_update_song_artist(SongID song_id, ArtistID artist_id)
 {
-    (void)song_id; (void)artist_id;
+    db_update_song_artist(song_id, artist_id);
+    LruCacheRef<ArtistID> artist_id_cache_ref = mp_ctx.song_artist.get(song_id);
+    if (artist_id_cache_ref != nullptr)
+        *artist_id_cache_ref = artist_id;
 }
 
 void mp_update_song_album(SongID song_id, AlbumID album_id, int track)
 {
-    (void)song_id; (void)album_id; (void)track;
+    db_update_song_album(song_id, album_id, track);
+    LruCacheRef<AlbumID> album_id_cache_ref = mp_ctx.song_album.get(song_id);
+    if (album_id_cache_ref != nullptr)
+        *album_id_cache_ref = album_id;
 }
 
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id)

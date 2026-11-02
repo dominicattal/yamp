@@ -46,14 +46,12 @@ const char* schema = R"(
 
     CREATE TABLE IF NOT EXISTS ArtistAlbum (
         artist_id INTEGER,
-        album_id INTEGER,
-        PRIMARY KEY (artist_id, album_id)
+        album_id INTEGER PRIMARY KEY
     );
 
     CREATE TABLE IF NOT EXISTS ArtistSong (
         artist_id INTEGER,
-        song_id INTEGER,
-        PRIMARY KEY (artist_id, song_id)
+        song_id INTEGER PRIMARY KEY
     );
 
     CREATE TABLE IF NOT EXISTS AlbumSong (
@@ -735,45 +733,6 @@ void db_create_artist_song(ArtistID artist_id, int song_id)
     sqlite3_finalize(stmt);
 }
 
-void db_update_song_artist(SongID song_id, const char* artist)
-{
-    sqlite3_stmt* stmt;
-    const char* query = "SELECT artist_id FROM ArtistSong WHERE song_id=?1";
-    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_int(stmt, 1, song_id);
-    int res = sqlite3_step(stmt);
-    ArtistID artist_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : INVALID_ID;
-    sqlite3_finalize(stmt);
-
-    if (artist_id != INVALID_ID)
-    {
-        query = "DELETE FROM ArtistSong WHERE song_id=?1 AND artist_id=?2";
-        sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-        sqlite3_bind_int(stmt, 1, song_id);
-        sqlite3_bind_int(stmt, 2, artist_id);
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-
-        query = "SELECT COUNT(artist_id) FROM ArtistSong NATURAL JOIN ArtistAlbum WHERE artist_id=?1";
-        sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-        sqlite3_bind_int(stmt, 1, artist_id);
-        sqlite3_step(stmt);
-        int count = sqlite3_column_int(stmt, 0);
-        sqlite3_finalize(stmt);
-
-        if (count == 0)
-            db_delete_artist(artist_id);
-    }
-
-    artist_id = db_get_artist_id(artist);
-    if (artist_id == INVALID_ID)
-    {
-        db_create_artist(artist);
-        artist_id = db_get_artist_id(artist);
-    }
-    db_create_artist_song(artist_id, song_id);
-}
-
 void db_delete_album(AlbumID album_id)
 {
     sqlite3_stmt* stmt;
@@ -883,6 +842,37 @@ void db_update_song_lyrics(SongID song_id, const char* lyrics)
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, lyrics, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, song_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void db_update_song_artist(SongID song_id, AlbumID artist_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query;
+    if (artist_id == INVALID_ID)
+        query = "DELETE FROM ArtistSong WHERE song_id=?1";
+    else
+        query = "INSERT INTO ArtistSong (song_id, artist_id) VALUES (?1, ?2) ON CONFLICT (song_id) DO UPDATE SET artist_id=?2";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, song_id);
+    sqlite3_bind_int(stmt, 2, artist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void db_update_song_album(SongID song_id, AlbumID album_id, int track)
+{
+    sqlite3_stmt* stmt;
+    const char* query;
+    if (album_id == INVALID_ID)
+        query = "DELETE FROM AlbumSong WHERE song_id=?1";
+    else
+        query = "INSERT INTO AlbumSong (song_id, album_id, track) VALUES (?1, ?2, ?3) ON CONFLICT (song_id) DO UPDATE SET album_id=?2, track=?3";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, song_id);
+    sqlite3_bind_int(stmt, 2, album_id);
+    sqlite3_bind_int(stmt, 3, track);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
