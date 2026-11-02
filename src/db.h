@@ -32,7 +32,7 @@ enum LoopMode {
 };
 
 struct Song {
-    std::string title;
+    std::string name;
     std::string path;
     SongID id;
     unsigned int year;
@@ -96,7 +96,7 @@ void db_cleanup();
 void db_switch(const std::string& db_path);
 
 // Create
-SongID db_create_song(const char* title, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size);
+SongID db_create_song(const char* name, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size);
 AlbumID db_create_album(const char* name, unsigned int year, const uint8_t* art, int art_size);
 ArtistID db_create_artist(const char* name);
 PlaylistID db_create_playlist(const char* name);
@@ -155,6 +155,7 @@ void db_update_song_artist(SongID song_id, AlbumID artist_id);
 void db_update_song_album(SongID song_id, AlbumID album_id, int track);
 void db_update_album(Album& album);
 void db_update_album_art(AlbumID album_id, Art* art);
+void db_update_album_artist(AlbumID album_id, ArtistID artist_id);
 void db_update_artist(Artist& artist);
 void db_update_song_artist(SongID song_id, const char* artist);
 void db_update_playlist(PlaylistID playlist_id, const char* new_name);

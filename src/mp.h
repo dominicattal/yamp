@@ -185,6 +185,7 @@ void mp_update_song_lyrics(SongID song_id, const char* lyrics);
 void mp_update_song_art(SongID song_id, Art* art);
 void mp_update_album(Album& album);
 void mp_update_artist(Artist& artist);
+void mp_update_artist_art(ArtistID artist_id, Art* art);
 void mp_update_album_art(AlbumID album_id, Art* art);
 void mp_update_song_artist(SongID song_id, ArtistID artist_id);
 void mp_update_song_album(SongID song_id, AlbumID album_id, int track);

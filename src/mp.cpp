@@ -43,7 +43,7 @@ static void add_song_from_path(const std::string& song_path)
     assert(tag);
     TagLib::AudioProperties* properties = mp3_file_ref.audioProperties();
     assert(properties);
-    std::string title = tag->title().to8Bit(true);
+    std::string song_name = tag->title().to8Bit(true);
     std::string album_name = tag->album().to8Bit(true);
     std::string artist_name = tag->artist().to8Bit(true);
     unsigned int year = tag->year();
@@ -81,13 +81,13 @@ static void add_song_from_path(const std::string& song_path)
         };
 
     set_song_art_data();
-    song_id = db_create_song(title.c_str(), song_path.c_str(), year, song_length, art_data, art_size);
+    song_id = db_create_song(song_name.c_str(), song_path.c_str(), year, song_length, art_data, art_size);
     if (art_data != nullptr)
         free(art_data);
 
     song_id = db_get_song_id(song_path.c_str());
     mp_ctx.added_songs.push_back(song_id);
-    SPDLOG_INFO("Created song {} {}", song_id, title);
+    SPDLOG_INFO("Created song {} {}", song_id, song_name);
 
     AlbumID album_id{};
     ArtistID artist_id{};
@@ -454,6 +454,11 @@ void mp_update_album_art(AlbumID album_id, Art* art)
     db_update_album_art(album_id, art);
 }
 
+void mp_update_artist_art(ArtistID artist_id, Art* art)
+{
+    (void)artist_id; (void)art;
+}
+
 void mp_update_song_volume(SongID song_id, float volume)
 {
     db_update_song_volume(song_id, volume);
@@ -477,7 +482,7 @@ void mp_update_song(Song& song)
     LruCacheRef<Song> song_cache_ref = mp_ctx.songs.get(song.id);
     if (song_cache_ref != nullptr)
     {
-        song_cache_ref->title = std::move(song.title);
+        song_cache_ref->name = std::move(song.name);
         song_cache_ref->volume = song.volume;
         song_cache_ref->path = std::move(song.path);
         song_cache_ref->year = song.year;
@@ -522,7 +527,10 @@ void mp_update_song_album(SongID song_id, AlbumID album_id, int track)
 
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id)
 {
-    (void)album_id; (void)artist_id;
+    db_update_album_artist(album_id, artist_id);
+    LruCacheRef<ArtistID> artist_id_cache_ref = mp_ctx.album_artist.get(album_id);
+    if (artist_id_cache_ref != nullptr)
+        *artist_id_cache_ref = artist_id;
 }
 
 LruCacheRef<Artist> mp_create_artist()
@@ -538,7 +546,7 @@ LruCacheRef<Song> mp_create_song()
 {
     Song song{};
     song.id = db_create_default_song();
-    song.title = std::format("Unnamed Song #{}", song.id);
+    song.name = std::format("Unnamed Song #{}", song.id);
     db_update_song(song);
     return mp_get_song(song.id);
 }
@@ -702,26 +710,6 @@ SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int re
         search_result.entries.push_back(std::move(song));
     }
     return search_result;
-}
-
-[[maybe_unused]] void mp_song_update(SongID song_id, const char* title, const char* artist, const char* album, const char* cover_path)
-{
-    (void)song_id;
-    (void)title;
-    (void)artist;
-    (void)album;
-    (void)cover_path;
-    //Song* song = mp_get_song_from_id(song_id);
-    //int album_id = mp_get_album_id_from_song_id(song_id);
-    //db_update_song(song_id, title, song->path.c_str(), song->length);
-
-    //db_update_song_artist(song_id, artist);
-    //db_update_song_album(song_id, album);
-
-    //song->title = std::string{title};
-    // change artistsong
-    // change albumsong
-    return;
 }
 
 LruCacheRef<Song> mp_get_song(SongID song_id)

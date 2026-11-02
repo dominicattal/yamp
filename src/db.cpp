@@ -16,7 +16,7 @@ struct {
 const char* schema = R"(
     CREATE TABLE IF NOT EXISTS Songs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title VARCHAR(256),
+        name VARCHAR(256),
         path VARCHAR(256),
         cover BLOB,
         length REAL,
@@ -197,13 +197,13 @@ Song db_get_song_info(SongID song_id)
 {
     Song song{};
     sqlite3_stmt* stmt;
-    const char* query = "SELECT title, path, year, length, volume FROM Songs WHERE id=?1";
+    const char* query = "SELECT name, path, year, length, volume FROM Songs WHERE id=?1";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
     [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_ROW);
     song.id = song_id;
-    song.title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    song.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
     song.path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
     song.year = sqlite3_column_int(stmt, 2);
     song.length = static_cast<float>(sqlite3_column_double(stmt, 3));
@@ -482,12 +482,12 @@ AlbumID db_create_default_album()
     return sqlite3_last_insert_rowid(ctx.db);
 }
 
-SongID db_create_song(const char* title, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size)
+SongID db_create_song(const char* name, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size)
 {
     sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO Songs (title, path, year, length, cover) VALUES (?1, ?2, ?3, ?4, ?5);";
+    const char* query = "INSERT INTO Songs (name, path, year, length, cover) VALUES (?1, ?2, ?3, ?4, ?5);";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, title, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, song_path, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 3, year);
     sqlite3_bind_double(stmt, 4, song_length);
@@ -495,7 +495,7 @@ SongID db_create_song(const char* title, const char* song_path, unsigned int yea
     int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (res == SQLITE_CONSTRAINT)
-        SPDLOG_WARN("song title={} path={} exists in db already", title, song_path);
+        SPDLOG_WARN("song name={} path={} exists in db already", name, song_path);
     return sqlite3_last_insert_rowid(ctx.db);
 }
 
@@ -510,7 +510,7 @@ SearchResultID<SongID> db_search_songs(const char* search_query, int results_per
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
 
-    query = "SELECT COUNT(id) FROM Songs WHERE title LIKE ?1"; 
+    query = "SELECT COUNT(id) FROM Songs WHERE name LIKE ?1"; 
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
@@ -518,7 +518,7 @@ SearchResultID<SongID> db_search_songs(const char* search_query, int results_per
     search_result_id.num_pages = (search_result_id.num_results - 1) / search_result_id.results_per_page + 1;
     sqlite3_finalize(stmt);
 
-    query = "SELECT id FROM Songs WHERE title LIKE ?1 LIMIT ?2 OFFSET ?3";
+    query = "SELECT id FROM Songs WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, results_per_page);
@@ -541,7 +541,7 @@ SearchResultID<AlbumID> db_search_albums(const char* search_query, int results_p
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
 
-    query = "SELECT COUNT(id) FROM Albums WHERE title LIKE ?1"; 
+    query = "SELECT COUNT(id) FROM Albums WHERE name LIKE ?1"; 
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
@@ -572,7 +572,7 @@ SearchResultID<ArtistID> db_search_artists(const char* search_query, int results
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
 
-    query = "SELECT COUNT(id) FROM Artists WHERE title LIKE ?1"; 
+    query = "SELECT COUNT(id) FROM Artists WHERE name LIKE ?1"; 
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
@@ -603,7 +603,7 @@ SearchResultID<PlaylistID> db_search_playlists(const char* search_query, int res
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
 
-    query = "SELECT COUNT(id) FROM Playlists WHERE title LIKE ?1"; 
+    query = "SELECT COUNT(id) FROM Playlists WHERE name LIKE ?1"; 
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
@@ -655,9 +655,9 @@ SearchResultID<SongID> db_search_songs_from_artist(ArtistID artist_id, int resul
 void db_update_song(Song& song)
 {
     sqlite3_stmt* stmt;
-    const char* query = "UPDATE Songs SET title=?1, year=?2, volume=?3, path=?4, length=?5 WHERE id=?6";
+    const char* query = "UPDATE Songs SET name=?1, year=?2, volume=?3, path=?4, length=?5 WHERE id=?6";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, song.title.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, song.name.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, song.year);
     sqlite3_bind_double(stmt, 3, song.volume);
     sqlite3_bind_text(stmt, 4, song.path.c_str(), -1, SQLITE_STATIC);
@@ -701,6 +701,21 @@ void db_update_album_art(AlbumID album_id, Art* art)
     sqlite3_finalize(stmt);
 }
 
+void db_update_album_artist(AlbumID album_id, ArtistID artist_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query;
+    if (artist_id == INVALID_ID)
+        query = "DELETE FROM ArtistAlbum WHERE album_id=?1";
+    else
+        query = "INSERT INTO ArtistAlbum (album_id, artist_id) VALUES (?1, ?2) ON CONFLICT (album_id) DO UPDATE SET artist_id=?2";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, album_id);
+    sqlite3_bind_int(stmt, 2, artist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
 void db_update_artist(Artist& artist)
 {
     sqlite3_stmt* stmt;
@@ -722,7 +737,7 @@ void db_delete_artist(ArtistID artist_id)
     sqlite3_finalize(stmt);
 }
 
-void db_create_artist_song(ArtistID artist_id, int song_id)
+void db_create_artist_song(ArtistID artist_id, SongID song_id)
 {
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO ArtistSong (artist_id, song_id) VALUES (?1, ?2)";
