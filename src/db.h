@@ -161,6 +161,8 @@ void db_update_song_artist(SongID song_id, const char* artist);
 void db_update_playlist(PlaylistID playlist_id, const char* new_name);
 void db_update_album_length(AlbumID album_id);
 void db_update_song_volume(SongID song_id, float volume);
+void db_update_album_songs_year(AlbumID album_id, int year);
+void db_update_album_songs_art(AlbumID album_id);
 
 // Delete
 void db_delete_artist(int artist_id);

@@ -128,18 +128,17 @@ struct UIContext {
         std::unordered_map<MPUID, Slot> slot_map;
         // Slot for the default album art
         Slot default_album_art_slot;
+        Slot default_artist_slot;
         // Slot for editing
         Slot edit_slot;
 
         GLTexture play_button;
-        GLTexture queue_button;
         GLTexture skip_button;
         GLTexture pause_button;
         GLTexture repeat_button;
         GLTexture shuffle_button;
         GLTexture autoplay_button;
         GLTexture show_queue_button;
-        GLTexture clear_queue_button;
         GLTexture menu_button;
         GLTexture pin_button;
         GLTexture home_button;
@@ -606,6 +605,11 @@ static GLTexture get_texture_default()
     return get_texture_from_slot(ctx.textures.default_album_art_slot);
 }
 
+static GLTexture get_default_artist_texture()
+{
+    return get_texture_from_slot(ctx.textures.default_artist_slot);
+}
+
 static GLTexture get_texture_edit()
 {
     return get_texture_from_slot(ctx.textures.edit_slot);
@@ -634,18 +638,24 @@ static GLTexture get_texture_from_song(SongID song_id)
     return get_texture_default();
 }
 
-static GLTexture get_texture_from_album(AlbumID album_id)
+static Slot get_slot_from_album(AlbumID album_id)
 {
     MPUID uid = mp_get_album_uid(album_id);
     if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
-        return get_texture_from_slot(ctx.textures.slot_map[uid]);
-    return get_texture_default();
+        return ctx.textures.slot_map[uid];
+    return ctx.textures.default_album_art_slot;
+}
+
+static GLTexture get_texture_from_album(AlbumID album_id)
+{
+    Slot slot = get_slot_from_album(album_id);
+    return get_texture_from_slot(slot);
 }
 
 static GLTexture get_texture_from_artist(ArtistID artist_id)
 {
     (void)artist_id;
-    return get_texture_default();
+    return get_default_artist_texture();
 }
 
 [[maybe_unused]] static GLTexture get_texture_from_playlist(PlaylistID playlist_id)
@@ -704,7 +714,7 @@ static void push_history_entry(ViewEnum type, int id)
     }
 }
 
-// these have to be after the objects are moved bc those objects
+// this has to be called after the objects have been moved bc those objects
 // are often from these containers
 static void reset_center_view_containers()
 {
@@ -730,9 +740,8 @@ static void reset_center_view_containers()
         mp_free_art(&ctx.center.edit.art);
 }
 
-static void set_center_view_lyrics(const LruCacheRef<Song>& song)
+static void set_center_view_lyrics()
 {
-    (void)song;
     ctx.center.type = SHOW_CENTER_LYRICS;
     ctx.center.artist = nullptr;
     ctx.center.playlist = nullptr;
@@ -780,8 +789,8 @@ static void set_center_view_song(LruCacheRef<Song>&& song)
     ctx.center.song = std::move(song);
     reset_center_view_containers();
 
-    mp_get_song_lyrics(song->id, ctx.center.song_lyrics, sizeof(ctx.center.song_lyrics));
-    mp_get_song_lyrics(song->id, ctx.center.edit.song_lyrics, sizeof(ctx.center.edit.song_lyrics));
+    mp_get_song_lyrics(ctx.center.song->id, ctx.center.song_lyrics, sizeof(ctx.center.song_lyrics));
+    mp_get_song_lyrics(ctx.center.song->id, ctx.center.edit.song_lyrics, sizeof(ctx.center.edit.song_lyrics));
     snprintf(ctx.center.edit.song, sizeof(ctx.center.edit.song), "%s", ctx.center.song->name.c_str());
     if (ctx.center.artist != nullptr)
     {
@@ -939,11 +948,24 @@ static void initialize_default_texture_slot(const char* path)
     free(resized_data);
 }
 
+static void initialize_default_artist_slot(const char* path)
+{
+    int width, height, nc;
+    unsigned char* data = stbi_load(path, &width, &height, &nc, 4);
+    unsigned char* resized_data = stbir_resize_uint8_linear(
+                data, width, height, 0,
+                NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
+                STBIR_4CHANNEL);
+    ctx.textures.default_artist_slot = create_texture(resized_data);
+    stbi_image_free(data);
+    free(resized_data);
+}
+
 static void initialize_default_textures()
 {
     initialize_default_texture_slot("assets/icons/No-album-art.png");
+    initialize_default_artist_slot("assets/icons/default-artist.png");
     initialize_default_texture(&ctx.textures.play_button.id, "assets/icons/play.png");
-    initialize_default_texture(&ctx.textures.queue_button.id, "assets/icons/add-to-playlist.png");
     initialize_default_texture(&ctx.textures.skip_button.id, "assets/icons/skip.png");
     initialize_default_texture(&ctx.textures.pause_button.id, "assets/icons/pause.png");
     initialize_default_texture(&ctx.textures.repeat_button.id, "assets/icons/repeat.png");
@@ -952,7 +974,6 @@ static void initialize_default_textures()
     initialize_default_texture(&ctx.textures.volume.id, "assets/icons/volume-up.png");
     initialize_default_texture(&ctx.textures.mute.id, "assets/icons/mute.png");
     initialize_default_texture(&ctx.textures.show_queue_button.id, "assets/icons/show-queue.png");
-    initialize_default_texture(&ctx.textures.clear_queue_button.id, "assets/icons/clear-queue.png");
     initialize_default_texture(&ctx.textures.menu_button.id, "assets/icons/menu.png");
     initialize_default_texture(&ctx.textures.pin_button.id, "assets/icons/push-pin.png");
     initialize_default_texture(&ctx.textures.home_button.id, "assets/icons/home.png");
@@ -971,21 +992,6 @@ static void initialize_default_textures()
 static void cleanup_textures()
 {
     glDeleteTextures(1, &ctx.right.texture);
-}
-
-[[maybe_unused]] static void song_constructor_callback(Song* song)
-{
-    (void)song;
-}
-
-[[maybe_unused]] static bool loading_textures()
-{
-    return ctx.load_queue.size() > 0;
-}
-
-[[maybe_unused]] static bool is_song_texture_loading(int song_id)
-{
-    return ctx.textures.slot_map.find(song_id) == ctx.textures.slot_map.end();
 }
 
 static void update_textures()
@@ -1637,7 +1643,7 @@ static void draw_search_results()
         for (LruCacheRef<Artist>& artist : ctx.center.artist_search_result.entries)
         {
             ImGui::PushID(artist->id);
-            GLTexture tex = get_texture_default();
+            GLTexture tex = get_default_artist_texture();
             float text_height = ImGui::CalcTextSize(artist->name.c_str()).y;
             ImGui::SetCursorPos(region_start);
             imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
@@ -2007,6 +2013,7 @@ static void draw_song_info_edit()
     {
         ctx.center.edit.changed_info |= ctx.center.edit.song_lyrics[0] != '\0';
         ctx.center.edit.song_lyrics[0] = '\0';
+        ctx.center.show_split = SHOW_EDIT_LYRICS;
     }
     ImGui::SameLine();
     ImGui::SetCursorPosX(col_2_cursor_x);
@@ -2311,7 +2318,7 @@ static void draw_song_info()
 
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 0.0f));
         ImGui::SameLine();
-        tex = ctx.textures.queue_button;
+        tex = ctx.textures.show_queue_button;
         if (imgui_image_button(tex.id, button_size))
             mp_queue_song(song->id);
 
@@ -2320,12 +2327,22 @@ static void draw_song_info()
             mp_pin_song(song->id);
 
         ImGui::SameLine();
-        if (imgui_image_button(ctx.textures.lyrics_button.id, button_size))
-            ctx.center.show = SHOW_LYRICS;
+        if (imgui_image_button(ctx.textures.lyrics_button.id, button_size, (ctx.center.show == SHOW_LYRICS) ? RED : WHITE))
+        {
+            if (ctx.center.show == SHOW_LYRICS)
+                ctx.center.show = SHOW_NONE;
+            else
+                ctx.center.show = SHOW_LYRICS;
+        }
 
         ImGui::SameLine();
-        if (imgui_image_button(ctx.textures.pencil_button.id, button_size))
-            ctx.center.show = SHOW_EDIT;
+        if (imgui_image_button(ctx.textures.pencil_button.id, button_size, (ctx.center.show == SHOW_EDIT) ? RED : WHITE))
+        {
+            if (ctx.center.show == SHOW_EDIT)
+                ctx.center.show = SHOW_NONE;
+            else
+                ctx.center.show = SHOW_EDIT;
+        }
 
         ImGui::PopStyleVar();
 
@@ -2623,6 +2640,24 @@ static void draw_album_info_edit()
 
         ctx.center.edit.changed_info = false;
     }
+    ImGui::SetCursorPosX(col_1_cursor_x);
+    if (ImGui::Button("Save Year to Songs"))
+    {
+        mp_update_album_songs_year(ctx.center.album->id, ctx.center.album->year);
+    }
+    ImGui::SetCursorPosX(col_1_cursor_x);
+    if (ImGui::Button("Save Cover to Songs"))
+    {
+        mp_update_album_songs_art(ctx.center.album->id);
+        std::vector<SongTrackID> song_tracks = mp_get_songs_from_album(ctx.center.album->id);
+        Slot album_art_slot = get_slot_from_album(ctx.center.album->id); 
+        for (auto [song_id, track] : song_tracks)
+        {
+            MPUID song_uid = mp_get_song_uid(song_id);
+            if (ctx.textures.slot_map.find(song_uid) != ctx.textures.slot_map.end())
+                copy_texture_slot(ctx.textures.slot_map[song_uid], album_art_slot);
+        }
+    }
     ImGui::PopStyleColor();
     ImGui::SetWindowFontScale(1.0f); 
     ImGui::PopStyleVar(2);
@@ -2675,8 +2710,6 @@ static void draw_album_info()
     GLTexture tex = get_texture_from_album(ctx.center.album->id);
     ImGui::ImageWithBg(tex.id, album_art_size, tex.uv0, tex.uv1, BLACK);
 
-    static bool show_edit;
-
     ImGui::SameLine();
     ImVec2 region_start(
             origin.x + album_art_size.x + 2 * album_art_padding,
@@ -2722,7 +2755,7 @@ static void draw_album_info()
     }
 
     ImGui::SameLine();
-    if (imgui_image_button(ctx.textures.queue_button.id, button_size))
+    if (imgui_image_button(ctx.textures.show_queue_button.id, button_size))
         for (const auto& [song, track] : tracks)
             mp_queue_song(song->id);
 
@@ -2731,8 +2764,13 @@ static void draw_album_info()
         mp_pin_album(album->id);
 
     ImGui::SameLine();
-    if (imgui_image_button(ctx.textures.pencil_button.id, ImVec2(32, 32)))
-        show_edit = !show_edit;
+    if (imgui_image_button(ctx.textures.pencil_button.id, button_size, (ctx.center.show == SHOW_EDIT) ? RED : WHITE))
+    {
+        if (ctx.center.show == SHOW_EDIT)
+            ctx.center.show = SHOW_NONE;
+        else
+            ctx.center.show = SHOW_EDIT;
+    }
 
     ImGui::SameLine();
     if (imgui_image_button(ctx.textures.menu_button.id, button_size))
@@ -2750,7 +2788,7 @@ static void draw_album_info()
     ImGui::Separator();
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
     ImGui::BeginChild("more_album_info", ImGui::GetContentRegionAvail());
-    if (show_edit)
+    if (ctx.center.show == SHOW_EDIT)
         draw_album_info_edit();
     else
         draw_album_info_tracklist();
@@ -2809,7 +2847,7 @@ static void draw_playlist_info()
             mp_play_playlist(playlist->id);
         }
         ImGui::SameLine();
-        if (imgui_image_button(ctx.textures.queue_button.id, button_size))
+        if (imgui_image_button(ctx.textures.show_queue_button.id, button_size))
             for (const auto& [song, track] : tracks)
                 mp_queue_song(song->id);
 
@@ -3367,8 +3405,6 @@ static void draw_artist_info()
     const ImVec2 album_art_size = ImVec2(210, 210);
     const float album_art_padding = 10.0f;
 
-    static bool show_edit;
-
     ImGui::SetCursorPosX(origin.x + album_art_padding);
     ImGui::SetCursorPosY(origin.y + album_art_padding);
 
@@ -3396,8 +3432,13 @@ static void draw_artist_info()
         mp_pin_artist(artist->id);
 
     ImGui::SameLine();
-    if (imgui_image_button(ctx.textures.pencil_button.id, button_size))
-        show_edit = !show_edit;
+    if (imgui_image_button(ctx.textures.pencil_button.id, button_size, (ctx.center.show == SHOW_EDIT) ? RED : WHITE))
+    {
+        if (ctx.center.show == SHOW_EDIT)
+            ctx.center.show = SHOW_NONE;
+        else
+            ctx.center.show = SHOW_EDIT;
+    }
 
     ImGui::EndChild();
 
@@ -3405,7 +3446,7 @@ static void draw_artist_info()
     ImGui::Separator();
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
 
-    if (show_edit)
+    if (ctx.center.show)
         draw_artist_info_edit();
     else
         draw_artist_info_tracklist();
@@ -3913,14 +3954,18 @@ static void draw_player(const ImVec2 size)
         
         cursor_x += advance;
         ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-        if (imgui_image_button(ctx.textures.lyrics_button.id, button_size))
-            set_center_view_lyrics(mp_ctx.current_song);
+        if (imgui_image_button(ctx.textures.lyrics_button.id, button_size, (ctx.center.type == SHOW_CENTER_LYRICS) ? RED : WHITE))
+            set_center_view_lyrics();
+
         cursor_x += advance;
         ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
-        if (imgui_image_button(ctx.textures.clear_queue_button.id, button_size))
+        if (imgui_image_button(ctx.textures.show_queue_button.id, button_size))
             mp_queue_clear();
-        cursor_x += advance;
+        ImVec2 x_size = ImVec2(12.0f, 12.0f);
+        ImGui::SetCursorPos(ImVec2(cursor_x + button_size.x - x_size.x, cursor_y + button_size.y - x_size.y));
+        ImGui::ImageWithBg(ctx.textures.close_button.id, x_size, UV0, UV1, TRANSPARENT, RED);
 
+        cursor_x += advance;
         ImVec4 tint = (ctx.right.type == SHOW_RIGHT_QUEUE) 
             ? SELECTED_COLOR_1
             : UNSELECTED_COLOR;

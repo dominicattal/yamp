@@ -903,6 +903,31 @@ void db_update_song_volume(SongID song_id, float volume)
     sqlite3_finalize(stmt);
 }
 
+void db_update_album_songs_year(AlbumID album_id, int year)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE Songs SET year=?1 WHERE id IN (SELECT song_id FROM AlbumSong WHERE album_id=?2);";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, year);
+    sqlite3_bind_int(stmt, 2, album_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void db_update_album_songs_art(AlbumID album_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = R"(
+        UPDATE Songs
+        SET cover=(SELECT cover FROM Albums WHERE id=?1)
+        WHERE id IN (SELECT song_id FROM AlbumSong WHERE album_id=?1);
+    )";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, album_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
 void db_create_playlist_song(PlaylistID playlist_id, SongID song_id, int track)
 {
     sqlite3_stmt* stmt;

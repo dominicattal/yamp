@@ -533,6 +533,23 @@ void mp_update_album_artist(AlbumID album_id, ArtistID artist_id)
         *artist_id_cache_ref = artist_id;
 }
 
+void mp_update_album_songs_year(AlbumID album_id, int year)
+{
+    db_update_album_songs_year(album_id, year);
+    std::vector<SongTrackID> song_tracks = mp_get_songs_from_album(album_id);
+    for (auto [song_id, track] : song_tracks)
+    {
+        LruCacheRef<Song> song_cache_ref = mp_ctx.songs.get(song_id);
+        if (song_cache_ref != nullptr)
+            song_cache_ref->year = year;
+    }
+}
+
+void mp_update_album_songs_art(AlbumID album_id)
+{
+    db_update_album_songs_art(album_id);
+}
+
 LruCacheRef<Artist> mp_create_artist()
 {
     Artist artist{};
