@@ -1,0 +1,9 @@
+{
+  "name": "yamp",
+  "version": "1.0.0",
+  "dependencies": [
+    "taglib",
+    "zlib",
+    "cppunit"
+  ]
+}
