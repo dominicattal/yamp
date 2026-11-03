@@ -457,7 +457,7 @@ void mp_update_album_art(AlbumID album_id, Art* art)
 
 void mp_update_artist_art(ArtistID artist_id, Art* art)
 {
-    (void)artist_id; (void)art;
+    db_update_artist_art(artist_id, art);
 }
 
 void mp_update_song_volume(SongID song_id, float volume)
@@ -918,6 +918,8 @@ Art mp_get_art(MPUID uid)
             return db_get_song_art(db_get_song_uid(uid));
         case MPUID_ALBUM:
             return db_get_album_art(db_get_album_uid(uid));
+        case MPUID_ARTIST:
+            return db_get_artist_art(db_get_artist_uid(uid));
         default:
             return {};
     }

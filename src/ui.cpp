@@ -110,6 +110,11 @@ struct Slot {
     int yoff;
 };
 
+bool operator==(Slot& s1, Slot& s2)
+{
+    return s1.tex == s2.tex && s1.idx == s2.idx && s1.xoff == s2.xoff && s1.yoff == s2.yoff;
+}
+
 struct UIContext {
     GLFWwindow* window;
 
@@ -200,6 +205,7 @@ struct UIContext {
 
             bool changed_info;
             bool changed_art;
+            bool reset_art;
 
             EditType edit_type;
         } edit;
@@ -605,7 +611,7 @@ static GLTexture get_texture_default()
     return get_texture_from_slot(ctx.textures.default_album_art_slot);
 }
 
-static GLTexture get_default_artist_texture()
+[[maybe_unused]] static GLTexture get_default_artist_texture()
 {
     return get_texture_from_slot(ctx.textures.default_artist_slot);
 }
@@ -652,10 +658,18 @@ static GLTexture get_texture_from_album(AlbumID album_id)
     return get_texture_from_slot(slot);
 }
 
+static Slot get_slot_from_artist(ArtistID artist_id)
+{
+    MPUID uid = mp_get_artist_uid(artist_id);
+    if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+        return ctx.textures.slot_map[uid];
+    return ctx.textures.default_artist_slot;
+}
+
 [[maybe_unused]] static GLTexture get_texture_from_artist(ArtistID artist_id)
 {
-    (void)artist_id;
-    return get_default_artist_texture();
+    Slot slot = get_slot_from_artist(artist_id);
+    return get_texture_from_slot(slot);
 }
 
 [[maybe_unused]] static GLTexture get_texture_from_playlist(PlaylistID playlist_id)
@@ -712,6 +726,13 @@ static void push_history_entry(ViewEnum type, int id)
         if (ctx.view_history.size() > HISTORY_MAX_SIZE)
             ctx.view_history.pop_front();
     }
+}
+
+static bool mpuid_has_valid_texture(MPUID uid)
+{
+    return ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end() 
+        && ctx.textures.slot_map[uid] != ctx.textures.default_album_art_slot
+        && ctx.textures.slot_map[uid] != ctx.textures.default_artist_slot;
 }
 
 // this has to be called after the objects have been moved bc those objects
@@ -889,6 +910,17 @@ static void set_center_view_artist(LruCacheRef<Artist>&& artist)
     ctx.center.song_search_result = mp_get_paginated_songs_from_artist(ctx.center.artist->id, SEARCH_RESULTS_PER_PAGE, 1);
     snprintf(ctx.center.edit.artist, sizeof(ctx.center.edit.artist), "%s", ctx.center.artist->name.c_str());
 
+    MPUID uid = mp_get_artist_uid(ctx.center.artist->id);
+    if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+    {
+        ctx.center.edit.art = mp_get_song_art(ctx.center.artist->id);
+        copy_texture_slot(ctx.textures.edit_slot, ctx.textures.slot_map[uid]);
+    }
+    else
+    {
+        copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_artist_slot);
+    }
+
     push_history_entry(SHOW_CENTER_ARTIST, ctx.center.artist->id);
 }
 
@@ -1005,7 +1037,7 @@ static void update_textures()
         {
             Art art = mp_get_art(uid);
             if (art.data == nullptr)
-                ctx.textures.slot_map[uid] = ctx.textures.default_album_art_slot;
+                ctx.textures.slot_map[uid] = (mp_get_uid_type(uid) == MPUID_ARTIST) ? ctx.textures.default_artist_slot : ctx.textures.default_album_art_slot;
             else
                 ctx.textures.slot_map[uid] = create_texture(art.data);
             mp_free_art(&art);
@@ -1122,6 +1154,22 @@ void ui_init()
             SPDLOG_INFO("Unloading Album {} {}", album->id, album->name);
             std::lock_guard lock{ctx.unload_queue_lock};
             ctx.unload_queue.push_back(mp_get_album_uid(album->id));
+        });
+
+    mp_ctx.artists.set_constructor_callback(
+        [](Artist* artist) -> void
+        {
+            SPDLOG_INFO("Loading Artist {} {}", artist->id, artist->name);
+            std::lock_guard lock{ctx.load_queue_lock};
+            ctx.load_queue.push_back(mp_get_artist_uid(artist->id));
+        });
+
+    mp_ctx.artists.set_destructor_callback(
+        [](Artist* artist) -> void
+        {
+            SPDLOG_INFO("Unloading Artist {} {}", artist->id, artist->name);
+            std::lock_guard lock{ctx.unload_queue_lock};
+            ctx.unload_queue.push_back(mp_get_artist_uid(artist->id));
         });
 }
 
@@ -1643,7 +1691,7 @@ static void draw_search_results()
         for (LruCacheRef<Artist>& artist : ctx.center.artist_search_result.entries)
         {
             ImGui::PushID(artist->id);
-            GLTexture tex = get_default_artist_texture();
+            GLTexture tex = get_texture_from_artist(artist->id);
             float text_height = ImGui::CalcTextSize(artist->name.c_str()).y;
             ImGui::SetCursorPos(region_start);
             imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
@@ -2097,6 +2145,7 @@ static void draw_song_info_edit()
         copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_art_slot);
         ctx.center.edit.changed_info = true;
         ctx.center.edit.changed_art = true;
+        ctx.center.edit.reset_art = true;
     }
     ImGui::SameLine();
     ImGui::SetCursorPosX(col_2_cursor_x);
@@ -2134,6 +2183,7 @@ static void draw_song_info_edit()
                     update_texture_slot(ctx.textures.edit_slot, ctx.center.edit.art.data);
                     ctx.center.edit.changed_info = true;
                     ctx.center.edit.changed_art = true;
+                    ctx.center.edit.reset_art = false;
                 }
                 else
                 {
@@ -2156,9 +2206,19 @@ static void draw_song_info_edit()
         {
             mp_update_song_art(ctx.center.song->id, &ctx.center.edit.art);
             MPUID uid = mp_get_song_uid(ctx.center.song->id);
-            if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
-                copy_texture_slot(ctx.textures.slot_map[uid], ctx.textures.edit_slot);
-            ctx.center.edit.changed_art = false;
+            if (ctx.center.edit.reset_art)
+            {
+                if (mpuid_has_valid_texture(uid))
+                    delete_texture(ctx.textures.slot_map[uid]);
+                ctx.textures.slot_map[uid] = ctx.textures.default_album_art_slot;
+            }
+            else
+            {
+                if (mpuid_has_valid_texture(uid))
+                    copy_texture_slot(ctx.textures.slot_map[uid], ctx.textures.edit_slot);
+                else
+                    ctx.textures.slot_map[uid] = create_texture(ctx.center.edit.art.data);
+            }
         }
         mp_update_song_album(ctx.center.song->id, ctx.center.edit.album_id, ctx.center.edit.track);
         mp_update_song_artist(ctx.center.song->id, ctx.center.edit.artist_id);
@@ -2177,6 +2237,8 @@ static void draw_song_info_edit()
 
         ctx.center.edit.volume = song.volume;
         ctx.center.edit.changed_info = false;
+        ctx.center.edit.changed_art = false;
+        ctx.center.edit.reset_art = false;
     }
     if (ctx.center.edit.changed_info)
     {
@@ -2201,7 +2263,7 @@ static void draw_song_info_edit()
         ctx.center.edit.year = ctx.center.song->year;
 
         MPUID uid = mp_get_song_uid(ctx.center.song->id);
-        if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+        if (mpuid_has_valid_texture(uid))
         {
             ctx.center.edit.art = mp_get_song_art(ctx.center.song->id);
             copy_texture_slot(ctx.textures.edit_slot, ctx.textures.slot_map[uid]);
@@ -2216,6 +2278,8 @@ static void draw_song_info_edit()
 
         mp_get_song_lyrics(ctx.center.song->id, ctx.center.edit.song_lyrics, sizeof(ctx.center.edit.song_lyrics));
         ctx.center.edit.changed_info = false;
+        ctx.center.edit.changed_art = false;
+        ctx.center.edit.reset_art = false;
     }
 
     ImGui::SetCursorPosX(col_1_cursor_x);
@@ -2595,9 +2659,19 @@ static void draw_album_info_edit()
         {
             mp_update_album_art(ctx.center.album->id, &ctx.center.edit.art);
             MPUID uid = mp_get_album_uid(ctx.center.album->id);
-            if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
-                copy_texture_slot(ctx.textures.slot_map[uid], ctx.textures.edit_slot);
-            ctx.center.edit.changed_art = false;
+            if (ctx.center.edit.reset_art)
+            {
+                if (mpuid_has_valid_texture(uid))
+                    delete_texture(ctx.textures.slot_map[uid]);
+                ctx.textures.slot_map[uid] = ctx.textures.default_album_art_slot;
+            }
+            else
+            {
+                if (mpuid_has_valid_texture(uid))
+                    copy_texture_slot(ctx.textures.slot_map[uid], ctx.textures.edit_slot);
+                else
+                    ctx.textures.slot_map[uid] = create_texture(ctx.center.edit.art.data);
+            }
         }
         mp_update_album_artist(ctx.center.album->id, ctx.center.edit.artist_id);
 
@@ -2625,7 +2699,7 @@ static void draw_album_info_edit()
         ctx.center.edit.year = ctx.center.album->year;
 
         MPUID uid = mp_get_album_uid(ctx.center.album->id);
-        if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+        if (mpuid_has_valid_texture(uid))
         {
             ctx.center.edit.art = mp_get_album_art(ctx.center.album->id);
             copy_texture_slot(ctx.textures.edit_slot, ctx.textures.slot_map[uid]);
@@ -3318,8 +3392,19 @@ static void draw_artist_info_edit()
         {
             mp_update_artist_art(ctx.center.artist->id, &ctx.center.edit.art);
             MPUID uid = mp_get_artist_uid(ctx.center.artist->id);
-            if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
-                copy_texture_slot(ctx.textures.slot_map[uid], ctx.textures.edit_slot);
+            if (ctx.center.edit.reset_art)
+            {
+                if (mpuid_has_valid_texture(uid))
+                    delete_texture(ctx.textures.slot_map[uid]);
+                ctx.textures.slot_map[uid] = ctx.textures.default_artist_slot;
+            }
+            else
+            {
+                if (mpuid_has_valid_texture(uid))
+                    copy_texture_slot(ctx.textures.slot_map[uid], ctx.textures.edit_slot);
+                else
+                    ctx.textures.slot_map[uid] = create_texture(ctx.center.edit.art.data);
+            }
             ctx.center.edit.changed_art = false;
         }
         ctx.center.edit.changed_info = false;
@@ -3335,14 +3420,14 @@ static void draw_artist_info_edit()
         snprintf(ctx.center.edit.artist, sizeof(ctx.center.edit.artist), "%s", ctx.center.artist->name.c_str());
 
         MPUID uid = mp_get_artist_uid(ctx.center.artist->id);
-        if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+        if (mpuid_has_valid_texture(uid))
         {
             ctx.center.edit.art = mp_get_album_art(ctx.center.artist->id);
             copy_texture_slot(ctx.textures.edit_slot, ctx.textures.slot_map[uid]);
         }
         else
         {
-            copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_art_slot);
+            copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_artist_slot);
         }
     }
     ImGui::PopStyleVar(2);
@@ -3409,7 +3494,7 @@ static void draw_artist_info()
     ImGui::SetCursorPosY(origin.y + album_art_padding);
 
     const ImVec2 size = ImVec2(210, 210);
-    GLTexture tex = get_texture_default();
+    GLTexture tex = get_texture_from_artist(artist->id);
     ImGui::ImageWithBg(tex.id, size, tex.uv0, tex.uv1, BLACK);
 
     ImGui::SameLine();
@@ -4014,7 +4099,7 @@ static void draw_debug_info()
     ImGui::PopStyleColor();
 }
 
-static void draw_left_side()
+static void draw_pins()
 {
     int row = 0;
     float row_advance = 72.0f;
@@ -4044,7 +4129,7 @@ static void draw_left_side()
             }
             if (pin.type == MPUID_ARTIST)
             {
-                tex = get_texture_default();
+                tex = get_texture_from_artist(pin.artist->id);
                 color = CYAN;
             }
             if (pin.type == MPUID_PLAYLIST)
@@ -4155,7 +4240,7 @@ static void draw_imgui()
             ImGui::TableNextColumn();
             ImGui::SetNextWindowPos(ImVec2(ImGui::GetCursorPosX(), header_height));
             ImGui::BeginChild("##Left Side", ImGui::GetContentRegionAvail());
-            draw_left_side();
+            draw_pins();
             ImGui::EndChild();
         }
 
