@@ -130,9 +130,6 @@ void mp_recursive_add_songs(const std::string& folder_path);
 // When finished adding song, call this to destroy objects in mp_ctx.loaded_songs
 void mp_reset_loaded_songs();
 
-// Add a playlist to the database. Returns the id of the created playlist.
-void mp_rename_playlist(PlaylistID playlist_id, const char* new_playlist_name);
-
 // Immediately play a song
 void mp_play_song(SongID song_id);
 
@@ -185,11 +182,13 @@ void mp_update_song_lyrics(SongID song_id, const char* lyrics);
 void mp_update_song_art(SongID song_id, Art* art);
 void mp_update_album(Album& album);
 void mp_update_artist(Artist& artist);
+void mp_update_playlist(Playlist& playlist);
 void mp_update_artist_art(ArtistID artist_id, Art* art);
 void mp_update_album_art(AlbumID album_id, Art* art);
 void mp_update_song_artist(SongID song_id, ArtistID artist_id);
 void mp_update_song_album(SongID song_id, AlbumID album_id, int track);
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
+void mp_update_playlist_art(PlaylistID playlist_id, Art* art);
 
 void mp_update_album_songs_year(AlbumID album_id, int year);
 void mp_update_album_songs_art(AlbumID album_id);
@@ -209,6 +208,8 @@ void mp_add_album_to_playlist(AlbumID album_id, int playlist_id);
 
 Art mp_get_song_art(SongID song_id);
 Art mp_get_album_art(AlbumID album_id);
+Art mp_get_artist_art(ArtistID artist_id);
+Art mp_get_playlist_art(PlaylistID playlist_id);
 Art mp_get_art(MPUID uid);
 void mp_free_art(Art* art);
 

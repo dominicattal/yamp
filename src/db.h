@@ -126,6 +126,7 @@ AlbumID db_get_album_from_song(SongID song_id);
 ArtistID db_get_artist_from_song(SongID song_id);
 ArtistID db_get_artist_from_album(AlbumID album_id);
 Art db_get_artist_art(ArtistID artist_id);
+Art db_get_playlist_art(PlaylistID playlist_id);
 int db_get_song_track(SongID song_id);
 std::vector<SongTrackID> db_get_songs_from_album(AlbumID album_id);
 std::vector<SongTrackID> db_get_songs_from_playlist(PlaylistID playlist_id);
@@ -167,7 +168,7 @@ void db_update_album_songs_art(AlbumID album_id);
 void db_update_artist(Artist& artist);
 void db_update_artist_art(ArtistID artist_id, Art* art);
 
-void db_update_playlist(PlaylistID playlist_id, const char* new_name);
+void db_update_playlist(Playlist& playlist);
 void db_update_playlist_art(PlaylistID playlist_id, Art* art);
 
 // Delete

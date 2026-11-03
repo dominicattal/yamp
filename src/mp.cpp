@@ -212,13 +212,6 @@ void mp_reset_loaded_songs()
     mp_ctx.added_albums.clear();
 }
 
-void mp_rename_playlist(PlaylistID playlist_id, const char* new_playlist_name)
-{
-    db_update_playlist(playlist_id, new_playlist_name);
-    LruCacheRef<Playlist> playlist = mp_get_playlist(playlist_id);
-    playlist->name = new_playlist_name;
-}
-
 void mp_add_song_to_playlist(SongID song_id, PlaylistID playlist_id)
 {
     std::vector<SongTrackID> tracks = db_get_songs_from_playlist(playlist_id);
@@ -510,6 +503,15 @@ void mp_update_artist(Artist& artist)
         artist_cache_ref->name = artist.name;
 }
 
+
+void mp_update_playlist(Playlist& playlist)
+{
+    db_update_playlist(playlist);
+    LruCacheRef<Playlist> playlist_cache_ref = mp_ctx.playlists.get(playlist.id);
+    if (playlist_cache_ref != nullptr)
+        playlist_cache_ref->name = playlist.name;
+}
+
 void mp_update_song_artist(SongID song_id, ArtistID artist_id)
 {
     db_update_song_artist(song_id, artist_id);
@@ -532,6 +534,11 @@ void mp_update_album_artist(AlbumID album_id, ArtistID artist_id)
     LruCacheRef<ArtistID> artist_id_cache_ref = mp_ctx.album_artist.get(album_id);
     if (artist_id_cache_ref != nullptr)
         *artist_id_cache_ref = artist_id;
+}
+
+void mp_update_playlist_art(PlaylistID playlist_id, Art* art)
+{
+    db_update_playlist_art(playlist_id, art);
 }
 
 void mp_update_album_songs_year(AlbumID album_id, int year)
@@ -580,9 +587,11 @@ LruCacheRef<Album> mp_create_album()
 
 LruCacheRef<Playlist> mp_create_playlist()
 {
-    PlaylistID playlist_id = db_create_default_playlist();
-    db_update_playlist(playlist_id, std::format("Unnamed Playlist #{}", playlist_id).c_str());
-    return mp_get_playlist(playlist_id);
+    Playlist playlist{};
+    playlist.id = db_create_default_playlist();
+    playlist.name = std::format("Unnamed Playlist #{}", playlist.id);
+    db_update_playlist(playlist);
+    return mp_get_playlist(playlist.id);
 }
 
 void mp_pin_song(SongID song_id)
@@ -910,6 +919,16 @@ Art mp_get_album_art(AlbumID album_id)
     return db_get_album_art(album_id);
 }
 
+Art mp_get_artist_art(ArtistID artist_id)
+{
+    return db_get_artist_art(artist_id);
+}
+
+Art mp_get_playlist_art(PlaylistID playlist_id)
+{
+    return db_get_playlist_art(playlist_id);
+}
+
 Art mp_get_art(MPUID uid)
 {
     switch (db_get_uid_type(uid))
@@ -920,6 +939,8 @@ Art mp_get_art(MPUID uid)
             return db_get_album_art(db_get_album_uid(uid));
         case MPUID_ARTIST:
             return db_get_artist_art(db_get_artist_uid(uid));
+        case MPUID_PLAYLIST:
+            return db_get_playlist_art(db_get_playlist_uid(uid));
         default:
             return {};
     }

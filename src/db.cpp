@@ -267,6 +267,20 @@ Art db_get_artist_art(ArtistID artist_id)
     return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
 }
 
+Art db_get_playlist_art(PlaylistID playlist_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT cover FROM Playlists WHERE id=?1";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, playlist_id);
+    int res = sqlite3_step(stmt);
+    if (res != SQLITE_ROW)
+        return Art{stmt, NULL, 0};
+    const unsigned char* blob = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 0));
+    int blob_bytes = sqlite3_column_bytes(stmt, 0);
+    return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
+}
+
 Artist db_get_artist_info(ArtistID artist_id)
 {
     Artist artist{};
@@ -905,12 +919,23 @@ PlaylistID db_create_playlist(const char* name)
     return sqlite3_last_insert_rowid(ctx.db);
 }
 
-void db_update_playlist(PlaylistID playlist_id, const char* new_name)
+void db_update_playlist(Playlist& playlist)
 {
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Playlists SET name=?1 WHERE id=?2";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, playlist.name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, playlist.id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void db_update_playlist_art(PlaylistID playlist_id, Art* art)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE Playlists SET cover=?1 WHERE id=?2";
+    sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
+    sqlite3_bind_blob(stmt, 1, art->data, art->size, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, playlist_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
