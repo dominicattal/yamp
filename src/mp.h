@@ -198,10 +198,11 @@ LruCacheRef<Album> mp_create_album();
 LruCacheRef<Artist> mp_create_artist();
 LruCacheRef<Playlist> mp_create_playlist();
 
-void mp_pin_song(SongID song_id);
-void mp_pin_album(AlbumID album_id);
-void mp_pin_artist(ArtistID artist_id);
-void mp_pin_playlist(PlaylistID playlist_id);
+bool mp_uid_pinned(MPUID uid);
+bool mp_toggle_pin_song(SongID song_id);
+bool mp_toggle_pin_album(AlbumID album_id);
+bool mp_toggle_pin_artist(ArtistID artist_id);
+bool mp_toggle_pin_playlist(PlaylistID playlist_id);
 
 void mp_add_song_to_playlist(SongID song_id, int playlist_id);
 void mp_add_album_to_playlist(AlbumID album_id, int playlist_id);

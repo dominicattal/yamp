@@ -30,6 +30,23 @@ struct MPContextInternal {
 MPContext mp_ctx;
 static MPContextInternal ctx;
 
+static bool test_pin_with_uid(Pin* pin, MPUID uid)
+{
+    MPUIDEnum type = mp_get_uid_type(uid);
+    int id = mp_get_id(uid);
+    if (pin->type != type)
+        return false;
+    if (pin->type == MPUID_SONG && id == pin->song->id)
+        return true;
+    if (pin->type == MPUID_ALBUM && id == pin->album->id)
+        return true;
+    if (pin->type == MPUID_ARTIST && id == pin->artist->id)
+        return true;
+    if (pin->type == MPUID_PLAYLIST && id == pin->playlist->id)
+        return true;
+    return false;
+}
+
 static void add_song_from_path(const std::string& song_path)
 {
     TagLib::FileRef mp3_file_ref(song_path.c_str());
@@ -594,11 +611,29 @@ LruCacheRef<Playlist> mp_create_playlist()
     return mp_get_playlist(playlist.id);
 }
 
-void mp_pin_song(SongID song_id)
+bool mp_uid_pinned(MPUID uid)
 {
-    if (!db_create_pin(song_id, MPUID_SONG))
-        return;
+    for (Pin& pin : mp_ctx.pins)
+        if (test_pin_with_uid(&pin, uid))
+            return true;
+    return false;
+}
 
+bool mp_toggle_pin_song(SongID song_id)
+{
+    MPUID uid = mp_get_song_uid(song_id);
+    auto it = std::find_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
+        [&uid](Pin& pin) {
+            return test_pin_with_uid(&pin, uid);
+        });
+
+    if (it != mp_ctx.pins.end())
+    {
+        mp_ctx.pins.erase(it);
+        return false;
+    }
+
+    db_create_pin(song_id, MPUID_SONG);
     mp_ctx.pins.push_back(Pin{
                 .song = mp_get_song(song_id),
                 .album = nullptr,
@@ -607,13 +642,24 @@ void mp_pin_song(SongID song_id)
                 .type = MPUID_SONG,
                 .order = static_cast<int>(mp_ctx.pins.size())
             });
+    return true;
 }
 
-void mp_pin_album(AlbumID album_id)
+bool mp_toggle_pin_album(AlbumID album_id)
 {
-    if (!db_create_pin(album_id, MPUID_ALBUM))
-        return;
-    
+    MPUID uid = mp_get_album_uid(album_id);
+    auto it = std::find_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
+        [&uid](Pin& pin) {
+            return test_pin_with_uid(&pin, uid);
+        });
+
+    if (it != mp_ctx.pins.end())
+    {
+        mp_ctx.pins.erase(it);
+        return false;
+    }
+
+    db_create_pin(album_id, MPUID_ALBUM);
     mp_ctx.pins.push_back(Pin{
                 .song = nullptr,
                 .album = mp_get_album(album_id),
@@ -622,13 +668,24 @@ void mp_pin_album(AlbumID album_id)
                 .type = MPUID_ALBUM,
                 .order = static_cast<int>(mp_ctx.pins.size())
             });
+    return true;
 }
 
-void mp_pin_artist(ArtistID artist_id)
+bool mp_toggle_pin_artist(ArtistID artist_id)
 {
-    if (!db_create_pin(artist_id, MPUID_ARTIST))
-        return;
+    MPUID uid = mp_get_artist_uid(artist_id);
+    auto it = std::find_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
+        [&uid](Pin& pin) {
+            return test_pin_with_uid(&pin, uid);
+        });
 
+    if (it != mp_ctx.pins.end())
+    {
+        mp_ctx.pins.erase(it);
+        return false;
+    }
+
+    db_create_pin(artist_id, MPUID_ARTIST);
     mp_ctx.pins.push_back(Pin{
                 .song = nullptr,
                 .album = nullptr,
@@ -637,13 +694,24 @@ void mp_pin_artist(ArtistID artist_id)
                 .type = MPUID_ARTIST,
                 .order = static_cast<int>(mp_ctx.pins.size())
             });
+    return true;
 }
 
-void mp_pin_playlist(PlaylistID playlist_id)
+bool mp_toggle_pin_playlist(PlaylistID playlist_id)
 {
-    if (!db_create_pin(playlist_id, MPUID_PLAYLIST))
-        return;
+    MPUID uid = mp_get_playlist_uid(playlist_id);
+    auto it = std::find_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
+        [&uid](Pin& pin) {
+            return test_pin_with_uid(&pin, uid);
+        });
 
+    if (it != mp_ctx.pins.end())
+    {
+        mp_ctx.pins.erase(it);
+        return false;
+    }
+
+    db_create_pin(playlist_id, MPUID_PLAYLIST);
     mp_ctx.pins.push_back(Pin{
                 .song = nullptr,
                 .album = nullptr,
@@ -652,6 +720,7 @@ void mp_pin_playlist(PlaylistID playlist_id)
                 .type = MPUID_PLAYLIST,
                 .order = static_cast<int>(mp_ctx.pins.size())
             });
+    return true;
 }
 
 SearchResult<Song> mp_search_songs(const char* search_query, int results_per_page, int page_num)
