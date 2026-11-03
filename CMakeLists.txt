@@ -10,7 +10,7 @@ add_subdirectory(vendor/utfcpp)
 add_subdirectory(vendor/freetype)
 find_package(OpenGL REQUIRED)
 find_package(ZLIB REQUIRED)
-find_package(TagLib 2.3.2 REQUIRED)
+find_package(TagLib 2.3.1 REQUIRED)
 
 add_executable(yamp
     ${CMAKE_HOME_DIRECTORY}/src/main.cpp

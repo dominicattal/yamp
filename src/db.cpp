@@ -75,21 +75,6 @@ const char* schema = R"(
     );
 )";
 
-static void execute_file(const char* path)
-{
-    auto size = std::filesystem::file_size(path);
-    std::string content(size, '\0');
-    std::ifstream in(path);
-    in.read(&content[0], size);
-
-    char* error_msg{};
-    sqlite3_exec(ctx.db, content.c_str(), NULL, NULL, &error_msg);
-    if (error_msg != NULL) {
-        SPDLOG_INFO("SQLite3 error: {}", error_msg);
-        sqlite3_free(error_msg);
-    }
-}
-
 MPUID db_get_song_uid(SongID song_id)
 {
     return (MPUID_SONG<<MPUID_SHIFT) | static_cast<MPUID>(song_id);

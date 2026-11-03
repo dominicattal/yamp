@@ -98,13 +98,14 @@ static void add_song_from_path(const std::string& song_path)
         if (album_id == INVALID_ID) 
         {
             bool loaded_art = false;
-            for (const char* cover_path : std::array<const char*, 2>{"cover.jpg", "cover.png"})
+            std::vector filenames{"cover.jpg", "cover.png"};
+            for (const char* cover_path : filenames)
             {
                 std::filesystem::path fs_song_path = std::filesystem::path(song_path).replace_filename(cover_path);
                 if (std::filesystem::exists(fs_song_path))
                 {
                     int input_w, input_h, nc;
-                    uint8_t* raw_art_data = stbi_load(fs_song_path.c_str(), &input_w, &input_h, &nc, 4);
+                    uint8_t* raw_art_data = stbi_load(fs_song_path.string().c_str(), &input_w, &input_h, &nc, 4);
                     uint8_t* album_art_data = stbir_resize_uint8_linear(
                                 raw_art_data, input_w, input_h, 0,
                                 NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
@@ -119,7 +120,7 @@ static void add_song_from_path(const std::string& song_path)
 
                     loaded_art = true;
 
-                    SPDLOG_INFO("Loaded album {} art {}", album_name.c_str(), fs_song_path.c_str());
+                    SPDLOG_INFO("Loaded album {} art {}", album_name.c_str(), fs_song_path.string());
 
                     break;
                 }
