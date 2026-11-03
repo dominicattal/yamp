@@ -41,15 +41,19 @@ jobs:
             libxi-dev \
             libasound2-dev \
             libfreetype-dev \
-            libfontconfig1-dev
+            libfontconfig1-dev \
+            libwayland-dev \
+            libwayland-bin \
+            wayland-protocols \
+            libxkbcommon-dev
 
       - name: Configure Linux
         if: runner.os == 'Linux'
-        run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Debug
+        run: cmake --preset linux
 
       - name: Configure Windows
         if: runner.os == 'Windows'
-        run: cmake -B build -S . -A x64
+        run: cmake --preset windows
 
       - name: Build
         run: cmake --build build --config Debug --parallel
