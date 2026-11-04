@@ -153,7 +153,7 @@ static void add_song_from_path(const std::string& song_path)
             }
 
             album_id = db_get_album_id(album_name.c_str());
-            mp_ctx.added_artists.push_back(album_id);
+            mp_ctx.added_albums.push_back(album_id);
             SPDLOG_INFO("Created album {} {}", album_id, album_name);
         }
         db_create_album_song(album_id, song_id, track);

@@ -52,11 +52,14 @@ public:
         if (this == &other)
             return *this;
 
+        release();
+
         m_lru_cache = other.m_lru_cache;
         m_key = other.m_key;
         m_ptr = std::move(other.m_ptr);
         other.m_lru_cache = nullptr;
         other.m_key = 0;
+        other.m_ptr = nullptr;
         return *this;
     }
 
@@ -75,7 +78,7 @@ public:
 
     bool operator==(std::nullptr_t)
     {
-        return m_lru_cache == nullptr;
+        return m_ptr == nullptr;
     }
 
     val_t* get()
