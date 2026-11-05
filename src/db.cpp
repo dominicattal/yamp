@@ -168,6 +168,16 @@ void db_switch(const std::string& db_path)
     SPDLOG_INFO("Changed db to {}", db_path);
 }
 
+void db_begin_transaction()
+{
+    sqlite3_exec(ctx.db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+}
+
+void db_commit_transaction()
+{
+    sqlite3_exec(ctx.db, "COMMIT", nullptr, nullptr, nullptr);
+}
+
 SongID db_get_song_id(const char* song_path)
 {
     sqlite3_stmt* stmt;
@@ -458,12 +468,12 @@ ArtistID db_get_artist_id(const char* name)
     return artist_id;
 }
 
-ArtistID db_create_artist(const char* name)
+ArtistID db_create_artist(Artist& artist)
 {
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Artists (name) VALUES (?1)";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, artist.name.c_str(), -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return sqlite3_last_insert_rowid(ctx.db);
@@ -497,20 +507,19 @@ AlbumID db_create_default_album()
     return sqlite3_last_insert_rowid(ctx.db);
 }
 
-SongID db_create_song(const char* name, const char* song_path, unsigned int year, double song_length, const uint8_t* art, int art_size)
+SongID db_create_song(Song& song)
 {
     sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO Songs (name, path, year, length, cover) VALUES (?1, ?2, ?3, ?4, ?5);";
+    const char* query = "INSERT INTO Songs (name, path, year, length) VALUES (?1, ?2, ?3, ?4);";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL); 
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, song_path, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 3, year);
-    sqlite3_bind_double(stmt, 4, song_length);
-    sqlite3_bind_blob(stmt, 5, art, art_size, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, song.name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, song.path.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 3, song.year);
+    sqlite3_bind_double(stmt, 4, song.length);
     int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (res == SQLITE_CONSTRAINT)
-        SPDLOG_WARN("song name={} path={} exists in db already", name, song_path);
+        SPDLOG_WARN("song name={} path={} exists in db already", song.name, song.path);
     return sqlite3_last_insert_rowid(ctx.db);
 }
 
@@ -870,14 +879,13 @@ AlbumID db_get_album_id(const char* name)
     return album_id;
 }
 
-AlbumID db_create_album(const char* name, unsigned int year, const uint8_t* art, int art_size)
+AlbumID db_create_album(Album& album)
 {
     sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO Albums (name, year, cover) VALUES (?1, ?2, ?3)";
+    const char* query = "INSERT INTO Albums (name, year) VALUES (?1, ?2)";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 2, year);
-    sqlite3_bind_blob(stmt, 3, art, art_size, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, album.name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, album.year);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return sqlite3_last_insert_rowid(ctx.db);
@@ -908,12 +916,12 @@ PlaylistID db_get_playlist_id(const char* name)
     return playlist_id;
 }
 
-PlaylistID db_create_playlist(const char* name)
+PlaylistID db_create_playlist(Playlist& playlist)
 {
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Playlists (name) VALUES (?1)";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, playlist.name.c_str(), -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return sqlite3_last_insert_rowid(ctx.db);
@@ -990,7 +998,7 @@ bool db_exists_artist_album(ArtistID artist_id, AlbumID album_id)
     return res == SQLITE_ROW;
 }
 
-int db_get_random_song()
+SongID db_get_random_song()
 {
     SongID song_id = INVALID_ID;
     sqlite3_stmt* stmt;

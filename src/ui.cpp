@@ -3164,7 +3164,7 @@ static void draw_artist_info_songs()
             if (ImGui::Button("Show"))
             {
                 *selected_row = -1;
-                set_center_view_song(std::move(song));
+                set_center_view_song(mp_get_song(song->id));
                 return MENU_CLOSE_TABLE;
             }
             if (ImGui::Button("Play"))
@@ -3238,7 +3238,7 @@ static void draw_artist_info_songs()
             float padding = 5.0f;
             bool pressed = imgui_aligned_text_button(song->name.c_str(), ImVec2(region_start.x + picture_size.x + padding, region_start.y), ImVec2(region_size.x - picture_size.x - padding, region_size.y), ALIGN_LEFT, ALIGN_CENTER);
             if (pressed)
-                center_song = std::move(song);
+                center_song = mp_get_song(song->id);
         });
 
     params.col_offsets.push_back(&album_col_offset);
@@ -3256,7 +3256,7 @@ static void draw_artist_info_songs()
             if (album == nullptr)
                 return;
             if (imgui_aligned_text_button(album->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
-                center_album = std::move(album);
+                center_album = mp_get_album(album->id);
         });
 
     params.col_offsets.push_back(&length_col_offset);
@@ -3704,7 +3704,8 @@ static void draw_edit()
             {
                 const std::string name {"Select Any Directory"};
                 const std::string default_path = pfd::path::home();
-                const std::string folder_path = pfd::select_folder(name, default_path).result();
+                const pfd::opt options = pfd::opt::multiselect;
+                const std::string folder_path = pfd::select_folder(name, default_path, options).result();
                 mp_recursive_add_songs(folder_path);
                 return {};
             });
@@ -3753,14 +3754,13 @@ static void draw_edit()
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
     ImGui::Separator();
 
-    if (!mp_ctx.adding_songs)
-        return;
-
-    if (ctx.prompt.has_value())
+    if (mp_ctx.adding_songs)
     {
         ImGui::SetCursorPosX(4.0f);
         std::lock_guard lock{mp_ctx.adding_songs_mutex};
-        ImGui::Text("%d / %d - %s", mp_ctx.num_songs_added, mp_ctx.num_songs_to_add, mp_ctx.adding_songs_current_path.c_str());
+        char string[1024];
+        snprintf(string, sizeof(string), "%d / %d - %s", mp_ctx.num_songs_added, mp_ctx.num_songs_to_add, mp_ctx.adding_songs_current_path.c_str());
+        imgui_aligned_text(string, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
     }
     else
     {

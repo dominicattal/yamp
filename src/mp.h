@@ -126,7 +126,8 @@ void mp_update();
 // Eventually, flow should be like preview song in ui -> add config -> choose to save to database
 void mp_add_song(std::string&& song_path);
 void mp_add_songs(std::vector<std::string>&& song_paths);
-void mp_recursive_add_songs(const std::string& folder_path);
+// Folder paths delimited by '\n'
+void mp_recursive_add_songs(const std::string& folder_paths);
 // When finished adding song, call this to destroy objects in mp_ctx.loaded_songs
 void mp_reset_loaded_songs();
 

@@ -20,6 +20,8 @@
 #include <condition_variable>
 
 struct MPContextInternal {
+    DBConn db_conn;
+
     std::mt19937 mt;
     ma_engine engine;
     ma_sound current_song_sound;
@@ -60,12 +62,6 @@ static void add_song_from_path(const std::string& song_path)
     assert(tag);
     TagLib::AudioProperties* properties = mp3_file_ref.audioProperties();
     assert(properties);
-    std::string song_name = tag->title().to8Bit(true);
-    std::string album_name = tag->album().to8Bit(true);
-    std::string artist_name = tag->artist().to8Bit(true);
-    unsigned int year = tag->year();
-    double song_length = properties->lengthInMilliseconds() / 1000.0;
-    int track = tag->track();
 
     SongID song_id = db_get_song_id(song_path.c_str());
     if (song_id != INVALID_ID)
@@ -74,45 +70,58 @@ static void add_song_from_path(const std::string& song_path)
         return;
     }
 
-    uint8_t* art_data = nullptr;
-    int art_size = 0;
-
-    auto set_song_art_data = [&mp3_file_ref, &art_data, &art_size]()
+    auto set_song_art_data = [&mp3_file_ref]() -> Art
         {
+            Art art{};
             TagLib::List<TagLib::VariantMap> props = mp3_file_ref.complexProperties("PICTURE");
             if (props.isEmpty())
-                return;
+                return art;
             const TagLib::VariantMap& map = props.front();
             if (!map.contains("data"))
-                return;
+                return art;
             int input_w, input_h, nc;
             const TagLib::ByteVector data = map["data"].toByteVector();
             uint8_t* raw_art_data = stbi_load_from_memory(reinterpret_cast<const uint8_t*>(data.data()), data.size(), &input_w, &input_h, &nc, 4);
-            art_data = stbir_resize_uint8_linear(
+            art.data = stbir_resize_uint8_linear(
                         raw_art_data, input_w, input_h, 0,
                         NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
                         STBIR_4CHANNEL
                     );
-            art_size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
+            art.size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
             stbi_image_free(raw_art_data);
+            return art;
         };
 
-    set_song_art_data();
-    song_id = db_create_song(song_name.c_str(), song_path.c_str(), year, song_length, art_data, art_size);
-    if (art_data != nullptr)
-        free(art_data);
+    Song song{};
+    song.name = tag->title().to8Bit(true);
+    song.year = tag->year();
+    song.length = properties->lengthInMilliseconds() / 1000.0;
+    song.path = song_path;
+    song.id = db_create_song(song);
 
-    song_id = db_get_song_id(song_path.c_str());
-    mp_ctx.added_songs.push_back(song_id);
-    SPDLOG_INFO("Created song {} {}", song_id, song_name);
+    if (song.id == INVALID_ID)
+        return;
 
-    AlbumID album_id{};
-    ArtistID artist_id{};
+    Album album{};
+    album.name = tag->album().to8Bit(true);
+    album.year = tag->year();
 
-    if (album_name.size() > 0) 
+    Artist artist{};
+    artist.name = tag->artist().to8Bit(true);
+
+    int track = tag->track();
+
+    Art art = set_song_art_data();
+    db_update_song_art(song.id, &art);
+    db_free_art(&art);
+
+    mp_ctx.added_songs.push_back(song.id);
+    SPDLOG_INFO("Created song {} {}", song.id, song.name);
+
+    if (album.name.size() > 0) 
     {
-        album_id = db_get_album_id(album_name.c_str());
-        if (album_id == INVALID_ID) 
+        album.id = db_get_album_id(album.name.c_str());
+        if (album.id == INVALID_ID) 
         {
             bool loaded_art = false;
             std::vector filenames{"cover.jpg", "cover.png"};
@@ -121,23 +130,26 @@ static void add_song_from_path(const std::string& song_path)
                 std::filesystem::path fs_song_path = std::filesystem::path(song_path).replace_filename(cover_path);
                 if (std::filesystem::exists(fs_song_path))
                 {
+                    Art art{};
+
+                    album.id = db_create_album(album);
+
                     int input_w, input_h, nc;
                     uint8_t* raw_art_data = stbi_load(fs_song_path.string().c_str(), &input_w, &input_h, &nc, 4);
-                    uint8_t* album_art_data = stbir_resize_uint8_linear(
+                    art.data = stbir_resize_uint8_linear(
                                 raw_art_data, input_w, input_h, 0,
                                 NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
                                 STBIR_4CHANNEL
                             );
-                    int album_art_size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
+                    art.size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
                     stbi_image_free(raw_art_data);
 
-                    album_id = db_create_album(album_name.c_str(), year, album_art_data, album_art_size);
-                    if (album_art_data != nullptr)
-                        free(album_art_data);
+                    db_update_album_art(album.id, &art);
+                    mp_free_art(&art);
 
                     loaded_art = true;
 
-                    SPDLOG_INFO("Loaded album {} art {}", album_name.c_str(), fs_song_path.string());
+                    SPDLOG_INFO("Loaded album {} art {}", album.name.c_str(), fs_song_path.string());
 
                     break;
                 }
@@ -145,80 +157,101 @@ static void add_song_from_path(const std::string& song_path)
 
             if (!loaded_art)
             {
-                Art art = mp_get_song_art(song_id);
-                album_id = db_create_album(album_name.c_str(), year, art.data, art.size);
+                album.id = db_create_album(album);
+                Art art = mp_get_song_art(song.id);
+                db_update_album_art(album.id, &art);
                 mp_free_art(&art);
-
-                SPDLOG_INFO("Loaded album {} art from song {}", album_id, song_id);
+                SPDLOG_INFO("Loaded album {} art from song {}", album.id, song.id);
             }
 
-            album_id = db_get_album_id(album_name.c_str());
-            mp_ctx.added_albums.push_back(album_id);
-            SPDLOG_INFO("Created album {} {}", album_id, album_name);
+            album.id = db_get_album_id(album.name.c_str());
+            mp_ctx.added_albums.push_back(album.id);
+            SPDLOG_INFO("Created album {} {}", album.id, album.name);
         }
-        db_create_album_song(album_id, song_id, track);
+        db_create_album_song(album.id, song.id, track);
     }
 
-    if (artist_name.size() > 0) 
+    if (artist.name.size() > 0) 
     {
-        artist_id = db_get_artist_id(artist_name.c_str());
-        if (artist_id == INVALID_ID)
+        artist.id = db_get_artist_id(artist.name.c_str());
+        if (artist.id == INVALID_ID)
         {
-            db_create_artist(artist_name.c_str());
-            artist_id = db_get_artist_id(artist_name.c_str());
-            mp_ctx.added_artists.push_back(artist_id);
-            SPDLOG_INFO("Created artist {} {}", artist_id, artist_name);
+            db_create_artist(artist);
+            artist.id = db_get_artist_id(artist.name.c_str());
+            mp_ctx.added_artists.push_back(artist.id);
+            SPDLOG_INFO("Created artist {} {}", artist.id, artist.name);
         }
 
-        db_create_artist_song(artist_id, song_id);
+        db_create_artist_song(artist.id, song.id);
     }
 
-    if (album_id != 0 && artist_id != 0 && !db_exists_artist_album(artist_id, album_id))
-        db_create_artist_album(artist_id, album_id);
+    if (album.id != 0 && artist.id != 0 && !db_exists_artist_album(artist.id, album.id))
+        db_create_artist_album(artist.id, album.id);
 }
 
 void mp_add_song(std::string&& song_path)
 {
     mp_ctx.adding_songs = true;
+    db_begin_transaction();
     add_song_from_path(song_path);
+    db_commit_transaction();
+    mp_ctx.adding_songs = false;
 }
 
 void mp_add_songs(std::vector<std::string>&& song_paths)
 {
     mp_ctx.adding_songs = true;
+    db_begin_transaction();
     for (std::string& song_path : song_paths)
         add_song_from_path(song_path);
+    db_commit_transaction();
+    mp_ctx.adding_songs = false;
 }
 
-void mp_recursive_add_songs(const std::string& folder_path)
+void mp_recursive_add_songs(const std::string& folder_paths)
 {
     namespace fs = std::filesystem;
 
-    if (!fs::exists(std::filesystem::path{folder_path}))
-        return;
+    std::stringstream folder_paths_stream{folder_paths};
+    fs::directory_options options = fs::directory_options::follow_directory_symlink;
+    std::vector<std::string> separated_paths{};
+    std::string folder_path{};
 
     mp_ctx.num_songs_to_add = 0;
     mp_ctx.num_songs_added = 0;
-
-    fs::directory_options options = fs::directory_options::follow_directory_symlink;
-    fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
-    for (auto const& dir_entry : entries)
-    {
-        (void)dir_entry;
-        mp_ctx.num_songs_to_add++;
-    }
-
-    entries = fs::recursive_directory_iterator(folder_path, options);
     mp_ctx.adding_songs = true;
-    for (auto const& dir_entry : entries)
+
+    while (std::getline(folder_paths_stream, folder_path, '\n'))
     {
+        if (!fs::exists(std::filesystem::path{folder_path}))
+            continue;
+
+        fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
+        for (auto const& dir_entry : entries)
         {
-            std::lock_guard lock{mp_ctx.adding_songs_mutex};
-            mp_ctx.adding_songs_current_path = dir_entry.path().string();
+            (void)dir_entry;
+            mp_ctx.num_songs_to_add++;
         }
-        add_song_from_path(dir_entry.path().string());
-        mp_ctx.num_songs_added++;
+        separated_paths.push_back(std::move(folder_path));
     }
+
+    db_begin_transaction();
+    for (std::string& folder_path : separated_paths)
+    {
+        fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
+        for (auto const& dir_entry : entries)
+        {
+            {
+                std::lock_guard lock{mp_ctx.adding_songs_mutex};
+                mp_ctx.adding_songs_current_path = dir_entry.path().string();
+            }
+            add_song_from_path(dir_entry.path().string());
+            mp_ctx.num_songs_added++;
+        }
+    }
+    db_commit_transaction();
+
+    mp_ctx.adding_songs = false;
 }
 
 void mp_reset_loaded_songs()
