@@ -180,16 +180,16 @@ std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 void mp_get_song_lyrics(SongID song_id, char* lryics_buffer, size_t lyrics_buffer_size);
 void mp_update_song(Song& song);
 void mp_update_song_lyrics(SongID song_id, const char* lyrics);
-void mp_update_song_art(SongID song_id, Art* art);
+void mp_update_song_art(SongID song_id, Art& art);
 void mp_update_album(Album& album);
 void mp_update_artist(Artist& artist);
 void mp_update_playlist(Playlist& playlist);
-void mp_update_artist_art(ArtistID artist_id, Art* art);
-void mp_update_album_art(AlbumID album_id, Art* art);
+void mp_update_artist_art(ArtistID artist_id, Art& art);
+void mp_update_album_art(AlbumID album_id, Art& art);
 void mp_update_song_artist(SongID song_id, ArtistID artist_id);
 void mp_update_song_album(SongID song_id, AlbumID album_id, int track);
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
-void mp_update_playlist_art(PlaylistID playlist_id, Art* art);
+void mp_update_playlist_art(PlaylistID playlist_id, Art& art);
 
 void mp_update_album_songs_year(AlbumID album_id, int year);
 void mp_update_album_songs_art(AlbumID album_id);
@@ -213,7 +213,6 @@ Art mp_get_album_art(AlbumID album_id);
 Art mp_get_artist_art(ArtistID artist_id);
 Art mp_get_playlist_art(PlaylistID playlist_id);
 Art mp_get_art(MPUID uid);
-void mp_free_art(Art* art);
 
 // Skip current song in queue
 void mp_play_previous();

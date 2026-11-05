@@ -18,6 +18,9 @@ using MPUID = uint64_t;
 #define INVALID_TRACK 0
 #define INVALID_YEAR 0
 
+typedef struct sqlite3 sqlite3;
+typedef struct sqlite3_stmt sqlite3_stmt;
+
 enum MPUIDEnum : MPUID {
     MPUID_SONG,
     MPUID_ALBUM,
@@ -77,16 +80,76 @@ struct PinID {
     int order;
 };
 
-struct Art {
-    void* sqlite_stmt;
+class Art {
+public:
     const uint8_t* data;
     size_t size;
+
+    Art()
+        : data{nullptr}, size{}, stmt{nullptr}
+    {
+    }
+
+    Art(sqlite3_stmt* stmt, const uint8_t* data, size_t size)
+        : data{data}, size{size}, stmt{stmt}
+    {
+    }
+
+    Art(Art& other) = delete;
+    Art& operator=(Art& other) = delete;
+
+    Art(Art&& other)
+    {
+        this->data = other.data;
+        this->size = other.size;
+        this->stmt = other.stmt;
+        other.data = nullptr;
+        other.stmt = nullptr;
+        other.size = 0;
+    }
+
+    Art& operator=(std::nullptr_t)
+    {
+        clear();
+        this->data = nullptr;
+        this->stmt = nullptr;
+        this->size = 0;
+        return *this;
+    }
+
+    Art& operator=(Art&& other)
+    {
+        this->data = other.data;
+        this->size = other.size;
+        this->stmt = other.stmt;
+        other.data = nullptr;
+        other.stmt = nullptr;
+        other.size = 0;
+        return *this;
+    }
+
+    ~Art();
+
+    void clear();
+
+    bool operator==(std::nullptr_t)
+    {
+        return data == nullptr;
+    }
+
+private:
+    sqlite3_stmt* stmt;
 };
 
 class DBConn {
 public:
     DBConn();
     ~DBConn();
+
+    DBConn(DBConn& other) = delete;
+    DBConn(DBConn&& other) = delete;
+    DBConn& operator=(const DBConn& other) = delete;
+    DBConn& operator=(const DBConn&& other) = delete;
 
     // Transaction
     void begin_transaction();
@@ -152,24 +215,24 @@ public:
 
     // Update
     void update_song(Song& song);
-    void update_song_art(SongID song_id, Art* art);
+    void update_song_art(SongID song_id, Art& art);
     void update_song_lyrics(SongID song_id, const char* lyrics);
     void update_song_album(SongID song_id, AlbumID album_id, int track);
     void update_song_artist(SongID song_id, ArtistID artist_id);
     void update_song_volume(SongID song_id, float volume);
 
     void update_album(Album& album);
-    void update_album_art(AlbumID album_id, Art* art);
+    void update_album_art(AlbumID album_id, Art& art);
     void update_album_artist(AlbumID album_id, ArtistID artist_id);
     void update_album_length(AlbumID album_id);
     void update_album_songs_year(AlbumID album_id, int year);
     void update_album_songs_art(AlbumID album_id);
 
     void update_artist(Artist& artist);
-    void update_artist_art(ArtistID artist_id, Art* art);
+    void update_artist_art(ArtistID artist_id, Art& art);
 
     void update_playlist(Playlist& playlist);
-    void update_playlist_art(PlaylistID playlist_id, Art* art);
+    void update_playlist_art(PlaylistID playlist_id, Art& art);
 
     // Delete
     void delete_artist(ArtistID artist_id);
@@ -177,7 +240,6 @@ public:
     void delete_song(SongID song_id);
 
 private:
-    typedef struct sqlite3 sqlite3;
     sqlite3* conn;
 };
 
@@ -189,10 +251,5 @@ MPUID     db_get_album_uid(PlaylistID playlist_id);
 MPUID     db_get_artist_uid(ArtistID artist_id);
 MPUIDEnum db_get_uid_type(MPUID uid);
 int       db_get_id(MPUID uid);
-
-// Control
-
-// Free art
-void db_free_art(Art* art);
 
 #endif

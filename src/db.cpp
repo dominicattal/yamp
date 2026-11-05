@@ -106,11 +106,17 @@ int db_get_id(MPUID uid)
     return uid & MPUID_ID_MASK;
 }
 
-void db_free_art(Art* art)
+Art::~Art()
 {
-    sqlite3_finalize(static_cast<sqlite3_stmt*>(art->sqlite_stmt));
-    art->data = nullptr;
-    art->sqlite_stmt = nullptr;
+    sqlite3_finalize(this->stmt);
+}
+
+void Art::clear()
+{
+    sqlite3_finalize(this->stmt);
+    this->stmt = nullptr;
+    this->data = nullptr;
+    this->size = 0;
 }
 
 DBConn::DBConn()
@@ -123,7 +129,7 @@ DBConn::DBConn()
         sqlite3_free(error_msg);
         return;
     }
-    SPDLOG_INFO("DB at {} loaded successfully", reinterpret_cast<void*>(this->conn));
+    SPDLOG_INFO("DB at {} loaded successfully", static_cast<void*>(this->conn));
 }
 
 DBConn::~DBConn()
@@ -177,7 +183,7 @@ Song DBConn::get_song_info(SongID song_id)
 
 Art DBConn::get_song_art(SongID song_id)
 {
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt{};
     const char* query = "SELECT cover FROM Songs WHERE id=?1";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
@@ -210,7 +216,7 @@ Album DBConn::get_album_info(AlbumID album_id)
 
 Art DBConn::get_album_art(AlbumID album_id)
 {
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt{};
     const char* query = "SELECT cover FROM Albums WHERE id=?1";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
@@ -224,7 +230,7 @@ Art DBConn::get_album_art(AlbumID album_id)
 
 Art DBConn::get_artist_art(ArtistID artist_id)
 {
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt{};
     const char* query = "SELECT picture FROM Artists WHERE id=?1";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, artist_id);
@@ -238,7 +244,7 @@ Art DBConn::get_artist_art(ArtistID artist_id)
 
 Art DBConn::get_playlist_art(PlaylistID playlist_id)
 {
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt{};
     const char* query = "SELECT cover FROM Playlists WHERE id=?1";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, playlist_id);
@@ -650,12 +656,12 @@ void DBConn::update_song(Song& song)
     sqlite3_finalize(stmt);
 }
 
-void DBConn::update_song_art(SongID song_id, Art* art)
+void DBConn::update_song_art(SongID song_id, Art& art)
 {
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Songs SET cover=?1 WHERE id=?2";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
-    sqlite3_bind_blob(stmt, 1, art->data, art->size, SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 1, art.data, art.size, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, song_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -726,12 +732,12 @@ void DBConn::update_album(Album& album)
     sqlite3_finalize(stmt);
 }
 
-void DBConn::update_album_art(AlbumID album_id, Art* art)
+void DBConn::update_album_art(AlbumID album_id, Art& art)
 {
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Albums SET cover=?1 WHERE id=?2";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
-    sqlite3_bind_blob(stmt, 1, art->data, art->size, SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 1, art.data, art.size, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, album_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -774,12 +780,12 @@ void DBConn::update_artist(Artist& artist)
     sqlite3_finalize(stmt);
 }
 
-void DBConn::update_artist_art(ArtistID artist_id, Art* art)
+void DBConn::update_artist_art(ArtistID artist_id, Art& art)
 {
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Artists SET picture=?1 WHERE id=?2";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
-    sqlite3_bind_blob(stmt, 1, art->data, art->size, SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 1, art.data, art.size, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, artist_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -897,12 +903,12 @@ void DBConn::update_playlist(Playlist& playlist)
     sqlite3_finalize(stmt);
 }
 
-void DBConn::update_playlist_art(PlaylistID playlist_id, Art* art)
+void DBConn::update_playlist_art(PlaylistID playlist_id, Art& art)
 {
     sqlite3_stmt* stmt;
     const char* query = "UPDATE Playlists SET cover=?1 WHERE id=?2";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
-    sqlite3_bind_blob(stmt, 1, art->data, art->size, SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 1, art.data, art.size, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, playlist_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);

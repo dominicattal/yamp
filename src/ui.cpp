@@ -763,7 +763,7 @@ static void reset_center_view_containers()
     ctx.center.show = SHOW_NONE;
     ctx.center.show_split = SHOW_NONE;
     if (ctx.center.edit.art.data != nullptr)
-        mp_free_art(&ctx.center.edit.art);
+        ctx.center.edit.art.clear();
 }
 
 static void set_center_view_lyrics()
@@ -1050,11 +1050,10 @@ static void update_textures()
         for (MPUID uid : ctx.load_queue)
         {
             Art art = mp_get_art(uid);
-            if (art.data == nullptr)
+            if (art == nullptr)
                 ctx.textures.slot_map[uid] = (mp_get_uid_type(uid) == MPUID_ARTIST) ? ctx.textures.default_artist_slot : ctx.textures.default_album_slot;
             else
                 ctx.textures.slot_map[uid] = create_texture(art.data);
-            mp_free_art(&art);
         }
         double end = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         SPDLOG_INFO("Updated textures in {} ms", (end - start) / 1000);
@@ -1553,6 +1552,45 @@ static void draw_album_table(std::vector<LruCacheRef<Album>>& albums)
         set_center_view_album(std::move(center_album));
 }
 
+static void draw_playlist_table(std::vector<LruCacheRef<Playlist>>& playlists)
+{
+    LruCacheRef<Playlist> center_playlist = nullptr;
+    ImGui::BeginChild("playlist_table", ImGui::GetContentRegionAvail());
+    ImVec2 region_start = ImGui::GetCursorPos();
+    region_start.x += DEFAULT_MARGIN;
+    region_start.y += DEFAULT_MARGIN;
+    ImVec2 region_size = ImGui::GetContentRegionAvail();
+    ImGui::PushFont(NULL, 32.0f);
+    ImVec2 image_size = ImVec2(64, 64);
+    float spacing = DEFAULT_MARGIN;
+    for (LruCacheRef<Playlist>& playlist : playlists)
+    {
+        ImGui::PushID(playlist->id);
+        GLTexture tex = get_texture_from_playlist(playlist->id);
+        float text_height = ImGui::CalcTextSize(playlist->name.c_str()).y;
+        ImGui::SetCursorPos(region_start);
+        if (imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1))
+        {
+            center_playlist = mp_get_playlist(playlist->id);
+            ImGui::PopID();
+            break;
+        }
+        if (imgui_aligned_text_button(playlist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
+        {
+            center_playlist = mp_get_playlist(playlist->id);
+            ImGui::PopID();
+            break;
+        }
+        ImGui::PopID();
+        region_start.y += image_size.y + spacing;
+    }
+    ImGui::PopFont();
+    ImGui::EndChild();
+
+    if (center_playlist != nullptr)
+        set_center_view_playlist(std::move(center_playlist));
+}
+
 static void draw_artist_table(std::vector<LruCacheRef<Artist>>& artists)
 {
     ImGui::BeginChild("artist_table", ImGui::GetContentRegionAvail());
@@ -1621,32 +1659,8 @@ static void draw_search_results()
     else if (current_search_type == SEARCH_TYPE_PLAYLIST)
     {
         ImGui::Separator();
-        ImGui::BeginChild("playlist_table", ImGui::GetContentRegionAvail());
-        ImVec2 region_start = ImGui::GetCursorPos();
-        region_start.x += 10.0f;
-        region_start.y += 10.0f;
-        ImVec2 region_size = ImGui::GetContentRegionAvail();
-        ImGui::PushFont(NULL, 32.0f);
-        ImVec2 image_size = ImVec2(64, 64);
-        float spacing = 10.0f;
-        for (LruCacheRef<Playlist>& playlist : ctx.center.playlist_search_result.entries)
-        {
-            ImGui::PushID(playlist->id);
-            GLTexture tex = get_texture_from_playlist(playlist->id);
-            float text_height = ImGui::CalcTextSize(playlist->name.c_str()).y;
-            ImGui::SetCursorPos(region_start);
-            imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
-            if (imgui_aligned_text_button(playlist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
-            {
-                set_center_view_playlist(std::move(playlist));
-                ImGui::PopID();
-                break;
-            }
-            ImGui::PopID();
-            region_start.y += image_size.y + spacing;
-        }
-        ImGui::PopFont();
-        ImGui::EndChild();
+        ImGui::SetCursorPos(ImVec2(0.0f, padding + header_height));
+        draw_playlist_table(ctx.center.playlist_search_result.entries);
     }
 
     ImGui::SetCursorPos(ImVec2(padding, padding));
@@ -2154,7 +2168,7 @@ static void draw_song_info_edit()
     ImGui::SetCursorPosX(col_1_cursor_x);
     if (imgui_aligned_text_button("Cover", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
     {
-        mp_free_art(&ctx.center.edit.art);
+        ctx.center.edit.art.clear();
         copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_slot);
         ctx.center.edit.changed_info = true;
         ctx.center.edit.changed_art = true;
@@ -2175,7 +2189,7 @@ static void draw_song_info_edit()
                 {
                     int width, height, nc;
                     uint8_t* raw_art_data = stbi_load(path.front().c_str(), &width, &height, &nc, 4);
-                    mp_free_art(&ctx.center.edit.art);
+                    ctx.center.edit.art.clear();
                     ctx.center.edit.art.data = stbir_resize_uint8_linear(
                                 raw_art_data, width, height, 0,
                                 NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
@@ -2217,7 +2231,7 @@ static void draw_song_info_edit()
         mp_update_song(song);
         if (ctx.center.edit.changed_art)
         {
-            mp_update_song_art(ctx.center.song->id, &ctx.center.edit.art);
+            mp_update_song_art(ctx.center.song->id, ctx.center.edit.art);
             MPUID uid = mp_get_song_uid(ctx.center.song->id);
             if (ctx.center.edit.reset_art)
             {
@@ -2611,7 +2625,7 @@ static void draw_album_info_edit()
     ImGui::SetCursorPosX(col_1_cursor_x);
     if (imgui_aligned_text_button("Cover", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
     {
-        mp_free_art(&ctx.center.edit.art);
+        ctx.center.edit.art.clear();
         copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_slot);
         ctx.center.edit.changed_info = true;
         ctx.center.edit.changed_art = true;
@@ -2631,7 +2645,7 @@ static void draw_album_info_edit()
                 {
                     int width, height, nc;
                     uint8_t* raw_art_data = stbi_load(path.front().c_str(), &width, &height, &nc, 4);
-                    mp_free_art(&ctx.center.edit.art);
+                    ctx.center.edit.art.clear();
                     ctx.center.edit.art.data = stbir_resize_uint8_linear(
                                 raw_art_data, width, height, 0,
                                 NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
@@ -2670,7 +2684,7 @@ static void draw_album_info_edit()
         mp_update_album(album);
         if (ctx.center.edit.changed_art)
         {
-            mp_update_album_art(ctx.center.album->id, &ctx.center.edit.art);
+            mp_update_album_art(ctx.center.album->id, ctx.center.edit.art);
             MPUID uid = mp_get_album_uid(ctx.center.album->id);
             if (ctx.center.edit.reset_art)
             {
@@ -2927,7 +2941,7 @@ static void draw_playlist_info_edit()
     ImGui::SetCursorPosX(col_1_cursor_x);
     if (imgui_aligned_text_button("Cover", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
     {
-        mp_free_art(&ctx.center.edit.art);
+        ctx.center.edit.art.clear();
         copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_slot);
         ctx.center.edit.changed_info = true;
         ctx.center.edit.changed_art = true;
@@ -2947,7 +2961,7 @@ static void draw_playlist_info_edit()
                 {
                     int width, height, nc;
                     uint8_t* raw_art_data = stbi_load(path.front().c_str(), &width, &height, &nc, 4);
-                    mp_free_art(&ctx.center.edit.art);
+                    ctx.center.edit.art.clear();
                     ctx.center.edit.art.data = stbir_resize_uint8_linear(
                                 raw_art_data, width, height, 0,
                                 NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
@@ -2985,7 +2999,7 @@ static void draw_playlist_info_edit()
         mp_update_playlist(playlist);
         if (ctx.center.edit.changed_art)
         {
-            mp_update_playlist_art(ctx.center.playlist->id, &ctx.center.edit.art);
+            mp_update_playlist_art(ctx.center.playlist->id, ctx.center.edit.art);
             MPUID uid = mp_get_playlist_uid(ctx.center.playlist->id);
             if (ctx.center.edit.reset_art)
             {
@@ -3334,7 +3348,7 @@ static void draw_artist_info_edit()
     ImGui::SetCursorPosX(col_1_cursor_x);
     if (imgui_aligned_text_button("Cover", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
     {
-        mp_free_art(&ctx.center.edit.art);
+        ctx.center.edit.art.clear();
         copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_artist_slot);
         ctx.center.edit.changed_info = true;
         ctx.center.edit.changed_art = true;
@@ -3354,7 +3368,7 @@ static void draw_artist_info_edit()
                 {
                     int width, height, nc;
                     uint8_t* raw_art_data = stbi_load(path.front().c_str(), &width, &height, &nc, 4);
-                    mp_free_art(&ctx.center.edit.art);
+                    ctx.center.edit.art.clear();
                     ctx.center.edit.art.data = stbir_resize_uint8_linear(
                                 raw_art_data, width, height, 0,
                                 NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
@@ -3392,7 +3406,7 @@ static void draw_artist_info_edit()
         mp_update_artist(artist);
         if (ctx.center.edit.changed_art)
         {
-            mp_update_artist_art(ctx.center.artist->id, &ctx.center.edit.art);
+            mp_update_artist_art(ctx.center.artist->id, ctx.center.edit.art);
             MPUID uid = mp_get_artist_uid(ctx.center.artist->id);
             if (ctx.center.edit.reset_art)
             {

@@ -112,8 +112,7 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
     int track = tag->track();
 
     Art art = set_song_art_data();
-    conn.update_song_art(song.id, &art);
-    db_free_art(&art);
+    conn.update_song_art(song.id, art);
 
     mp_ctx.added_songs.push_back(song.id);
     SPDLOG_INFO("Created song {} {}", song.id, song.name);
@@ -144,8 +143,7 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
                     art.size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
                     stbi_image_free(raw_art_data);
 
-                    conn.update_album_art(album.id, &art);
-                    mp_free_art(&art);
+                    conn.update_album_art(album.id, art);
 
                     loaded_art = true;
 
@@ -159,8 +157,7 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
             {
                 album.id = conn.create_album(album);
                 Art art = mp_get_song_art(song.id);
-                conn.update_album_art(album.id, &art);
-                mp_free_art(&art);
+                conn.update_album_art(album.id, art);
                 SPDLOG_INFO("Loaded album {} art from song {}", album.id, song.id);
             }
 
@@ -491,17 +488,17 @@ void mp_update_song_lyrics(SongID song_id, const char* lyrics)
         snprintf(mp_ctx.current_song_lyrics, sizeof(mp_ctx.current_song_lyrics), "%s", lyrics);
 }
 
-void mp_update_song_art(SongID song_id, Art* art)
+void mp_update_song_art(SongID song_id, Art& art)
 {
     ctx.conn.update_song_art(song_id, art);
 }
 
-void mp_update_album_art(AlbumID album_id, Art* art)
+void mp_update_album_art(AlbumID album_id, Art& art)
 {
     ctx.conn.update_album_art(album_id, art);
 }
 
-void mp_update_artist_art(ArtistID artist_id, Art* art)
+void mp_update_artist_art(ArtistID artist_id, Art& art)
 {
     ctx.conn.update_artist_art(artist_id, art);
 }
@@ -589,7 +586,7 @@ void mp_update_album_artist(AlbumID album_id, ArtistID artist_id)
         *artist_id_cache_ref = artist_id;
 }
 
-void mp_update_playlist_art(PlaylistID playlist_id, Art* art)
+void mp_update_playlist_art(PlaylistID playlist_id, Art& art)
 {
     ctx.conn.update_playlist_art(playlist_id, art);
 }
@@ -1049,11 +1046,6 @@ Art mp_get_art(MPUID uid)
         default:
             return {};
     }
-}
-
-void mp_free_art(Art* art)
-{
-    db_free_art(art);
 }
 
 void mp_queue_clear()
