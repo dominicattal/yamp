@@ -666,7 +666,7 @@ bool mp_toggle_pin_song(SongID song_id)
         return false;
     }
 
-    db_create_pin(song_id, MPUID_SONG);
+    db_create_pin(uid);
     mp_ctx.pins.push_back(Pin{
                 .song = mp_get_song(song_id),
                 .album = nullptr,
@@ -692,7 +692,7 @@ bool mp_toggle_pin_album(AlbumID album_id)
         return false;
     }
 
-    db_create_pin(album_id, MPUID_ALBUM);
+    db_create_pin(uid);
     mp_ctx.pins.push_back(Pin{
                 .song = nullptr,
                 .album = mp_get_album(album_id),
@@ -718,7 +718,7 @@ bool mp_toggle_pin_artist(ArtistID artist_id)
         return false;
     }
 
-    db_create_pin(artist_id, MPUID_ARTIST);
+    db_create_pin(uid);
     mp_ctx.pins.push_back(Pin{
                 .song = nullptr,
                 .album = nullptr,
@@ -744,7 +744,7 @@ bool mp_toggle_pin_playlist(PlaylistID playlist_id)
         return false;
     }
 
-    db_create_pin(playlist_id, MPUID_PLAYLIST);
+    db_create_pin(uid);
     mp_ctx.pins.push_back(Pin{
                 .song = nullptr,
                 .album = nullptr,

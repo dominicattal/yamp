@@ -70,10 +70,8 @@ const char* schema = R"(
     );
 
     CREATE TABLE IF NOT EXISTS Pins (
-        id INTEGER,
-        mp_type INTEGER,
-        pin_order INTEGER,
-        PRIMARY KEY (id, mp_type)
+        uid INTEGER PRIMARY KEY,
+        pin_order INTEGER
     );
 )";
 
@@ -1082,14 +1080,13 @@ int db_get_num_pins()
 std::vector<PinID> db_get_pins()
 {
     sqlite3_stmt* stmt;
-    const char* query = "SELECT id, mp_type, pin_order FROM Pins ORDER BY pin_order";
+    const char* query = "SELECT uid, pin_order FROM Pins ORDER BY pin_order";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
     std::vector<PinID> pin_ids{};
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
-        int id = sqlite3_column_int(stmt, 0);
-        MPUIDEnum type = static_cast<MPUIDEnum>(sqlite3_column_int(stmt, 1));
-        pin_ids.emplace_back(db_get_uid(id, type), sqlite3_column_int(stmt, 2));
+        MPUID uid = sqlite3_column_int(stmt, 0);
+        pin_ids.emplace_back(uid, sqlite3_column_int(stmt, 1));
     }
     sqlite3_finalize(stmt);
     return pin_ids;
@@ -1106,14 +1103,13 @@ void db_create_artist_album(ArtistID artist_id, AlbumID album_id)
     sqlite3_finalize(stmt);
 }
 
-bool db_create_pin(int id, MPUIDEnum type)
+bool db_create_pin(MPUID uid)
 {
     sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO Pins (id, mp_type, pin_order) VALUES (?1, ?2, ?3)";
+    const char* query = "INSERT INTO Pins (uid, pin_order) VALUES (?1, ?2)";
     sqlite3_prepare_v2(ctx.db, query, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, id);
-    sqlite3_bind_int(stmt, 2, type);
-    sqlite3_bind_int(stmt, 3, db_get_num_pins() + 1);
+    sqlite3_bind_int(stmt, 1, uid);
+    sqlite3_bind_int(stmt, 2, db_get_num_pins() + 1);
     int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return res == SQLITE_DONE;

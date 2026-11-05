@@ -119,7 +119,7 @@ void       db_create_artist_song(ArtistID artist_id, SongID song_id);
 void       db_create_album_song(AlbumID album_id, SongID song_id, int track);
 void       db_create_playlist_song(PlaylistID playlist_id, SongID song_id, int track);
 void       db_create_artist_album(ArtistID artist_id, AlbumID album_id);
-bool       db_create_pin(int id, MPUIDEnum type);
+bool       db_create_pin(MPUID uid);
 
 // Read
 SongID     db_get_song_id(const char* song_path);
