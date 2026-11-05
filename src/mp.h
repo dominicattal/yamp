@@ -42,6 +42,15 @@ struct SearchResult {
     int num_pages;
     int results_per_page;
     int num_results;
+
+    void clear()
+    {
+        entries.clear();
+        page_num = 0;
+        num_pages = 0;
+        results_per_page = 0;
+        num_results = 0;
+    }
 };
 
 struct MPContext {
@@ -100,7 +109,7 @@ struct MPContext {
 
     LoopMode loop_mode;
 
-    std::vector<Pin> pins;
+    std::deque<Pin> pins;
 
     bool adding_songs;
     int num_songs_added;
@@ -158,6 +167,7 @@ SearchResult<Artist> mp_search_artists(const char* search_query, int results_per
 SearchResult<Playlist> mp_search_playlists(const char* search_query, int results_per_page, int page_num);
 
 SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
+SearchResult<Album> mp_get_paginated_albums_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
 LruCacheRef<Song> mp_get_song(SongID song_id);
 LruCacheRef<Album> mp_get_album(AlbumID album_id);
@@ -190,6 +200,7 @@ void mp_update_song_artist(SongID song_id, ArtistID artist_id);
 void mp_update_song_album(SongID song_id, AlbumID album_id, int track);
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
 void mp_update_playlist_art(PlaylistID playlist_id, Art& art);
+void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id);
 
 void mp_update_album_songs_year(AlbumID album_id, int year);
 void mp_update_album_songs_art(AlbumID album_id);

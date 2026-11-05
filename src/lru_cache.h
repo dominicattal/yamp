@@ -5,7 +5,6 @@
 #include <functional>
 #include <unordered_map>
 #include <list>
-//#include <spdlog/spdlog.h>
 
 template<typename val_t>
 class LruCache;
@@ -143,7 +142,6 @@ public:
     }
     LruCacheRef<val_t> get(int key)
     {
-        //SPDLOG_INFO("LruCache<{}> get {}", typeid(val_t).name(), key);
         if (auto it = m_map.find(key); it != m_map.end())
         {
             ++it->second->ref_count;
@@ -154,7 +152,6 @@ public:
     }
     LruCacheRef<val_t> put(int key, val_t&& val)
     {
-        //SPDLOG_INFO("LruCache<{}> put {}", typeid(val_t).name(), key);
         assert(m_map.find(key) == m_map.end());
         m_list.emplace_front(1, key, std::move(val));
         m_map[key] = m_list.begin();
@@ -179,6 +176,16 @@ public:
     void set_destructor_callback(DestructorCallback callback)
     {
         m_destructor_callback = callback;
+    }
+    void remove(int key)
+    {
+        auto it = m_map.find(key);
+        if (it == m_map.end())
+            return;
+
+        assert(it->second->ref_count == 0);
+        m_list.erase(it->second);
+        m_map.erase(it);
     }
     void clear()
     {

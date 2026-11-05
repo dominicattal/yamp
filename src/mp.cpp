@@ -591,6 +591,49 @@ void mp_update_playlist_art(PlaylistID playlist_id, Art& art)
     ctx.conn.update_playlist_art(playlist_id, art);
 }
 
+void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
+{
+    {
+        std::lock_guard lock{mp_ctx.adding_songs_mutex};
+        mp_ctx.added_artists.erase(
+            std::remove_if(mp_ctx.added_artists.begin(), mp_ctx.added_artists.end(),
+                [&src_artist_id](ArtistID artist_id)
+                {
+                    return artist_id == src_artist_id;
+                }),
+            mp_ctx.added_artists.end()
+            );
+    }
+
+    mp_ctx.pins.erase(
+        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
+            [&src_artist_id](Pin& pin)
+            {
+                return pin.type == MPUID_ARTIST && pin.artist->id == src_artist_id;
+            }),
+        mp_ctx.pins.end()
+        );
+
+    bool update_current_song_artist{};
+    if (mp_ctx.current_song_artist != nullptr && mp_ctx.current_song_artist->id == src_artist_id)
+    {
+        mp_ctx.current_song_artist.release();
+        update_current_song_artist = true;
+    }
+
+    mp_ctx.artists.remove(src_artist_id);
+    mp_ctx.song_artist.clear();
+    mp_ctx.album_artist.clear();
+
+    ctx.conn.begin_transaction();
+    ctx.conn.delete_pin(mp_get_artist_uid(src_artist_id));
+    ctx.conn.merge_artists(dst_artist_id, src_artist_id);
+    ctx.conn.commit_transaction();
+
+    if (update_current_song_artist)
+        mp_ctx.current_song_artist = mp_get_artist(dst_artist_id);
+}
+
 void mp_update_album_songs_year(AlbumID album_id, int year)
 {
     ctx.conn.update_album_songs_year(album_id, year);
@@ -667,7 +710,7 @@ bool mp_toggle_pin_song(SongID song_id)
     }
 
     ctx.conn.create_pin(uid);
-    mp_ctx.pins.push_back(Pin{
+    mp_ctx.pins.push_front(Pin{
                 .song = mp_get_song(song_id),
                 .album = nullptr,
                 .artist = nullptr,
@@ -693,7 +736,7 @@ bool mp_toggle_pin_album(AlbumID album_id)
     }
 
     ctx.conn.create_pin(uid);
-    mp_ctx.pins.push_back(Pin{
+    mp_ctx.pins.push_front(Pin{
                 .song = nullptr,
                 .album = mp_get_album(album_id),
                 .artist = nullptr,
@@ -719,7 +762,7 @@ bool mp_toggle_pin_artist(ArtistID artist_id)
     }
 
     ctx.conn.create_pin(uid);
-    mp_ctx.pins.push_back(Pin{
+    mp_ctx.pins.push_front(Pin{
                 .song = nullptr,
                 .album = nullptr,
                 .artist = mp_get_artist(artist_id),
@@ -745,7 +788,7 @@ bool mp_toggle_pin_playlist(PlaylistID playlist_id)
     }
 
     ctx.conn.create_pin(uid);
-    mp_ctx.pins.push_back(Pin{
+    mp_ctx.pins.push_front(Pin{
                 .song = nullptr,
                 .album = nullptr,
                 .artist = nullptr,
@@ -837,6 +880,23 @@ SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int re
         LruCacheRef<Song> song = mp_get_song(song_id);
         assert(song != nullptr);
         search_result.entries.push_back(std::move(song));
+    }
+    return search_result;
+}
+
+SearchResult<Album> mp_get_paginated_albums_from_artist(ArtistID artist_id, int results_per_page, int page_num)
+{
+    SearchResultID<AlbumID> search_result_id = ctx.conn.search_albums_from_artist(artist_id, results_per_page, page_num);
+    SearchResult<Album> search_result{};
+    search_result.page_num = search_result_id.page_num;
+    search_result.num_pages = search_result_id.num_pages;
+    search_result.results_per_page = search_result_id.results_per_page;
+    search_result.num_results = search_result_id.num_results;
+    for (AlbumID album_id : search_result_id.entries)
+    {
+        LruCacheRef<Album> album = mp_get_album(album_id);
+        assert(album != nullptr);
+        search_result.entries.push_back(std::move(album));
     }
     return search_result;
 }

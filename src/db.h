@@ -212,6 +212,7 @@ public:
     SearchResultID<ArtistID>   search_artists(const char* search_query, int results_per_page, int page_num);
     SearchResultID<PlaylistID> search_playlists(const char* search_query, int results_per_page, int page_num);
     SearchResultID<SongID>     search_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
+    SearchResultID<AlbumID>    search_albums_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
     // Update
     void update_song(Song& song);
@@ -230,6 +231,7 @@ public:
 
     void update_artist(Artist& artist);
     void update_artist_art(ArtistID artist_id, Art& art);
+    void merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id);
 
     void update_playlist(Playlist& playlist);
     void update_playlist_art(PlaylistID playlist_id, Art& art);
@@ -238,6 +240,7 @@ public:
     void delete_artist(ArtistID artist_id);
     void delete_album(AlbumID album_id);
     void delete_song(SongID song_id);
+    void delete_pin(MPUID uid);
 
 private:
     sqlite3* conn;

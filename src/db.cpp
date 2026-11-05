@@ -1,5 +1,6 @@
 #include "db.h"
 #include "config.h"
+#include <chrono>
 #include <sqlite3.h>
 #include <spdlog/spdlog.h>
 #include <filesystem>
@@ -67,7 +68,7 @@ const char* schema = R"(
 
     CREATE TABLE IF NOT EXISTS Pins (
         uid INTEGER PRIMARY KEY,
-        pin_order INTEGER
+        last_accessed INTEGER
     );
 )";
 
@@ -125,19 +126,20 @@ DBConn::DBConn()
     char* error_msg{};
     sqlite3_exec(DBConn::conn, schema, NULL, NULL, &error_msg);
     if (error_msg != NULL) {
-        SPDLOG_INFO("SQLite3 error: {}", error_msg);
+        SPDLOG_INFO("Failed to create DB connection: SQLite3 error - {}", error_msg);
         sqlite3_free(error_msg);
         return;
     }
-    SPDLOG_INFO("DB at {} loaded successfully", static_cast<void*>(this->conn));
+    SPDLOG_INFO("Successfully created DB connection {}", static_cast<void*>(this->conn));
 }
 
 DBConn::~DBConn()
 {
     int res = sqlite3_close(this->conn);
     if (res == SQLITE_BUSY)
-        SPDLOG_WARN("SQLite busy on cleanup");
-    SPDLOG_INFO("MP cleaned up");
+        SPDLOG_WARN("Failed to close DB connection {}: SQLITE_BUSY", static_cast<void*>(this->conn));
+    else
+        SPDLOG_INFO("Successfully closed DB connection {}", static_cast<void*>(this->conn));
 }
 
 void DBConn::begin_transaction()
@@ -499,6 +501,7 @@ SearchResultID<SongID> DBConn::search_songs(const char* search_query, int result
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
 
+    this->begin_transaction();
     query = "SELECT COUNT(id) FROM Songs WHERE name LIKE ?1"; 
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
@@ -514,8 +517,9 @@ SearchResultID<SongID> DBConn::search_songs(const char* search_query, int result
     sqlite3_bind_int(stmt, 3, results_per_page * (page_num - 1));
     while (sqlite3_step(stmt) == SQLITE_ROW)
         search_result_id.entries.push_back(sqlite3_column_int(stmt, 0));
-
     sqlite3_finalize(stmt);
+    this->commit_transaction();
+
     return search_result_id;
 }
 
@@ -530,6 +534,7 @@ SearchResultID<AlbumID> DBConn::search_albums(const char* search_query, int resu
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
 
+    this->begin_transaction();
     query = "SELECT COUNT(id) FROM Albums WHERE name LIKE ?1"; 
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
@@ -545,8 +550,9 @@ SearchResultID<AlbumID> DBConn::search_albums(const char* search_query, int resu
     sqlite3_bind_int(stmt, 3, results_per_page * (page_num - 1));
     while (sqlite3_step(stmt) == SQLITE_ROW)
         search_result_id.entries.push_back(sqlite3_column_int(stmt, 0));
-
     sqlite3_finalize(stmt);
+    this->commit_transaction();
+
     return search_result_id;
 }
 
@@ -561,6 +567,7 @@ SearchResultID<ArtistID> DBConn::search_artists(const char* search_query, int re
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
 
+    this->begin_transaction();
     query = "SELECT COUNT(id) FROM Artists WHERE name LIKE ?1"; 
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
@@ -576,8 +583,9 @@ SearchResultID<ArtistID> DBConn::search_artists(const char* search_query, int re
     sqlite3_bind_int(stmt, 3, results_per_page * (page_num - 1));
     while (sqlite3_step(stmt) == SQLITE_ROW)
         search_result_id.entries.push_back(sqlite3_column_int(stmt, 0));
-
     sqlite3_finalize(stmt);
+    this->commit_transaction();
+
     return search_result_id;
 }
 
@@ -592,6 +600,7 @@ SearchResultID<PlaylistID> DBConn::search_playlists(const char* search_query, in
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
 
+    this->begin_transaction();
     query = "SELECT COUNT(id) FROM Playlists WHERE name LIKE ?1"; 
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
@@ -607,8 +616,9 @@ SearchResultID<PlaylistID> DBConn::search_playlists(const char* search_query, in
     sqlite3_bind_int(stmt, 3, results_per_page * (page_num - 1));
     while (sqlite3_step(stmt) == SQLITE_ROW)
         search_result_id.entries.push_back(sqlite3_column_int(stmt, 0));
-
     sqlite3_finalize(stmt);
+    this->commit_transaction();
+
     return search_result_id;
 }
 
@@ -621,6 +631,7 @@ SearchResultID<SongID> DBConn::search_songs_from_artist(ArtistID artist_id, int 
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
 
+    this->begin_transaction();
     query = "SELECT COUNT(song_id) FROM ArtistSong WHERE artist_id=?1"; 
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, artist_id);
@@ -636,8 +647,40 @@ SearchResultID<SongID> DBConn::search_songs_from_artist(ArtistID artist_id, int 
     sqlite3_bind_int(stmt, 3, results_per_page * (page_num - 1));
     while (sqlite3_step(stmt) == SQLITE_ROW)
         search_result_id.entries.push_back(sqlite3_column_int(stmt, 0));
-
     sqlite3_finalize(stmt);
+    this->commit_transaction();
+
+    return search_result_id;
+}
+
+SearchResultID<AlbumID> DBConn::search_albums_from_artist(ArtistID artist_id, int results_per_page, int page_num)
+{
+    SearchResultID<AlbumID> search_result_id{};
+    sqlite3_stmt* stmt;
+    const char* query;
+
+    search_result_id.page_num = page_num;
+    search_result_id.results_per_page = results_per_page;
+
+    this->begin_transaction();
+    query = "SELECT COUNT(album_id) FROM ArtistAlbum WHERE artist_id=?1"; 
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, artist_id);
+    sqlite3_step(stmt);
+    search_result_id.num_results = sqlite3_column_int(stmt, 0);
+    search_result_id.num_pages = (search_result_id.num_results - 1) / search_result_id.results_per_page + 1;
+    sqlite3_finalize(stmt);
+
+    query = "SELECT album_id FROM ArtistAlbum WHERE artist_id=?1 LIMIT ?2 OFFSET ?3";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, artist_id);
+    sqlite3_bind_int(stmt, 2, results_per_page);
+    sqlite3_bind_int(stmt, 3, results_per_page * (page_num - 1));
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+        search_result_id.entries.push_back(sqlite3_column_int(stmt, 0));
+    sqlite3_finalize(stmt);
+    this->commit_transaction();
+
     return search_result_id;
 }
 
@@ -791,6 +834,32 @@ void DBConn::update_artist_art(ArtistID artist_id, Art& art)
     sqlite3_finalize(stmt);
 }
 
+void DBConn::merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
+{
+    this->begin_transaction();
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE ArtistAlbum SET artist_id=?1 WHERE artist_id=?2";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, dst_artist_id);
+    sqlite3_bind_int(stmt, 2, src_artist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    query = "UPDATE ArtistSong SET artist_id=?1 WHERE artist_id=?2";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, dst_artist_id);
+    sqlite3_bind_int(stmt, 2, src_artist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    query = "DELETE FROM Artists WHERE id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, src_artist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    this->commit_transaction();
+}
+
 void DBConn::delete_artist(ArtistID artist_id)
 {
     sqlite3_stmt* stmt;
@@ -828,6 +897,16 @@ void DBConn::delete_song(SongID song_id)
     const char* query = "DELETE FROM Songs WHERE song_id=?1";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void DBConn::delete_pin(MPUID uid)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "DELETE FROM Pins WHERE uid=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int64(stmt, 1, uid);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
@@ -1033,21 +1112,6 @@ int DBConn::get_num_playlists()
     return num_playlists;
 }
 
-std::vector<PinID> DBConn::get_pins()
-{
-    sqlite3_stmt* stmt;
-    const char* query = "SELECT uid, pin_order FROM Pins ORDER BY pin_order";
-    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL);
-    std::vector<PinID> pin_ids{};
-    while (sqlite3_step(stmt) == SQLITE_ROW)
-    {
-        MPUID uid = sqlite3_column_int(stmt, 0);
-        pin_ids.emplace_back(uid, sqlite3_column_int(stmt, 1));
-    }
-    sqlite3_finalize(stmt);
-    return pin_ids;
-}
-
 void DBConn::create_artist_album(ArtistID artist_id, AlbumID album_id)
 {
     sqlite3_stmt* stmt;
@@ -1059,20 +1123,28 @@ void DBConn::create_artist_album(ArtistID artist_id, AlbumID album_id)
     sqlite3_finalize(stmt);
 }
 
+std::vector<PinID> DBConn::get_pins()
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT uid, last_accessed FROM Pins ORDER BY last_accessed DESC";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL);
+    std::vector<PinID> pin_ids{};
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        MPUID uid = sqlite3_column_int64(stmt, 0);
+        pin_ids.emplace_back(uid, sqlite3_column_int64(stmt, 1));
+    }
+    sqlite3_finalize(stmt);
+    return pin_ids;
+}
+
 bool DBConn::create_pin(MPUID uid)
 {
     sqlite3_stmt* stmt;
-
-    const char* query = "SELECT COUNT(order) FROM Pins";
+    const char* query = "INSERT INTO Pins (uid, last_accessed) VALUES (?1, ?2)";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL);
-    sqlite3_step(stmt);
-    int num_pins = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-
-    query = "INSERT INTO Pins (uid, pin_order) VALUES (?1, ?2)";
-    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, uid);
-    sqlite3_bind_int(stmt, 2, num_pins + 1);
+    sqlite3_bind_int64(stmt, 1, uid);
+    sqlite3_bind_int64(stmt, 2, std::chrono::steady_clock::now().time_since_epoch().count());
     int res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return res == SQLITE_DONE;
