@@ -31,8 +31,9 @@ struct Pin {
     LruCacheRef<Album> album;
     LruCacheRef<Artist> artist;
     LruCacheRef<Playlist> playlist;
+    MPUID uid;
     MPUIDEnum type;
-    int order;
+    uint64_t last_accessed;
 };
 
 template<typename T>
@@ -200,6 +201,7 @@ void mp_update_song_artist(SongID song_id, ArtistID artist_id);
 void mp_update_song_album(SongID song_id, AlbumID album_id, int track);
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
 void mp_update_playlist_art(PlaylistID playlist_id, Art& art);
+void mp_update_pin(MPUID pin_uid);
 void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id);
 
 void mp_update_album_songs_year(AlbumID album_id, int year);

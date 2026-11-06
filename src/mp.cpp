@@ -687,6 +687,26 @@ LruCacheRef<Playlist> mp_create_playlist()
     return mp_get_playlist(playlist.id);
 }
 
+void mp_update_pin(MPUID pin_uid)
+{
+    uint64_t last_accessed = std::chrono::steady_clock::now().time_since_epoch().count();
+
+    ctx.conn.update_pin(pin_uid, last_accessed);
+
+    std::for_each(mp_ctx.pins.begin(), mp_ctx.pins.end(),
+            [&pin_uid, &last_accessed](Pin& pin)
+            {
+                if (pin.uid == pin_uid)
+                    pin.last_accessed = last_accessed;
+            });
+
+    std::sort(mp_ctx.pins.begin(), mp_ctx.pins.end(),
+            [](const Pin& p1, const Pin& p2)
+            {
+                return p1.last_accessed > p2.last_accessed;
+            });
+}
+
 bool mp_uid_pinned(MPUID uid)
 {
     for (Pin& pin : mp_ctx.pins)
@@ -705,18 +725,20 @@ bool mp_toggle_pin_song(SongID song_id)
 
     if (it != mp_ctx.pins.end())
     {
+        ctx.conn.delete_pin(uid);
         mp_ctx.pins.erase(it);
         return false;
     }
 
-    ctx.conn.create_pin(uid);
+    PinID pin_id = ctx.conn.create_pin(uid);
     mp_ctx.pins.push_front(Pin{
                 .song = mp_get_song(song_id),
                 .album = nullptr,
                 .artist = nullptr,
                 .playlist = nullptr,
+                .uid = uid,
                 .type = MPUID_SONG,
-                .order = static_cast<int>(mp_ctx.pins.size())
+                .last_accessed = pin_id.last_accessed
             });
     return true;
 }
@@ -731,18 +753,20 @@ bool mp_toggle_pin_album(AlbumID album_id)
 
     if (it != mp_ctx.pins.end())
     {
+        ctx.conn.delete_pin(uid);
         mp_ctx.pins.erase(it);
         return false;
     }
 
-    ctx.conn.create_pin(uid);
+    PinID pin_id = ctx.conn.create_pin(uid);
     mp_ctx.pins.push_front(Pin{
                 .song = nullptr,
                 .album = mp_get_album(album_id),
                 .artist = nullptr,
                 .playlist = nullptr,
+                .uid = uid,
                 .type = MPUID_ALBUM,
-                .order = static_cast<int>(mp_ctx.pins.size())
+                .last_accessed = pin_id.last_accessed
             });
     return true;
 }
@@ -757,18 +781,20 @@ bool mp_toggle_pin_artist(ArtistID artist_id)
 
     if (it != mp_ctx.pins.end())
     {
+        ctx.conn.delete_pin(uid);
         mp_ctx.pins.erase(it);
         return false;
     }
 
-    ctx.conn.create_pin(uid);
+    PinID pin_id = ctx.conn.create_pin(uid);
     mp_ctx.pins.push_front(Pin{
                 .song = nullptr,
                 .album = nullptr,
                 .artist = mp_get_artist(artist_id),
                 .playlist = nullptr,
+                .uid = uid,
                 .type = MPUID_ARTIST,
-                .order = static_cast<int>(mp_ctx.pins.size())
+                .last_accessed = pin_id.last_accessed
             });
     return true;
 }
@@ -783,18 +809,20 @@ bool mp_toggle_pin_playlist(PlaylistID playlist_id)
 
     if (it != mp_ctx.pins.end())
     {
+        ctx.conn.delete_pin(uid);
         mp_ctx.pins.erase(it);
         return false;
     }
 
-    ctx.conn.create_pin(uid);
+    PinID pin_id = ctx.conn.create_pin(uid);
     mp_ctx.pins.push_front(Pin{
                 .song = nullptr,
                 .album = nullptr,
                 .artist = nullptr,
                 .playlist = mp_get_playlist(playlist_id),
+                .uid = uid,
                 .type = MPUID_PLAYLIST,
-                .order = static_cast<int>(mp_ctx.pins.size())
+                .last_accessed = pin_id.last_accessed
             });
     return true;
 }
@@ -1200,8 +1228,9 @@ void mp_init()
         {
             Pin pin{};
             int id = mp_get_id(pin_id.uid);
+            pin.uid = pin_id.uid;
             pin.type = mp_get_uid_type(pin_id.uid);
-            pin.order = pin_id.order;
+            pin.last_accessed = pin_id.last_accessed;
             switch (pin.type)
             {
                 case MPUID_SONG:

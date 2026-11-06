@@ -1469,9 +1469,11 @@ static void draw_song_table(DrawSongTableParams& params)
 
                 ImVec2 picture_size{};
                 ImGui::SetCursorPos(region_start);
+                float padding = 0.0f;
                 if (params.show_art)
                 {
                     picture_size = ImVec2{48.0f, 48.0f};
+                    padding = 5.0f;
                     const bool hovered = imgui_is_region_hovered(ImGui::GetCursorScreenPos(), picture_size);
                     GLTexture tex = get_texture_from_song(song->id);
                     ImVec4 tint = (hovered) ? GRAY : WHITE;
@@ -1500,7 +1502,6 @@ static void draw_song_table(DrawSongTableParams& params)
                         ImGui::PopStyleColor(3);
                     }
                 }
-                const float padding = 5.0f;
                 bool pressed = imgui_aligned_text_button(song->name.c_str(), ImVec2(region_start.x + picture_size.x + padding, region_start.y), ImVec2(region_size.x - picture_size.x - padding, region_size.y), ALIGN_LEFT, ALIGN_CENTER);
                 if (pressed)
                     center_song = mp_get_song(song->id);
@@ -2136,10 +2137,10 @@ static void draw_song_info_edit()
     else
     {
         ImGui::SetCursorPosX(col_1_cursor_x);
-        ImGui::Text("Artist");
+        imgui_aligned_text("Artist", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
         ImGui::SameLine();
         ImGui::SetCursorPosX(col_2_cursor_x);
-        ImGui::Text("%s", ctx.center.edit.artist);
+        imgui_aligned_text(ctx.center.edit.artist, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
     }
 
     ImGui::SetCursorPosX(col_1_cursor_x);
@@ -4479,7 +4480,9 @@ static void draw_pins()
 
     ImVec2 root_pos = ImGui::GetCursorPos();
 
-    auto list_pin = [&row, &root_pos, &row_advance, padding](const Pin& pin)
+    MPUID updated_pin_uid = INVALID_UID;
+
+    auto list_pin = [&row, &root_pos, &row_advance, &updated_pin_uid, padding](const Pin& pin)
         {
             GLTexture tex = get_texture_from_slot(ctx.textures.default_album_slot);
             ImVec4 color = WHITE;
@@ -4517,25 +4520,37 @@ static void draw_pins()
                 case MPUID_SONG:
                 {
                     if (imgui_aligned_text_button(pin.song->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
+                    {
+                        updated_pin_uid = pin.uid;
                         set_center_view_song(mp_get_song(pin.song->id));
+                    }
                     break;
                 }
                 case MPUID_PLAYLIST:
                 {
                     if (imgui_aligned_text_button(pin.playlist->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
+                    {
+                        updated_pin_uid = pin.uid;
                         set_center_view_playlist(mp_get_playlist(pin.playlist->id));
+                    }
                     break;
                 }
                 case MPUID_ALBUM:
                 {
                     if (imgui_aligned_text_button(pin.album->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
+                    {
+                        updated_pin_uid = pin.uid;
                         set_center_view_album(mp_get_album(pin.album->id));
+                    }
                     break;
                 }
                 case MPUID_ARTIST:
                 {
                     if (imgui_aligned_text_button(pin.artist->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
+                    {
+                        updated_pin_uid = pin.uid;
                         set_center_view_artist(mp_get_artist(pin.artist->id));
+                    }
                     break;
                 }
                 default: break;
@@ -4545,6 +4560,9 @@ static void draw_pins()
 
     for (Pin& pin : mp_ctx.pins)
         list_pin(pin);
+
+    if (updated_pin_uid != INVALID_UID)
+        mp_update_pin(updated_pin_uid);
 }
 
 static void draw_imgui()

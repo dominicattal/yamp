@@ -993,6 +993,18 @@ void DBConn::update_playlist_art(PlaylistID playlist_id, Art& art)
     sqlite3_finalize(stmt);
 }
 
+void DBConn::update_pin(MPUID uid, uint64_t last_accessed)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE Pins SET last_accessed=?1 WHERE uid=?2";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int64(stmt, 1, last_accessed);
+    sqlite3_bind_int64(stmt, 2, uid);
+    int res = sqlite3_step(stmt);
+    assert(res == SQLITE_OK || res == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+}
+
 void DBConn::update_album_songs_year(AlbumID album_id, int year)
 {
     sqlite3_stmt* stmt;
@@ -1138,14 +1150,15 @@ std::vector<PinID> DBConn::get_pins()
     return pin_ids;
 }
 
-bool DBConn::create_pin(MPUID uid)
+PinID DBConn::create_pin(MPUID uid)
 {
+    uint64_t last_accessed = std::chrono::steady_clock::now().time_since_epoch().count();
     sqlite3_stmt* stmt;
     const char* query = "INSERT INTO Pins (uid, last_accessed) VALUES (?1, ?2)";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL);
     sqlite3_bind_int64(stmt, 1, uid);
-    sqlite3_bind_int64(stmt, 2, std::chrono::steady_clock::now().time_since_epoch().count());
-    int res = sqlite3_step(stmt);
+    sqlite3_bind_int64(stmt, 2, last_accessed);
+    sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    return res == SQLITE_DONE;
+    return PinID{uid, last_accessed};
 }

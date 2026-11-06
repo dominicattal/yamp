@@ -15,6 +15,7 @@ using PlaylistID = int;
 using MPUID = uint64_t;
 
 #define INVALID_ID -1
+#define INVALID_UID -1ULL
 #define INVALID_TRACK 0
 #define INVALID_YEAR 0
 
@@ -77,7 +78,7 @@ struct Playlist {
 
 struct PinID {
     MPUID uid;
-    int order;
+    uint64_t last_accessed;
 };
 
 class Art {
@@ -168,7 +169,7 @@ public:
     void       create_album_song(AlbumID album_id, SongID song_id, int track);
     void       create_playlist_song(PlaylistID playlist_id, SongID song_id, int track);
     void       create_artist_album(ArtistID artist_id, AlbumID album_id);
-    bool       create_pin(MPUID uid);
+    PinID      create_pin(MPUID uid);
 
     // Read
     SongID     get_song_id(const char* song_path);
@@ -235,6 +236,8 @@ public:
 
     void update_playlist(Playlist& playlist);
     void update_playlist_art(PlaylistID playlist_id, Art& art);
+
+    void update_pin(MPUID uid, uint64_t last_accessed);
 
     // Delete
     void delete_artist(ArtistID artist_id);
