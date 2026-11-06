@@ -146,7 +146,7 @@ void mp_add_songs(std::vector<std::string>&& song_paths);
 // Folder paths delimited by '\n'
 void mp_recursive_add_songs(const std::string& folder_paths);
 // When finished adding song, call this to destroy objects in mp_ctx.loaded_songs
-void mp_reset_loaded_songs();
+void mp_reset_added_songs();
 
 // Immediately play a song
 void mp_play_song(SongID song_id);

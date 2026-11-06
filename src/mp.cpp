@@ -254,7 +254,7 @@ void mp_recursive_add_songs(const std::string& folder_paths)
     mp_ctx.adding_songs = false;
 }
 
-void mp_reset_loaded_songs()
+void mp_reset_added_songs()
 {
     mp_ctx.adding_songs = false;
     mp_ctx.added_songs.clear();

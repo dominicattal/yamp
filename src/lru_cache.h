@@ -5,7 +5,6 @@
 #include <functional>
 #include <unordered_map>
 #include <list>
-#include <spdlog/spdlog.h>
 
 template<typename val_t>
 class LruCache;
@@ -143,7 +142,6 @@ public:
     }
     LruCacheRef<val_t> get(int key)
     {
-        SPDLOG_INFO("Get {}", key);
         if (auto it = m_map.find(key); it != m_map.end())
         {
             ++it->second->ref_count;

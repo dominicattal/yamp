@@ -295,6 +295,21 @@ static void imgui_pop_font_scale()
     ImGui::PopFont();
 }
 
+static void imgui_separator()
+{
+    ImVec2 position = ImGui::GetCursorPos();
+    ImGui::Separator();
+    ImGui::SetCursorPos(position);
+}
+
+static bool imgui_button(const char* text)
+{
+    const bool pressed = ImGui::Button(text);
+    if (ImGui::IsItemHovered())
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    return pressed;
+}
+
 static bool imgui_text_button(const char* text)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
@@ -458,8 +473,7 @@ static void imgui_custom_table(CustomTableParams& params)
     constexpr float separator_offset = -12.0f;
     ImVec2 origin = ImGui::GetCursorPos();
     ImVec2 origin_screen = ImGui::GetCursorScreenPos();
-    ImGui::Separator();
-    ImGui::SetCursorPos(origin);
+    imgui_separator();
 
     params.col_offsets.push_back(&params.table_width);
     for (size_t i = 0; i < params.col_offsets.size() - 1; i++)
@@ -500,8 +514,8 @@ static void imgui_custom_table(CustomTableParams& params)
         ImGui::PopID();
     }
     ImGui::SetCursorPos(ImVec2(origin.x, origin.y + params.header_row_height));
-    ImGui::Separator();
-    ImGui::SetCursorPos(ImVec2(origin.x, origin.y + params.header_row_height + 2.0f));
+    imgui_separator();
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
     ImGui::BeginChild("##table_body", ImGui::GetContentRegionAvail(), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
     float cursor_pos_y = ImGui::GetCursorPosY();
     for (int row = 0; row < params.num_rows; row++)
@@ -672,62 +686,6 @@ static void update_texture_slot(Slot& slot, const uint8_t* art_data)
     glTexSubImage2D(GL_TEXTURE_2D, 0, slot.xoff, slot.yoff, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, GL_RGBA, GL_UNSIGNED_BYTE, art_data);
 }
 
-static Slot get_slot_from_song(SongID song_id)
-{
-    MPUID uid = mp_get_song_uid(song_id);
-    if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
-        return ctx.textures.slot_map[uid];
-    return ctx.textures.default_album_slot;
-}
-
-static GLTexture get_texture_from_song(SongID song_id)
-{
-    Slot slot = get_slot_from_song(song_id);
-    return get_texture_from_slot(slot);
-}
-
-static Slot get_slot_from_album(AlbumID album_id)
-{
-    MPUID uid = mp_get_album_uid(album_id);
-    if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
-        return ctx.textures.slot_map[uid];
-    return ctx.textures.default_album_slot;
-}
-
-static GLTexture get_texture_from_album(AlbumID album_id)
-{
-    Slot slot = get_slot_from_album(album_id);
-    return get_texture_from_slot(slot);
-}
-
-static Slot get_slot_from_artist(ArtistID artist_id)
-{
-    MPUID uid = mp_get_artist_uid(artist_id);
-    if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
-        return ctx.textures.slot_map[uid];
-    return ctx.textures.default_artist_slot;
-}
-
-static GLTexture get_texture_from_artist(ArtistID artist_id)
-{
-    Slot slot = get_slot_from_artist(artist_id);
-    return get_texture_from_slot(slot);
-}
-
-static Slot get_slot_from_playlist(PlaylistID playlist_id)
-{
-    MPUID uid = mp_get_playlist_uid(playlist_id);
-    if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
-        return ctx.textures.slot_map[uid];
-    return ctx.textures.default_album_slot;
-}
-
-static GLTexture get_texture_from_playlist(PlaylistID playlist_id)
-{
-    Slot slot = get_slot_from_playlist(playlist_id);
-    return get_texture_from_slot(slot);
-}
-
 static Slot get_slot()
 {
     Slot slot{};
@@ -761,6 +719,71 @@ static Slot create_texture(const uint8_t* data)
     Slot slot = get_slot();
     update_texture_slot(slot, data);
     return slot;
+}
+
+static void insert_art_into_map(MPUID uid)
+{
+    Art art = mp_get_art(uid);
+    if (art == nullptr)
+        ctx.textures.slot_map[uid] = (mp_get_uid_type(uid) == MPUID_ARTIST) ? ctx.textures.default_artist_slot : ctx.textures.default_album_slot;
+    else
+        ctx.textures.slot_map[uid] = create_texture(art.data);
+}
+
+static Slot get_slot_from_song(SongID song_id)
+{
+    MPUID uid = mp_get_song_uid(song_id);
+    if (ctx.textures.slot_map.find(uid) == ctx.textures.slot_map.end())
+        insert_art_into_map(uid);
+    return ctx.textures.slot_map[uid];
+}
+
+static GLTexture get_texture_from_song(SongID song_id)
+{
+    Slot slot = get_slot_from_song(song_id);
+    return get_texture_from_slot(slot);
+}
+
+static Slot get_slot_from_album(AlbumID album_id)
+{
+    MPUID uid = mp_get_album_uid(album_id);
+    if (ctx.textures.slot_map.find(uid) == ctx.textures.slot_map.end())
+        insert_art_into_map(uid);
+    return ctx.textures.slot_map[uid];
+}
+
+static GLTexture get_texture_from_album(AlbumID album_id)
+{
+    Slot slot = get_slot_from_album(album_id);
+    return get_texture_from_slot(slot);
+}
+
+static Slot get_slot_from_artist(ArtistID artist_id)
+{
+    MPUID uid = mp_get_artist_uid(artist_id);
+    if (ctx.textures.slot_map.find(uid) == ctx.textures.slot_map.end())
+        insert_art_into_map(uid);
+    return ctx.textures.slot_map[uid];
+}
+
+static GLTexture get_texture_from_artist(ArtistID artist_id)
+{
+    Slot slot = get_slot_from_artist(artist_id);
+    return get_texture_from_slot(slot);
+}
+
+static Slot get_slot_from_playlist(PlaylistID playlist_id)
+{
+    MPUID uid = mp_get_playlist_uid(playlist_id);
+    if (ctx.textures.slot_map.find(uid) == ctx.textures.slot_map.end())
+        insert_art_into_map(uid);
+    return ctx.textures.slot_map[uid];
+}
+
+static GLTexture get_texture_from_playlist(PlaylistID playlist_id)
+{
+    Slot slot = get_slot_from_playlist(playlist_id);
+    return get_texture_from_slot(slot);
 }
 
 static void delete_texture(Slot& slot)
@@ -1111,24 +1134,24 @@ static void initialize_default_textures()
 
 static void update_textures()
 {
-    if (ctx.load_queue.size() > 0)
-    {
-        std::lock_guard lock_guard{ctx.load_queue_lock};
+    //if (ctx.load_queue.size() > 0)
+    //{
+    //    std::lock_guard lock_guard{ctx.load_queue_lock};
 
-        double start = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        for (MPUID uid : ctx.load_queue)
-        {
-            Art art = mp_get_art(uid);
-            if (art == nullptr)
-                ctx.textures.slot_map[uid] = (mp_get_uid_type(uid) == MPUID_ARTIST) ? ctx.textures.default_artist_slot : ctx.textures.default_album_slot;
-            else
-                ctx.textures.slot_map[uid] = create_texture(art.data);
-        }
-        double end = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        SPDLOG_INFO("Updated textures in {} ms", (end - start) / 1000);
+    //    double start = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    //    for (MPUID uid : ctx.load_queue)
+    //    {
+    //        Art art = mp_get_art(uid);
+    //        if (art == nullptr)
+    //            ctx.textures.slot_map[uid] = (mp_get_uid_type(uid) == MPUID_ARTIST) ? ctx.textures.default_artist_slot : ctx.textures.default_album_slot;
+    //        else
+    //            ctx.textures.slot_map[uid] = create_texture(art.data);
+    //    }
+    //    double end = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    //    SPDLOG_INFO("Updated textures in {} ms", (end - start) / 1000);
 
-        ctx.load_queue.clear();
-    }
+    //    ctx.load_queue.clear();
+    //}
 
     if (ctx.unload_queue.size() > 0)
     {
@@ -1139,9 +1162,12 @@ static void update_textures()
         // get away with unloading one texture every frame
         for (MPUID uid : ctx.unload_queue)
         {
-            if (mpuid_has_valid_texture(uid))
-                delete_texture(ctx.textures.slot_map[uid]);
-            ctx.textures.slot_map.erase(ctx.textures.slot_map.find(uid));
+            if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+            {
+                if (mpuid_has_valid_texture(uid))
+                    delete_texture(ctx.textures.slot_map[uid]);
+                ctx.textures.slot_map.erase(ctx.textures.slot_map.find(uid));
+            }
         }
         ctx.unload_queue.clear();
     }
@@ -1238,13 +1264,13 @@ void ui_init()
     const char* glsl_version = nullptr;
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    mp_ctx.songs.set_constructor_callback(
-        [](Song* song) -> void
-        {
-            SPDLOG_INFO("Loading Song {} {}", song->id, song->name);
-            std::lock_guard lock{ctx.load_queue_lock};
-            ctx.load_queue.push_back(mp_get_song_uid(song->id));
-        });
+    //mp_ctx.songs.set_constructor_callback(
+    //    [](Song* song) -> void
+    //    {
+    //        SPDLOG_INFO("Loading Song {} {}", song->id, song->name);
+    //        std::lock_guard lock{ctx.load_queue_lock};
+    //        ctx.load_queue.push_back(mp_get_song_uid(song->id));
+    //    });
 
     mp_ctx.songs.set_destructor_callback(
         [](Song* song) -> void
@@ -1254,13 +1280,13 @@ void ui_init()
             ctx.unload_queue.push_back(mp_get_song_uid(song->id));
         });
 
-    mp_ctx.albums.set_constructor_callback(
-        [](Album* album) -> void
-        {
-            SPDLOG_INFO("Loading Album {} {}", album->id, album->name);
-            std::lock_guard lock{ctx.load_queue_lock};
-            ctx.load_queue.push_back(mp_get_album_uid(album->id));
-        });
+    //mp_ctx.albums.set_constructor_callback(
+    //    [](Album* album) -> void
+    //    {
+    //        SPDLOG_INFO("Loading Album {} {}", album->id, album->name);
+    //        std::lock_guard lock{ctx.load_queue_lock};
+    //        ctx.load_queue.push_back(mp_get_album_uid(album->id));
+    //    });
 
     mp_ctx.albums.set_destructor_callback(
         [](Album* album) -> void
@@ -1270,13 +1296,13 @@ void ui_init()
             ctx.unload_queue.push_back(mp_get_album_uid(album->id));
         });
 
-    mp_ctx.artists.set_constructor_callback(
-        [](Artist* artist) -> void
-        {
-            SPDLOG_INFO("Loading Artist {} {}", artist->id, artist->name);
-            std::lock_guard lock{ctx.load_queue_lock};
-            ctx.load_queue.push_back(mp_get_artist_uid(artist->id));
-        });
+    //mp_ctx.artists.set_constructor_callback(
+    //    [](Artist* artist) -> void
+    //    {
+    //        SPDLOG_INFO("Loading Artist {} {}", artist->id, artist->name);
+    //        std::lock_guard lock{ctx.load_queue_lock};
+    //        ctx.load_queue.push_back(mp_get_artist_uid(artist->id));
+    //    });
 
     mp_ctx.artists.set_destructor_callback(
         [](Artist* artist) -> void
@@ -1286,13 +1312,13 @@ void ui_init()
             ctx.unload_queue.push_back(mp_get_artist_uid(artist->id));
         });
 
-    mp_ctx.playlists.set_constructor_callback(
-        [](Playlist* playlist) -> void
-        {
-            SPDLOG_INFO("Loading Playlist {} {}", playlist->id, playlist->name);
-            std::lock_guard lock{ctx.load_queue_lock};
-            ctx.load_queue.push_back(mp_get_playlist_uid(playlist->id));
-        });
+    //mp_ctx.playlists.set_constructor_callback(
+    //    [](Playlist* playlist) -> void
+    //    {
+    //        SPDLOG_INFO("Loading Playlist {} {}", playlist->id, playlist->name);
+    //        std::lock_guard lock{ctx.load_queue_lock};
+    //        ctx.load_queue.push_back(mp_get_playlist_uid(playlist->id));
+    //    });
 
     mp_ctx.playlists.set_destructor_callback(
         [](Playlist* playlist) -> void
@@ -1643,6 +1669,7 @@ static void draw_album_table(std::vector<LruCacheRef<Album>>& albums)
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
+    ImGui::Dummy({0.0f, spacing});
     imgui_pop_font_scale();
     ImGui::EndChild();
 
@@ -1682,6 +1709,7 @@ static void draw_playlist_table(std::vector<LruCacheRef<Playlist>>& playlists)
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
+    ImGui::Dummy({0.0f, spacing});
     imgui_pop_font_scale();
     ImGui::EndChild();
 
@@ -1708,13 +1736,14 @@ static void draw_artist_table(std::vector<LruCacheRef<Artist>>& artists)
         imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
         if (imgui_aligned_text_button(artist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
         {
-            set_center_view_artist(std::move(artist));
+            set_center_view_artist(mp_get_artist(artist->id));
             ImGui::PopID();
             break;
         }
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
+    ImGui::Dummy({0.0f, spacing});
     imgui_pop_font_scale();
     ImGui::EndChild();
 }
@@ -1743,21 +1772,18 @@ static void draw_search_results()
     else if (current_search_type == SEARCH_TYPE_ALBUM)
     {
         std::vector<LruCacheRef<Album>> albums{};
-        ImGui::Separator();
-        ImGui::SetCursorPos(ImVec2(0.0f, padding + header_height));
+        imgui_separator();
         draw_album_table(ctx.center.album_search_result.entries);
     }
     else if (current_search_type == SEARCH_TYPE_ARTIST)
     {
         std::vector<LruCacheRef<Artist>> artists{};
-        ImGui::Separator();
-        ImGui::SetCursorPos(ImVec2(0.0f, padding + header_height));
+        imgui_separator();
         draw_artist_table(ctx.center.artist_search_result.entries);
     }
     else if (current_search_type == SEARCH_TYPE_PLAYLIST)
     {
-        ImGui::Separator();
-        ImGui::SetCursorPos(ImVec2(0.0f, padding + header_height));
+        imgui_separator();
         draw_playlist_table(ctx.center.playlist_search_result.entries);
     }
 
@@ -2546,8 +2572,7 @@ static void draw_song_info()
     }
 
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
-    ImGui::Separator();
-    ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
+    imgui_separator();
     ImGui::BeginChild("more_song_info", ImGui::GetContentRegionAvail());
     if (ctx.center.show == SHOW_LYRICS)
         draw_song_info_lyrics();
@@ -2995,8 +3020,7 @@ static void draw_album_info()
     ImGui::EndChild();
 
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
-    ImGui::Separator();
-    ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
+    imgui_separator();
     ImGui::BeginChild("more_album_info", ImGui::GetContentRegionAvail());
     if (ctx.center.show == SHOW_EDIT)
         draw_album_info_edit();
@@ -3249,8 +3273,7 @@ static void draw_playlist_info()
     ImGui::EndChild();
 
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
-    ImGui::Separator();
-    ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
+    imgui_separator();
     ImGui::BeginChild("more_album_info", ImGui::GetContentRegionAvail());
     if (ctx.center.show == SHOW_EDIT)
         draw_playlist_info_edit();
@@ -3688,8 +3711,7 @@ static void draw_artist_info_tracklist()
     }
     else
     {
-        ImGui::Separator();
-        ImGui::SetCursorPos(ImVec2(0.0f, padding + header_height));
+        imgui_separator();
         draw_album_table(ctx.center.albums);
 
         ImGui::SetCursorPos(ImVec2(padding, padding));
@@ -3749,8 +3771,7 @@ static void draw_artist_info()
     ImGui::EndChild();
 
     ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
-    ImGui::Separator();
-    ImGui::SetCursorPos(ImVec2(0.0f, album_art_size.y + 2.0f * album_art_padding));
+    imgui_separator();
 
     ImGui::BeginChild("##artist", ImGui::GetContentRegionAvail());
     if (ctx.center.show)
@@ -3885,10 +3906,10 @@ static void draw_edit()
         "Artist"
     };
 
-    const float padding = 10.0f;
+    float padding = 10.0f;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padding);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
-    if (ImGui::Button("Add Song")) 
+    if (imgui_button("Add Song")) 
     {
         ctx.prompt = std::async(std::launch::async,
             []() -> std::string
@@ -3920,7 +3941,7 @@ static void draw_edit()
             };
     }
     ImGui::SameLine();
-    if (ImGui::Button("Add Folder")) 
+    if (imgui_button("Add Folder")) 
     {
         ctx.prompt = std::async(std::launch::async,
             []() -> std::string
@@ -3941,91 +3962,70 @@ static void draw_edit()
                 result.num_pages = result.num_results / result.results_per_page;
                 result.page_num = 0;
                 for (int i = 0; i < static_cast<int>(mp_ctx.added_songs.size()) && i < result.results_per_page; i++)
-                    result.entries.emplace_back(mp_get_song(mp_ctx.added_songs[i]));
+                {
+                    result.entries.emplace_back(
+                                mp_get_song(mp_ctx.added_songs[i]),
+                                mp_get_album_from_song(mp_ctx.added_songs[i]),
+                                mp_get_artist_from_song(mp_ctx.added_songs[i])
+                            );
+                }
             };
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Create Song"))
+    if (imgui_button("Create Song"))
     {
         set_center_view_song(mp_create_song());
         return;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Create Album"))
+    if (imgui_button("Create Album"))
     {
         set_center_view_album(mp_create_album());
         return;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Create Artist"))
+    if (imgui_button("Create Artist"))
     {
         set_center_view_artist(mp_create_artist());
         return;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Create Playlist"))
+    if (imgui_button("Create Playlist"))
     {
         set_center_view_playlist(mp_create_playlist());
         return;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Reset"))
-        mp_reset_loaded_songs();
+    if (imgui_button("Reset"))
+    {
+        mp_reset_added_songs();
+        mp_ctx.added_songs.clear();
+        mp_ctx.added_albums.clear();
+        mp_ctx.added_artists.clear();
+    }
 
     ImGui::SetCursorPosX(0.0f);
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
-    ImGui::Separator();
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding - ImGui::GetStyle().ItemSpacing.y);
+    imgui_separator();
 
     if (mp_ctx.adding_songs)
     {
+        padding = 4.0f;
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
         std::lock_guard lock{mp_ctx.adding_songs_mutex};
         char string[1024];
         snprintf(string, sizeof(string), "%d / %d", mp_ctx.num_songs_added, mp_ctx.num_songs_to_add);
-        ImGui::SetCursorPosX(4.0f);
+        ImGui::SetCursorPosX(padding);
         imgui_aligned_text(string, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
         snprintf(string, sizeof(string), "%s", mp_ctx.adding_songs_current_path.c_str());
-        ImGui::SetCursorPosX(4.0f);
+        ImGui::SetCursorPosX(padding);
         imgui_aligned_text(string, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
     }
     else
     {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padding);
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 8.0f);
-        ImVec2 header_position = ImGui::GetCursorPos();
-        ImGui::Dummy({0.0f, 0.0f});
-
-        ImGui::SetCursorPosX(0.0f);
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 32.0f);
-        if (current_search_type == SEARCH_TYPE_SONG)
-        {
-            static float name_col_offset = 10.0f;
-            static float artist_col_offset = 300.0f;
-            static float album_col_offset = 550.0f;
-            static float length_col_right_offset = 100.0f;
-
-            DrawSongTableParams params{};
-            params.songs = &ctx.center.added_songs.entries;
-            params.column_offsets = {&name_col_offset, &artist_col_offset, &album_col_offset, &length_col_right_offset};
-
-            draw_song_table(params);
-        }
-        else if (current_search_type == SEARCH_TYPE_ALBUM)
-        {
-            ImVec2 position = ImGui::GetCursorPos();
-            ImGui::Separator();
-            ImGui::SetCursorPos(position);
-            draw_album_table(ctx.center.added_albums.entries);
-        }
-        else if (current_search_type == SEARCH_TYPE_ARTIST)
-        {
-            ImVec2 position = ImGui::GetCursorPos();
-            ImGui::Separator();
-            ImGui::SetCursorPos(position);
-            draw_artist_table(ctx.center.added_artists.entries);
-        }
-
-        ImGui::SetCursorPos(header_position);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding);
         ImGui::SetNextItemWidth(100.0f);
         if (ImGui::Combo("##search_combo", &current_search_type, search_types, std::size(search_types)))
         {
@@ -4041,8 +4041,8 @@ static void draw_edit()
                 {
                     result.entries.emplace_back(
                                 mp_get_song(mp_ctx.added_songs[i]),
-                                mp_get_album(mp_ctx.added_songs[i]),
-                                mp_get_artist(mp_ctx.added_songs[i])
+                                mp_get_album_from_song(mp_ctx.added_songs[i]),
+                                mp_get_artist_from_song(mp_ctx.added_songs[i])
                             );
                 }
             }
@@ -4105,7 +4105,13 @@ static void draw_edit()
                 ctx.center.added_songs.page_num = page_num;
                 ctx.center.added_songs.entries.clear();
                 for (int i = page_num * results_per_page; i < (page_num + 1) * results_per_page && i < num_results; i++)
-                    ctx.center.added_songs.entries.emplace_back(mp_get_song(mp_ctx.added_songs[i]));
+                {
+                    ctx.center.added_songs.entries.emplace_back(
+                                mp_get_song(mp_ctx.added_songs[i]),
+                                mp_get_album_from_song(mp_ctx.added_songs[i]),
+                                mp_get_artist_from_song(mp_ctx.added_songs[i])
+                            );
+                }
             }
             else if (current_search_type == SEARCH_TYPE_ALBUM)
             {
@@ -4133,7 +4139,13 @@ static void draw_edit()
                 ctx.center.added_songs.page_num = page_num;
                 ctx.center.added_songs.entries.clear();
                 for (int i = page_num * results_per_page; i < (page_num + 1) * results_per_page && i < num_results; i++)
-                    ctx.center.added_songs.entries.emplace_back(mp_get_song(mp_ctx.added_songs[i]));
+                {
+                    ctx.center.added_songs.entries.emplace_back(
+                                mp_get_song(mp_ctx.added_songs[i]),
+                                mp_get_album_from_song(mp_ctx.added_songs[i]),
+                                mp_get_artist_from_song(mp_ctx.added_songs[i])
+                            );
+                }
             }
             else if (current_search_type == SEARCH_TYPE_ALBUM)
             {
@@ -4154,6 +4166,32 @@ static void draw_edit()
         }
         ImGui::SameLine();
         ImGui::Text("%d/%d (%d results)", page_num + 1, num_pages + 1, num_results);
+
+        ImGui::SetCursorPosX(0.0f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding - ImGui::GetStyle().ItemSpacing.y);
+        if (current_search_type == SEARCH_TYPE_SONG)
+        {
+            static float name_col_offset = 10.0f;
+            static float artist_col_offset = 300.0f;
+            static float album_col_offset = 550.0f;
+            static float length_col_right_offset = 100.0f;
+
+            DrawSongTableParams params{};
+            params.songs = &ctx.center.added_songs.entries;
+            params.column_offsets = {&name_col_offset, &artist_col_offset, &album_col_offset, &length_col_right_offset};
+
+            draw_song_table(params);
+        }
+        else if (current_search_type == SEARCH_TYPE_ALBUM)
+        {
+            imgui_separator();
+            draw_album_table(ctx.center.added_albums.entries);
+        }
+        else if (current_search_type == SEARCH_TYPE_ARTIST)
+        {
+            imgui_separator();
+            draw_artist_table(ctx.center.added_artists.entries);
+        }
     }
 }
 
