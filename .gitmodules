@@ -28,3 +28,9 @@
 [submodule "vendor/inih"]
 	path = vendor/inih
 	url = https://github.com/benhoyt/inih.git
+[submodule "vendor/plutosvg"]
+	path = vendor/plutosvg
+	url = https://github.com/sammycage/plutosvg.git
+[submodule "vendor/utf8proc"]
+	path = vendor/utf8proc
+	url = https://github.com/JuliaStrings/utf8proc.git

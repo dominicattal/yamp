@@ -2,12 +2,15 @@ cmake_minimum_required(VERSION 4.0)
 
 project(yamp)
 
+set(PLUTOSVG_ENABLE_FREETYPE TRUE)
+
 add_subdirectory(vendor/glfw)
 add_subdirectory(vendor/miniaudio)
 add_subdirectory(vendor/portable-file-dialogs)
 add_subdirectory(vendor/spdlog)
 add_subdirectory(vendor/utfcpp)
 add_subdirectory(vendor/freetype)
+add_subdirectory(vendor/plutosvg)
 find_package(OpenGL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(TagLib 2.3.1 REQUIRED)
@@ -44,7 +47,8 @@ PRIVATE
 )
 
 target_compile_definitions(yamp PRIVATE IMGUI_ENABLE_FREETYPE)
+target_compile_definitions(yamp PRIVATE IMGUI_ENABLE_FREETYPE_PLUTOSVG)
 target_compile_definitions(yamp PRIVATE IMGUI_USE_WCHAR32)
 target_compile_definitions(yamp PRIVATE SPDLOG_ACTIVE_LEVEL)
 
-target_link_libraries(yamp PRIVATE glfw portable_file_dialogs miniaudio spdlog utf8cpp freetype TagLib::tag)
+target_link_libraries(yamp PRIVATE glfw portable_file_dialogs miniaudio spdlog utf8cpp freetype TagLib::tag plutosvg)

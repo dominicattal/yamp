@@ -285,6 +285,16 @@ struct CustomTableParams {
     std::function<MenuPopupEnum(int*)> menu_popup_callback;
 };
 
+static void imgui_push_font_scale(float scale)
+{
+    ImGui::PushFont(NULL, ImGui::GetStyle().FontSizeBase * scale);
+}
+
+static void imgui_pop_font_scale()
+{
+    ImGui::PopFont();
+}
+
 static bool imgui_text_button(const char* text)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
@@ -307,39 +317,104 @@ static bool imgui_text_button(const char* text)
     return hovered && clicked;
 }
 
-static void imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 region_size, AlignmentEnum h_align = ALIGN_LEFT, AlignmentEnum v_align = ALIGN_TOP)
+// Taken from imgui
+static int get_utf8_char(unsigned int* out_char, const char* in_text, const char* in_text_end)
 {
-    ImVec2 text_size = ImGui::CalcTextSize(text);
+    static const char lengths[32] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 3, 3, 4, 0 };
+    static const int masks[]  = { 0x00, 0x7f, 0x1f, 0x0f, 0x07 };
+    static const uint32_t mins[] = { 0x400000, 0, 0x80, 0x800, 0x10000 };
+    static const int shiftc[] = { 0, 18, 12, 6, 0 };
+    static const int shifte[] = { 0, 6, 4, 2, 0 };
+    int len = lengths[*(const unsigned char*)in_text >> 3];
+    int wanted = len + (len ? 0 : 1);
 
-    if (text_size.x < region_size.x)
+    if (in_text_end == NULL)
+        in_text_end = in_text + wanted;
+
+    unsigned char s[4];
+    s[0] = in_text + 0 < in_text_end ? in_text[0] : 0;
+    s[1] = in_text + 1 < in_text_end ? in_text[1] : 0;
+    s[2] = in_text + 2 < in_text_end ? in_text[2] : 0;
+    s[3] = in_text + 3 < in_text_end ? in_text[3] : 0;
+
+    *out_char  = (uint32_t)(s[0] & masks[len]) << 18;
+    *out_char |= (uint32_t)(s[1] & 0x3f) << 12;
+    *out_char |= (uint32_t)(s[2] & 0x3f) <<  6;
+    *out_char |= (uint32_t)(s[3] & 0x3f) <<  0;
+    *out_char >>= shiftc[len];
+
+    int e = 0;
+    e  = (*out_char < mins[len]) << 6;
+    e |= ((*out_char >> 11) == 0x1b) << 7;
+    e |= (*out_char > IM_UNICODE_CODEPOINT_MAX) << 8;
+    e |= (s[1] & 0xc0) >> 2;
+    e |= (s[2] & 0xc0) >> 4;
+    e |= (s[3]       ) >> 6;
+    e ^= 0x2a;
+    e >>= shifte[len];
+
+    if (e)
     {
-        ImGui::SetCursorPos(ImVec2(
-                    region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
-                    region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
-        ImGui::Text("%s", text);
-        return;
+        wanted = std::min(wanted, static_cast<int>(!!s[0] + !!s[1] + !!s[2] + !!s[3]));
+        *out_char = IM_UNICODE_CODEPOINT_INVALID;
     }
 
-    constexpr int MAX_STRING_SIZE = 512;
-    const char* ellipse = "…";
+    return wanted;
+}
+
+static bool imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 region_size, AlignmentEnum h_align = ALIGN_LEFT, AlignmentEnum v_align = ALIGN_TOP, bool button = false)
+{
+    const char* start = text;
+    const char* end = text + strlen(text);
+    const char ellipse[] = "…";
     ImVec2 ellipse_size = ImGui::CalcTextSize(ellipse);
-    int text_end_idx = 0;
-    while (text_end_idx < MAX_STRING_SIZE && text[text_end_idx] != '\0' && ImGui::CalcTextSize(text, text + text_end_idx).x < region_size.x - ellipse_size.x)
-        text_end_idx++;
 
-    // Dont even draw text lol wtf
-    if (text_end_idx == 0)
-        return;
+    ImVec2 text_size(0.0f, ellipse_size.y);
+    ImFont* font = ImGui::GetFont();
+    ImFontBaked* baked = font->GetFontBaked(ImGui::GetFontSize());
 
-    text_size = ImGui::CalcTextSize(text, text + text_end_idx - 1);
+    while (start < end)
+    {
+        unsigned int c;
+        int wanted = get_utf8_char(&c, start, end);
+        const float char_width = (c < (unsigned int)baked->IndexAdvanceX.Size) ? baked->IndexAdvanceX.Data[c] : -1.0f;
+
+        if (text_size.x + char_width + ellipse_size.x >= region_size.x)
+            break;
+
+        text_size.x += char_width;
+        start += wanted;
+    }
+
+    if (start == text && ellipse_size.x >= region_size.x)
+    {
+        ImGui::Dummy(text_size);
+        return false;
+    }
+
+    if (start != end)
+        text_size.x += ellipse_size.x;
+
     ImGui::SetCursorPos(ImVec2(
                 region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
                 region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
 
-    char buf[MAX_STRING_SIZE];
-    strncpy(buf, text, text_end_idx - 1);
-    buf[text_end_idx - 1] = '\0';
-    ImGui::Text("%s…", buf);
+    char new_text[1024];
+    const char* rendered_text = text;
+    if (start < end)
+    {
+        // buffer overflow lol
+        memcpy(new_text, text, start - text);
+        memcpy(new_text + static_cast<size_t>(start - text), ellipse, std::size(ellipse));
+        new_text[start - text + std::size(ellipse)] = '\0';
+        rendered_text = new_text;
+    }
+
+    if (button)
+        return imgui_text_button(rendered_text);
+
+    ImGui::Text("%s", rendered_text);
+    return false;
 }
 
 static bool imgui_image_button(ImTextureRef tex_ref, const ImVec2& image_size, const ImVec4& tint_col = WHITE, const ImVec2& uv0 = UV0, const ImVec2& uv1 = UV1)
@@ -352,38 +427,7 @@ static bool imgui_image_button(ImTextureRef tex_ref, const ImVec2& image_size, c
 
 static bool imgui_aligned_text_button(const char* text, ImVec2 region_start, ImVec2 region_size, AlignmentEnum h_align = ALIGN_LEFT, AlignmentEnum v_align = ALIGN_TOP)
 {
-    ImVec2 text_size = ImGui::CalcTextSize(text);
-
-    if (text_size.x < region_size.x)
-    {
-        ImGui::SetCursorPos(ImVec2(
-                    region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
-                    region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
-        return imgui_text_button(text);
-    }
-
-    constexpr int MAX_STRING_SIZE = 512;
-    const char* ellipse = "…";
-    ImVec2 ellipse_size = ImGui::CalcTextSize(ellipse);
-    int text_end_idx = 0;
-    while (text_end_idx < MAX_STRING_SIZE && text[text_end_idx] != '\0' && ImGui::CalcTextSize(text, text + text_end_idx).x < region_size.x - ellipse_size.x)
-        text_end_idx++;
-
-    // Dont even draw text lol wtf
-    if (text_end_idx == 0)
-        return false;
-
-    text_size = ImGui::CalcTextSize(text, text + text_end_idx - 1);
-    ImGui::SetCursorPos(ImVec2(
-                region_start.x + (region_size.x - text_size.x) / 2.0f * static_cast<int>(h_align),
-                region_start.y + (region_size.y - text_size.y) / 2.0f * static_cast<int>(v_align)));
-
-    char buf[MAX_STRING_SIZE];
-    strncpy(buf, text, text_end_idx - 1);
-    buf[text_end_idx - 1] = '\0';
-    char buf2[MAX_STRING_SIZE];
-    snprintf(buf2, sizeof(buf2), "%s…", buf);
-    return imgui_text_button(buf2);
+    return imgui_aligned_text(text, region_start, region_size, h_align, v_align, true);
 }
 
 static bool imgui_is_mouse_in_window_bounds()
@@ -1113,13 +1157,14 @@ void ui_init()
     //const char* font_file_path = "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf";
     //const char* font_file_path = "/usr/share/fonts/truetype/noto/NotoSansAdlam-Regular.ttf";
     //const char* font_file_path = "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf";
-    const char* font_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Inter/Inter-VariableFont_opsz,wght.ttf";
-    //const char* emoji_font_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Noto_Color_Emoji/NotoColorEmoji-Regular.ttf";
+    //const char* font_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Inter/static/Inter_18pt-Light.ttf";
+    //const char* font_file_path = "assets/fonts/mono/fonts/ttf/MartianMonoSemiExpanded-Light.ttf";
+    //const char* emoji_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Noto_Color_Emoji/NotoColorEmoji-Regular.ttf";
 
     // make everything 0 so i dont deal with weird default formatting issues
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
-    style.FontSizeBase = 18.0f;
+    style.FontSizeBase = 20.0f;
     style.WindowBorderSize = 0.0f;
     style.ChildBorderSize = 0.0f;
     style.PopupBorderSize = 0.0f;
@@ -1133,8 +1178,47 @@ void ui_init()
     style.WindowBorderSize = 0.0f;
 
     ImGuiIO& io = ImGui::GetIO();
-    const ImWchar icons_ranges[] = { 0xf000, 0xf3ff, 0 };
-    io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, nullptr, icons_ranges);
+
+    const char* font_file_path = "assets/fonts/Noto_Sans/NotoSans-VariableFont_wdth,wght.ttf";
+    io.FontDefault = io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase);
+
+    {
+        ImFontConfig font_config{};
+        const char* font_file_path = "assets/fonts/Noto_Color_Emoji/NotoColorEmoji-Regular.ttf";
+        font_config.MergeMode = true;
+        font_config.FontLoaderFlags |= ImGuiFreeTypeLoaderFlags_LoadColor;
+        io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, &font_config);
+    }
+
+    {
+        ImFontConfig font_config{};
+        const char* font_file_path = "assets/fonts/Noto_Sans_Symbols/NotoSansSymbols-VariableFont_wght.ttf";
+        font_config.MergeMode = true;
+        io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, &font_config);
+    }
+
+    {
+        ImFontConfig font_config{};
+        const char* font_file_path = "assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf";
+        font_config.MergeMode = true;
+        io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, &font_config);
+    }
+
+    {
+        ImFontConfig font_config{};
+        const char* font_file_path = "assets/fonts/Noto_Sans_TC/static/NotoSansTC-Regular.ttf";
+        font_config.MergeMode = true;
+        io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, &font_config);
+    }
+
+    //font_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Noto_Color_Emoji/NotoColorEmoji-Regular.ttf";
+    //font_config.MergeMode = true;
+    //font_config.FontLoaderFlags |= ImGuiFreeTypeLoaderFlags_LoadColor;
+    //io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, &font_config);
+
+    //const ImWchar icons_ranges[] = { 0x0030, 0x0039, 0x002F, 0x002F, 0 };
+    //font_file_path = "assets/fonts/mono/fonts/ttf/MartianMonoSemiExpanded-Light.ttf";
+    //io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, &font_config, icons_ranges);
 
     ImGui::StyleColorsDark();
 
@@ -1527,7 +1611,7 @@ static void draw_album_table(std::vector<LruCacheRef<Album>>& albums)
     region_start.x += DEFAULT_MARGIN;
     region_start.y += DEFAULT_MARGIN;
     ImVec2 region_size = ImGui::GetContentRegionAvail();
-    ImGui::PushFont(NULL, 32.0f);
+    imgui_push_font_scale(1.5f);
     ImVec2 image_size = ImVec2(64, 64);
     float spacing = DEFAULT_MARGIN;
     for (LruCacheRef<Album>& album : albums)
@@ -1551,7 +1635,7 @@ static void draw_album_table(std::vector<LruCacheRef<Album>>& albums)
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
-    ImGui::PopFont();
+    imgui_pop_font_scale();
     ImGui::EndChild();
 
     if (center_album != nullptr)
@@ -1566,7 +1650,7 @@ static void draw_playlist_table(std::vector<LruCacheRef<Playlist>>& playlists)
     region_start.x += DEFAULT_MARGIN;
     region_start.y += DEFAULT_MARGIN;
     ImVec2 region_size = ImGui::GetContentRegionAvail();
-    ImGui::PushFont(NULL, 32.0f);
+    imgui_push_font_scale(1.5f);
     ImVec2 image_size = ImVec2(64, 64);
     float spacing = DEFAULT_MARGIN;
     for (LruCacheRef<Playlist>& playlist : playlists)
@@ -1590,7 +1674,7 @@ static void draw_playlist_table(std::vector<LruCacheRef<Playlist>>& playlists)
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
-    ImGui::PopFont();
+    imgui_pop_font_scale();
     ImGui::EndChild();
 
     if (center_playlist != nullptr)
@@ -1604,7 +1688,7 @@ static void draw_artist_table(std::vector<LruCacheRef<Artist>>& artists)
     region_start.x += 10.0f;
     region_start.y += 10.0f;
     ImVec2 region_size = ImGui::GetContentRegionAvail();
-    ImGui::PushFont(NULL, 32.0f);
+    imgui_push_font_scale(1.5f);
     ImVec2 image_size = ImVec2(64, 64);
     float spacing = 10.0f;
     for (LruCacheRef<Artist>& artist : artists)
@@ -1623,7 +1707,7 @@ static void draw_artist_table(std::vector<LruCacheRef<Artist>>& artists)
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
-    ImGui::PopFont();
+    imgui_pop_font_scale();
     ImGui::EndChild();
 }
 
@@ -1814,7 +1898,7 @@ static void draw_song_info_edit_album_picker()
     region_start.x += 10.0f;
     region_start.y += 10.0f;
     ImVec2 region_size = ImGui::GetContentRegionAvail();
-    ImGui::PushFont(NULL, 32.0f);
+    imgui_push_font_scale(1.5f);
     ImVec2 image_size = ImVec2(64, 64);
     float spacing = 10.0f;
     for (LruCacheRef<Album>& test_album : ctx.center.album_search_result.entries)
@@ -1839,7 +1923,7 @@ static void draw_song_info_edit_album_picker()
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
-    ImGui::PopFont();
+    imgui_pop_font_scale();
 }
 
 static void draw_song_info_edit_artist_picker()
@@ -1884,7 +1968,7 @@ static void draw_song_info_edit_artist_picker()
     region_start.x += 10.0f;
     region_start.y += 10.0f;
     ImVec2 region_size = ImGui::GetContentRegionAvail();
-    ImGui::PushFont(NULL, 32.0f);
+    imgui_push_font_scale(1.5f);
     ImVec2 image_size = ImVec2(64, 64);
     float spacing = 10.0f;
     for (LruCacheRef<Artist>& test_artist : ctx.center.artist_search_result.entries)
@@ -1906,13 +1990,13 @@ static void draw_song_info_edit_artist_picker()
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
-    ImGui::PopFont();
+    imgui_pop_font_scale();
 }
 
 static void draw_song_info_edit_lyrics()
 {
     ImGui::BeginChild("lyrics", ImGui::GetContentRegionAvail());
-    ImGui::PushFont(NULL, 24.0f);
+    imgui_push_font_scale(1.2f);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, DARK_GRAY);
     ctx.center.edit.changed_info |= ImGui::InputTextMultiline(
             "##textarea",
@@ -1921,7 +2005,7 @@ static void draw_song_info_edit_lyrics()
             ImVec2(-1.0f, -1.0f)
         );
     ImGui::PopStyleColor();
-    ImGui::PopFont();
+    imgui_pop_font_scale();
     ImGui::EndChild();
 }
 
@@ -1938,7 +2022,7 @@ static void draw_song_info_edit()
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
     float col_1_cursor_x = 10.0f;
     float col_2_cursor_x = 120.0f;
-    ImGui::SetWindowFontScale(1.5f); 
+    imgui_push_font_scale(1.5f);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
     ImGui::SetCursorPosX(col_1_cursor_x);
@@ -2322,7 +2406,7 @@ static void draw_song_info_edit()
 
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale();
     ImGui::EndChild();
     if (split)
     {
@@ -2342,14 +2426,14 @@ static void draw_song_info_edit()
 static void draw_song_info_lyrics()
 {
     const ImVec2 frame_padding = ImGui::GetStyle().FramePadding;
-    ImGui::PushFont(NULL, 24.0f);
+    imgui_push_font_scale(1.2f);
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + frame_padding.x);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + frame_padding.y);
     if (ctx.center.song_lyrics[0] == '\0')
         ImGui::Text("No Lyrics");
     else
         ImGui::TextWrapped("%s", ctx.center.song_lyrics);
-    ImGui::PopFont();
+    imgui_pop_font_scale();
 }
 
 static void draw_song_info()
@@ -2379,12 +2463,16 @@ static void draw_song_info()
         ImVec2 region_size(ImGui::GetContentRegionAvail().x, album_art_size.y);
         ImGui::BeginChild("song_view", region_size);
         region_start = ImGui::GetCursorPos();
-        ImGui::SetWindowFontScale(2.0f); 
+
+        imgui_push_font_scale(2.0f);
         imgui_aligned_text(song->name.c_str(), ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
-        ImGui::SetWindowFontScale(1.5f); 
+        imgui_pop_font_scale();
+
+        imgui_push_font_scale(1.5f);
         if (artist) {
             if (imgui_aligned_text_button(artist->name.c_str(), ImGui::GetCursorPos(), ImGui::GetContentRegionAvail())) {
                 set_center_view_artist(std::move(artist));
+                imgui_pop_font_scale();
                 ImGui::EndChild();
                 return;
             }
@@ -2394,6 +2482,7 @@ static void draw_song_info()
         if (album) {
             if (imgui_aligned_text_button(album->name.c_str(), ImGui::GetCursorPos(), ImGui::GetContentRegionAvail())) {
                 set_center_view_album(std::move(album));
+                imgui_pop_font_scale();
                 ImGui::EndChild();
                 return;
             }
@@ -2406,7 +2495,8 @@ static void draw_song_info()
         else
             ImGui::Text("%d:%02d", length / 60, length % 60);
 
-        ImGui::SetWindowFontScale(1.0f); 
+        imgui_pop_font_scale();
+
         ImVec2 button_size(32.0f, 32.0f);
         ImGui::SetCursorPosY(region_start.y + region_size.y - button_size.y - 2 * ImGui::GetStyle().FramePadding.y);
 
@@ -2500,7 +2590,7 @@ static void draw_album_info_edit_artist_picker()
     region_start.x += 10.0f;
     region_start.y += 10.0f;
     ImVec2 region_size = ImGui::GetContentRegionAvail();
-    ImGui::PushFont(NULL, 32.0f);
+    imgui_push_font_scale(1.5f);
     ImVec2 image_size = ImVec2(64, 64);
     float spacing = 10.0f;
     for (LruCacheRef<Artist>& test_artist : ctx.center.artist_search_result.entries)
@@ -2522,7 +2612,7 @@ static void draw_album_info_edit_artist_picker()
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
-    ImGui::PopFont();
+    imgui_pop_font_scale();
 }
 
 static void draw_album_info_edit()
@@ -2537,7 +2627,7 @@ static void draw_album_info_edit()
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
     float col_1_cursor_x = 10.0f;
     float col_2_cursor_x = 120.0f;
-    ImGui::SetWindowFontScale(1.5f); 
+    imgui_push_font_scale(1.5f); 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
     ImGui::SetCursorPosX(col_1_cursor_x);
@@ -2767,7 +2857,7 @@ static void draw_album_info_edit()
         }
     }
     ImGui::PopStyleColor();
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale(); 
     ImGui::PopStyleVar(2);
     if (split)
     {
@@ -2826,12 +2916,16 @@ static void draw_album_info()
 
     ImGui::BeginChild("album_view", region_size, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     region_start = ImGui::GetCursorPos();
-    ImGui::SetWindowFontScale(2.0f); 
+
+    imgui_push_font_scale(2.0f); 
     imgui_aligned_text(album->name.c_str(), region_start, region_size);
-    ImGui::SetWindowFontScale(1.5f); 
+    imgui_pop_font_scale(); 
+
+    imgui_push_font_scale(1.5f); 
     if (artist) {
         if (imgui_aligned_text_button(artist->name.c_str(), ImGui::GetCursorPos(), ImGui::GetContentRegionAvail())) {
             set_center_view_artist(std::move(artist));
+            imgui_pop_font_scale(); 
             ImGui::EndChild();
             return;
         }
@@ -2844,7 +2938,8 @@ static void draw_album_info()
     else
         ImGui::Text("%d:%02d", length / 60, length % 60);
 
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale(); 
+
     ImVec2 button_size(32.0f, 32.0f);
     ImGui::SetCursorPosY(region_start.y + region_size.y - button_size.y - 2 * ImGui::GetStyle().FramePadding.y);
     if (imgui_image_button(ctx.textures.play_button.id, button_size))
@@ -2910,7 +3005,7 @@ static void draw_playlist_info_edit()
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
     float col_1_cursor_x = 10.0f;
     float col_2_cursor_x = 120.0f;
-    ImGui::SetWindowFontScale(1.5f); 
+    imgui_push_font_scale(1.5f); 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
     ImGui::SetCursorPosX(col_1_cursor_x);
@@ -3047,7 +3142,7 @@ static void draw_playlist_info_edit()
         }
     }
     ImGui::PopStyleVar(2);
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale(); 
     ImGui::PopStyleColor();
 }
 
@@ -3100,13 +3195,15 @@ static void draw_playlist_info()
 
     ImGui::BeginChild("playlist_view", region_size);
     region_start = ImGui::GetCursorPos();
-    ImGui::SetWindowFontScale(2.0f); 
-    imgui_aligned_text(playlist->name.c_str(), region_start, region_size);
 
-    ImGui::SetWindowFontScale(1.5f); 
+    imgui_push_font_scale(2.0f); 
+    imgui_aligned_text(playlist->name.c_str(), region_start, region_size);
+    imgui_pop_font_scale(); 
+
+    imgui_push_font_scale(1.5f); 
     int length = static_cast<int>(playlist->length);
     ImGui::Text("%d:%02d", length / 60, length % 60);
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale(); 
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 0.0f));
     ImVec2 button_size(32.0f, 32.0f);
@@ -3351,7 +3448,7 @@ static void draw_artist_info_edit_merge()
     region_start.x += 10.0f;
     region_start.y += 10.0f;
     ImVec2 region_size = ImGui::GetContentRegionAvail();
-    ImGui::PushFont(NULL, 32.0f);
+    imgui_push_font_scale(1.5f);
     ImVec2 image_size = ImVec2(64, 64);
     float spacing = 10.0f;
     for (LruCacheRef<Artist>& test_artist : ctx.center.artist_search_result.entries)
@@ -3376,7 +3473,7 @@ static void draw_artist_info_edit_merge()
         ImGui::PopID();
         region_start.y += image_size.y + spacing;
     }
-    ImGui::PopFont();
+    imgui_pop_font_scale();
 }
 
 static void draw_artist_info_edit()
@@ -3392,7 +3489,7 @@ static void draw_artist_info_edit()
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
     float col_1_cursor_x = 10.0f;
     float col_2_cursor_x = 120.0f;
-    ImGui::SetWindowFontScale(1.5f); 
+    imgui_push_font_scale(1.5f); 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
     ImGui::SetCursorPosX(col_1_cursor_x);
@@ -3535,7 +3632,7 @@ static void draw_artist_info_edit()
         ctx.center.artist_search_result = mp_search_artists(ctx.search_query, SEARCH_RESULTS_PER_PAGE, 1);
     }
     ImGui::PopStyleVar(2);
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale(); 
     ImGui::PopStyleColor();
     ImGui::EndChild();
 
@@ -3622,10 +3719,10 @@ static void draw_artist_info()
     ImVec2 region_size(ImGui::GetContentRegionAvail().x, album_art_size.y);
 
     ImGui::BeginChild("artist_view", region_size);
-    ImGui::SetWindowFontScale(2.0f); 
+    imgui_push_font_scale(2.0f); 
     const char* artist_name = (artist->name.size() > 0) ? artist->name.c_str() : "<No Artist>";
     imgui_aligned_text(artist_name, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale();
 
     const ImVec2 button_size = ImVec2(32, 32);
     ImGui::SetCursorPosY(origin.y + region_size.y - button_size.y - 2 * ImGui::GetStyle().FramePadding.y);
@@ -4043,7 +4140,7 @@ static void draw_edit()
 static void draw_lyrics()
 {
     const float margin = 10.0f;
-    ImGui::SetWindowFontScale(1.5f); 
+    imgui_push_font_scale(1.5f); 
     if (mp_ctx.current_song_lyrics[0] == '\0')
     {
         imgui_aligned_text("No Lyrics", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail(), ALIGN_CENTER, ALIGN_CENTER);
@@ -4054,7 +4151,7 @@ static void draw_lyrics()
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + margin);
         ImGui::TextWrapped("%s", mp_ctx.current_song_lyrics);
     }
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale(); 
 }
 
 static void draw_center()
@@ -4097,9 +4194,9 @@ static void draw_queue()
 {
     float padding = 8.0f;
     ImGui::SetCursorPosX(padding);
-    ImGui::SetWindowFontScale(2.0f); 
+    imgui_push_font_scale(2.0f); 
     ImGui::Text("Queue");
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale(); 
     int row = 0;
     ImVec2 root_pos = ImGui::GetCursorPos();
     root_pos.x = padding;
@@ -4376,9 +4473,9 @@ static void draw_pins()
     float padding = 10.0f;
     ImGui::SetCursorPosX(padding);
 
-    ImGui::SetWindowFontScale(2.0f); 
+    imgui_push_font_scale(2.0f); 
     ImGui::Text("Pins");
-    ImGui::SetWindowFontScale(1.0f); 
+    imgui_pop_font_scale(); 
 
     ImVec2 root_pos = ImGui::GetCursorPos();
 
