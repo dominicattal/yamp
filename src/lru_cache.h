@@ -5,6 +5,7 @@
 #include <functional>
 #include <unordered_map>
 #include <list>
+#include <spdlog/spdlog.h>
 
 template<typename val_t>
 class LruCache;
@@ -75,7 +76,7 @@ public:
     operator bool() { return m_ptr != nullptr; }
     operator val_t*() { return m_ptr; }
 
-    bool operator==(std::nullptr_t)
+    bool operator==(std::nullptr_t) const
     {
         return m_ptr == nullptr;
     }
@@ -137,11 +138,12 @@ public:
     using Iterator = typename std::list<LruCacheEntry>::iterator;
 
     LruCache()
-        : m_max_size{256}, m_list{}, m_destructor_callback{}, m_map{}
+        : m_max_size{0}, m_list{}, m_destructor_callback{}, m_map{}
     {
     }
     LruCacheRef<val_t> get(int key)
     {
+        SPDLOG_INFO("Get {}", key);
         if (auto it = m_map.find(key); it != m_map.end())
         {
             ++it->second->ref_count;

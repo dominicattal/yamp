@@ -303,19 +303,22 @@ void mp_play_song(SongID song_id)
     ma_sound_get_length_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_length);
     ctx.current_song_loaded = true;
     mp_ctx.paused = false;
-    mp_ctx.current_song = std::move(song);
-    mp_ctx.current_song_artist = mp_get_artist_from_song(song_id);
-    mp_ctx.current_song_album = mp_get_album_from_song(song_id);
-    if (mp_ctx.current_song != nullptr)
-        mp_update_volume(mp_ctx.current_song->volume);
+    mp_ctx.current_song.song = std::move(song);
+    mp_ctx.current_song.album = mp_get_album_from_song(song_id);
+    mp_ctx.current_song.artist = mp_get_artist_from_song(song_id);
+    if (mp_ctx.current_song.song != nullptr)
+        mp_update_volume(mp_ctx.current_song.song->volume);
 
     ctx.conn.get_song_lyrics(song_id, mp_ctx.current_song_lyrics, sizeof(mp_ctx.current_song_lyrics));
 }
 
 void mp_queue_song(SongID song_id)
 {
-    LruCacheRef<Song> song = mp_get_song(song_id);
-    mp_ctx.queue.push_back(std::move(song));
+    mp_ctx.queue.emplace_back(
+                mp_get_song(song_id),
+                mp_get_album_from_song(song_id),
+                mp_get_artist_from_song(song_id)
+            );
     if (mp_ctx.queue.size() == 1 && !ctx.current_song_loaded)
         mp_play_next();
 }
@@ -373,8 +376,8 @@ void mp_toggle_shuffle()
         if (mp_ctx.shuffle) {
             std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
         } else {
-            std::sort(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), [](const SongTrack& pair1, const SongTrack& pair2) {
-                    return pair1.track < pair2.track;
+            std::sort(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), [](const auto& v1, const auto& v2) {
+                    return v1.track < v2.track;
                 });
         }
     }
@@ -392,11 +395,16 @@ void mp_toggle_autoplay()
                 SPDLOG_WARN("Cannot autoplay with no songs in DB");
                 return;
             }
-            mp_ctx.autoplay_queue.push_back(std::move(song));
+            SongID song_id = song->id;
+            mp_ctx.autoplay_queue.emplace_back(
+                        std::move(song),
+                        mp_get_album_from_song(song_id),
+                        mp_get_artist_from_song(song_id)
+                    );
         }
     }
     mp_ctx.autoplay = !mp_ctx.autoplay;
-    if (mp_ctx.autoplay && mp_ctx.current_song == nullptr)
+    if (mp_ctx.autoplay && mp_ctx.current_song.song == nullptr)
         mp_play_next();
 }
 
@@ -411,8 +419,8 @@ void mp_update_volume(float volume)
 void mp_toggle_mute()
 {
     mp_ctx.mute = !mp_ctx.mute;
-    if (mp_ctx.current_song != nullptr)
-        mp_update_volume(mp_ctx.current_song->volume);
+    if (mp_ctx.current_song.song != nullptr)
+        mp_update_volume(mp_ctx.current_song.song->volume);
 }
 
 void mp_update_cursor()
@@ -425,9 +433,9 @@ static void sort_or_shuffle_group_queue()
     if (mp_ctx.shuffle) {
         std::shuffle(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), ctx.mt);
     } else {
-        std::sort(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), [](const SongTrack& pair1, const SongTrack& pair2) 
+        std::sort(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(), [](const auto& v1, const auto& v2) 
             {
-                return pair1.track < pair2.track;
+                return v1.track < v2.track;
             });
     }
 }
@@ -438,8 +446,12 @@ static void add_playlist_songs_to_group_queue(PlaylistID playlist_id)
     std::vector<SongTrackID> song_tracks = mp_get_songs_from_playlist(playlist_id);
     for (SongTrackID song_track : song_tracks)
     {
-        LruCacheRef<Song> song = mp_get_song(song_track.song_id);
-        mp_ctx.group_queue.emplace_back(std::move(song), song_track.track);
+        SongAlbumArtistTrack song;
+        song.song = mp_get_song(song_track.song_id);
+        song.album = mp_get_album_from_song(song_track.song_id);
+        song.artist = mp_get_artist_from_song(song_track.song_id);
+        song.track = song_track.track;
+        mp_ctx.group_queue.push_back(std::move(song));
     }
     sort_or_shuffle_group_queue();
 }
@@ -450,8 +462,12 @@ static void add_album_songs_to_group_queue(AlbumID album_id)
     std::vector<SongTrackID> song_tracks = mp_get_songs_from_album(album_id);
     for (SongTrackID song_track : song_tracks)
     {
-        LruCacheRef<Song> song = mp_get_song(song_track.song_id);
-        mp_ctx.group_queue.emplace_back(std::move(song), song_track.track);
+        SongAlbumArtistTrack song;
+        song.song = mp_get_song(song_track.song_id);
+        song.album = mp_get_album_from_song(song_track.song_id);
+        song.artist = mp_get_artist_from_song(song_track.song_id);
+        song.track = song_track.track;
+        mp_ctx.group_queue.push_back(std::move(song));
     }
     sort_or_shuffle_group_queue();
 }
@@ -484,7 +500,7 @@ void mp_get_song_lyrics(SongID song_id, char* lyrics_buffer, size_t lyrics_buffe
 void mp_update_song_lyrics(SongID song_id, const char* lyrics)
 {
     ctx.conn.update_song_lyrics(song_id, lyrics);
-    if (mp_ctx.current_song != nullptr && mp_ctx.current_song->id == song_id)
+    if (mp_ctx.current_song.song != nullptr && mp_ctx.current_song.song->id == song_id)
         snprintf(mp_ctx.current_song_lyrics, sizeof(mp_ctx.current_song_lyrics), "%s", lyrics);
 }
 
@@ -506,7 +522,7 @@ void mp_update_artist_art(ArtistID artist_id, Art& art)
 void mp_update_song_volume(SongID song_id, float volume)
 {
     ctx.conn.update_song_volume(song_id, volume);
-    if (mp_ctx.current_song != nullptr && mp_ctx.current_song->id == song_id)
+    if (mp_ctx.current_song.song != nullptr && mp_ctx.current_song.song->id == song_id)
         mp_update_volume(volume);
 }
 
@@ -615,9 +631,9 @@ void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
         );
 
     bool update_current_song_artist{};
-    if (mp_ctx.current_song_artist != nullptr && mp_ctx.current_song_artist->id == src_artist_id)
+    if (mp_ctx.current_song.artist != nullptr && mp_ctx.current_song.artist->id == src_artist_id)
     {
-        mp_ctx.current_song_artist.release();
+        mp_ctx.current_song.artist.release();
         update_current_song_artist = true;
     }
 
@@ -631,7 +647,7 @@ void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
     ctx.conn.commit_transaction();
 
     if (update_current_song_artist)
-        mp_ctx.current_song_artist = mp_get_artist(dst_artist_id);
+        mp_ctx.current_song.artist = mp_get_artist(dst_artist_id);
 }
 
 void mp_update_album_songs_year(AlbumID album_id, int year)
@@ -827,27 +843,30 @@ bool mp_toggle_pin_playlist(PlaylistID playlist_id)
     return true;
 }
 
-SearchResult<Song> mp_search_songs(const char* search_query, int results_per_page, int page_num)
+SearchResult<SongAlbumArtist> mp_search_songs(const char* search_query, int results_per_page, int page_num)
 {
     SearchResultID<SongID> search_result_id = ctx.conn.search_songs(search_query, results_per_page, page_num);
-    SearchResult<Song> search_result{};
+    SearchResult<SongAlbumArtist> search_result{};
     search_result.page_num = search_result_id.page_num;
     search_result.num_pages = search_result_id.num_pages;
     search_result.results_per_page = search_result_id.results_per_page;
     search_result.num_results = search_result_id.num_results;
     for (SongID song_id : search_result_id.entries)
     {
-        LruCacheRef<Song> song = mp_get_song(song_id);
-        assert(song != nullptr);
+        SongAlbumArtist song{};
+        song.song = mp_get_song(song_id);
+        song.album = mp_get_album_from_song(song_id);
+        song.artist = mp_get_artist_from_song(song_id);
+        assert(song.song != nullptr);
         search_result.entries.push_back(std::move(song));
     }
     return search_result;
 }
 
-SearchResult<Album> mp_search_albums(const char* search_query, int results_per_page, int page_num)
+SearchResult<LruCacheRef<Album>> mp_search_albums(const char* search_query, int results_per_page, int page_num)
 {
     SearchResultID<AlbumID> search_result_id = ctx.conn.search_albums(search_query, results_per_page, page_num);
-    SearchResult<Album> search_result{};
+    SearchResult<LruCacheRef<Album>> search_result{};
     search_result.page_num = search_result_id.page_num;
     search_result.num_pages = search_result_id.num_pages;
     search_result.results_per_page = search_result_id.results_per_page;
@@ -861,10 +880,10 @@ SearchResult<Album> mp_search_albums(const char* search_query, int results_per_p
     return search_result;
 }
 
-SearchResult<Artist> mp_search_artists(const char* search_query, int results_per_page, int page_num)
+SearchResult<LruCacheRef<Artist>> mp_search_artists(const char* search_query, int results_per_page, int page_num)
 {
     SearchResultID<ArtistID> search_result_id = ctx.conn.search_artists(search_query, results_per_page, page_num);
-    SearchResult<Artist> search_result{};
+    SearchResult<LruCacheRef<Artist>> search_result{};
     search_result.page_num = search_result_id.page_num;
     search_result.num_pages = search_result_id.num_pages;
     search_result.results_per_page = search_result_id.results_per_page;
@@ -878,10 +897,10 @@ SearchResult<Artist> mp_search_artists(const char* search_query, int results_per
     return search_result;
 }
 
-SearchResult<Playlist> mp_search_playlists(const char* search_query, int results_per_page, int page_num)
+SearchResult<LruCacheRef<Playlist>> mp_search_playlists(const char* search_query, int results_per_page, int page_num)
 {
     SearchResultID<PlaylistID> search_result_id = ctx.conn.search_playlists(search_query, results_per_page, page_num);
-    SearchResult<Playlist> search_result{};
+    SearchResult<LruCacheRef<Playlist>> search_result{};
     search_result.page_num = search_result_id.page_num;
     search_result.num_pages = search_result_id.num_pages;
     search_result.results_per_page = search_result_id.results_per_page;
@@ -895,27 +914,29 @@ SearchResult<Playlist> mp_search_playlists(const char* search_query, int results
     return search_result;
 }
 
-SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num)
+SearchResult<SongAlbum> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num)
 {
     SearchResultID<SongID> search_result_id = ctx.conn.search_songs_from_artist(artist_id, results_per_page, page_num);
-    SearchResult<Song> search_result{};
+    SearchResult<SongAlbum> search_result{};
     search_result.page_num = search_result_id.page_num;
     search_result.num_pages = search_result_id.num_pages;
     search_result.results_per_page = search_result_id.results_per_page;
     search_result.num_results = search_result_id.num_results;
     for (SongID song_id : search_result_id.entries)
     {
-        LruCacheRef<Song> song = mp_get_song(song_id);
-        assert(song != nullptr);
+        SongAlbum song{};
+        song.song = mp_get_song(song_id);
+        song.album = mp_get_album_from_song(song_id);
+        assert(song.song != nullptr);
         search_result.entries.push_back(std::move(song));
     }
     return search_result;
 }
 
-SearchResult<Album> mp_get_paginated_albums_from_artist(ArtistID artist_id, int results_per_page, int page_num)
+SearchResult<LruCacheRef<Album>> mp_get_paginated_albums_from_artist(ArtistID artist_id, int results_per_page, int page_num)
 {
     SearchResultID<AlbumID> search_result_id = ctx.conn.search_albums_from_artist(artist_id, results_per_page, page_num);
-    SearchResult<Album> search_result{};
+    SearchResult<LruCacheRef<Album>> search_result{};
     search_result.page_num = search_result_id.page_num;
     search_result.num_pages = search_result_id.num_pages;
     search_result.results_per_page = search_result_id.results_per_page;
@@ -1030,8 +1051,15 @@ void mp_play_previous()
     if (mp_ctx.song_history.size() == 0)
         return;
 
-    if (mp_ctx.current_song != nullptr)
-        mp_ctx.queue.push_front(std::move(mp_ctx.current_song));
+    if (mp_ctx.current_song.song != nullptr)
+    {
+        SongID song_id = mp_ctx.current_song.song->id;
+        mp_ctx.queue.emplace_front(
+                    std::move(mp_ctx.current_song.song),
+                    mp_get_album_from_song(song_id),
+                    mp_get_artist_from_song(song_id)
+                );
+    }
 
     SongID song_id = mp_ctx.song_history.back();
     mp_ctx.song_history.pop_back();
@@ -1067,11 +1095,11 @@ static void play_next_group_song()
 
 void mp_play_next()
 {
-    if (mp_ctx.current_song != nullptr)
-        mp_ctx.song_history.push_back(mp_ctx.current_song->id);
+    if (mp_ctx.current_song.song != nullptr)
+        mp_ctx.song_history.push_back(mp_ctx.current_song.song->id);
 
-    if (mp_ctx.loop_mode == LOOP_TRACK && mp_ctx.current_song != nullptr) {
-        mp_play_song(mp_ctx.current_song->id);
+    if (mp_ctx.loop_mode == LOOP_TRACK && mp_ctx.current_song.song != nullptr) {
+        mp_play_song(mp_ctx.current_song.song->id);
         return;
     }
     mp_ctx.paused = false;
@@ -1080,22 +1108,28 @@ void mp_play_next()
             play_next_group_song();
         } else if (mp_ctx.autoplay) {
             assert(mp_ctx.autoplay_queue.size() > 0);
-            LruCacheRef<Song> song = std::move(mp_ctx.autoplay_queue.front());
+            SongAlbumArtist song = std::move(mp_ctx.autoplay_queue.front());
             mp_ctx.autoplay_queue.pop_front();
-            mp_ctx.autoplay_queue.push_back(mp_get_song(ctx.conn.get_random_song()));
-            mp_play_song(song->id);
+            mp_play_song(song.song->id);
+
+            SongAlbumArtist new_song{};
+            new_song.song = mp_get_song(ctx.conn.get_random_song());
+            new_song.album = mp_get_album_from_song(new_song.song->id);
+            new_song.artist = mp_get_artist_from_song(new_song.song->id);
+            mp_ctx.autoplay_queue.push_back(std::move(new_song));
+
         } else if (ctx.current_song_loaded) {
-            mp_ctx.current_song = nullptr;
-            mp_ctx.current_song_artist = nullptr;
-            mp_ctx.current_song_album = nullptr;
+            mp_ctx.current_song.song = nullptr;
+            mp_ctx.current_song.artist = nullptr;
+            mp_ctx.current_song.album = nullptr;
             mp_ctx.current_song_lyrics[0] = '\0';
             ma_sound_uninit(&ctx.current_song_sound);
             ctx.current_song_loaded = false;
         }
     } else {
-        LruCacheRef<Song> song = std::move(mp_ctx.queue.front());
+        SongAlbumArtist song = std::move(mp_ctx.queue.front());
         mp_ctx.queue.pop_front();
-        mp_play_song(song->id);
+        mp_play_song(song.song->id);
     }
 }
 
@@ -1264,7 +1298,7 @@ void mp_cleanup()
 
 void mp_update()
 {
-    if (mp_ctx.current_song != nullptr) {
+    if (mp_ctx.current_song.song != nullptr) {
         ma_sound_get_cursor_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_cursor);
     }
     if (ctx.song_ended) {

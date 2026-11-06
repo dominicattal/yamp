@@ -183,13 +183,13 @@ struct UIContext {
         ViewEnum type;
         LruCacheRef<Song> song;
         LruCacheRef<Album> album;
-        LruCacheRef<Playlist> playlist;
         LruCacheRef<Artist> artist;
+        LruCacheRef<Playlist> playlist;
         bool pinned;
 
         // if type is album or playlist, then write to song_tracks
         // otherwise, write to songs
-        std::vector<SongTrack> song_tracks;
+        std::vector<SongAlbumArtistTrack> song_tracks;
         std::vector<LruCacheRef<Song>> songs;
         std::vector<LruCacheRef<Album>> albums;
 
@@ -223,14 +223,14 @@ struct UIContext {
         char song_lyrics[MAX_LYRICS_SIZE];
 
         SearchResultEnum search_result_type;
-        SearchResult<Song> song_search_result;
-        SearchResult<Album> album_search_result;
-        SearchResult<Artist> artist_search_result;
-        SearchResult<Playlist> playlist_search_result;
+        SearchResult<SongAlbumArtist> song_search_result;
+        SearchResult<LruCacheRef<Album>> album_search_result;
+        SearchResult<LruCacheRef<Artist>> artist_search_result;
+        SearchResult<LruCacheRef<Playlist>> playlist_search_result;
 
-        SearchResult<Song> added_songs;
-        SearchResult<Album> added_albums;
-        SearchResult<Artist> added_artists;
+        SearchResult<SongAlbumArtist> added_songs;
+        SearchResult<LruCacheRef<Album>> added_albums;
+        SearchResult<LruCacheRef<Artist>> added_artists;
     } center;
 
     std::deque<std::pair<ViewEnum, GenericID>> view_history;
@@ -460,7 +460,14 @@ static void imgui_custom_table(CustomTableParams& params)
     ImVec2 origin_screen = ImGui::GetCursorScreenPos();
     ImGui::Separator();
     ImGui::SetCursorPos(origin);
+
     params.col_offsets.push_back(&params.table_width);
+    for (size_t i = 0; i < params.col_offsets.size() - 1; i++)
+    {
+        *params.col_offsets[i] = std::min(*params.col_offsets[i], *params.col_offsets[i+1]);
+        *params.col_offsets[i] = std::max(*params.col_offsets[i], 0.0f);
+    }
+
     for (size_t i = 0; i < params.col_offsets.size() - 1; i++)
     {
         ImGui::PushID(i);
@@ -906,7 +913,13 @@ static void set_center_view_album(LruCacheRef<Album>&& album)
     ctx.center.pinned = mp_uid_pinned(mp_get_album_uid(ctx.center.album->id));
     std::vector<SongTrackID> tracks = mp_get_songs_from_album(ctx.center.album->id);
     for (auto & [song_id, track] : tracks)
-        ctx.center.song_tracks.emplace_back(mp_get_song(song_id), track);
+    {
+        ctx.center.song_tracks.emplace_back(
+                mp_get_song(song_id), 
+                nullptr,
+                nullptr,
+                track);
+    }
 
     snprintf(ctx.center.edit.album, sizeof(ctx.center.edit.album), "%s", ctx.center.album->name.c_str());
     if (ctx.center.artist != nullptr)
@@ -942,7 +955,13 @@ static void set_center_view_playlist(LruCacheRef<Playlist>&& playlist)
     ctx.center.pinned = mp_uid_pinned(mp_get_playlist_uid(ctx.center.playlist->id));
     std::vector<SongTrackID> tracks = mp_get_songs_from_playlist(ctx.center.playlist->id);
     for (auto & [song_id, track] : tracks)
-        ctx.center.song_tracks.emplace_back(mp_get_song(song_id), track);
+    {
+        ctx.center.song_tracks.emplace_back(
+                mp_get_song(song_id),
+                mp_get_album_from_song(song_id),
+                mp_get_artist_from_song(song_id),
+                track);
+    }
 
     snprintf(ctx.center.edit.playlist, sizeof(ctx.center.edit.playlist), "%s", ctx.center.playlist->name.c_str());
 
@@ -1154,14 +1173,6 @@ void ui_init()
     assert(pfd::settings::available() && "Portable File Dialogs are not available on this platform.\n");
     IMGUI_CHECKVERSION();
 
-    //const char* font_file_path = "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf";
-    //const char* font_file_path = "/usr/share/fonts/truetype/noto/NotoSansAdlam-Regular.ttf";
-    //const char* font_file_path = "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf";
-    //const char* font_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Inter/static/Inter_18pt-Light.ttf";
-    //const char* font_file_path = "assets/fonts/mono/fonts/ttf/MartianMonoSemiExpanded-Light.ttf";
-    //const char* emoji_file_path = "assets/fonts/Inter,Noto_Color_Emoji/Noto_Color_Emoji/NotoColorEmoji-Regular.ttf";
-
-    // make everything 0 so i dont deal with weird default formatting issues
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
     style.FontSizeBase = 20.0f;
@@ -1199,14 +1210,14 @@ void ui_init()
 
     {
         ImFontConfig font_config{};
-        const char* font_file_path = "assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf";
+        const char* font_file_path = "assets/fonts/Noto_Sans_JP/NotoSansJP-Regular.ttf";
         font_config.MergeMode = true;
         io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, &font_config);
     }
 
     {
         ImFontConfig font_config{};
-        const char* font_file_path = "assets/fonts/Noto_Sans_TC/static/NotoSansTC-Regular.ttf";
+        const char* font_file_path = "assets/fonts/Noto_Sans_TC/NotoSansTC-Regular.ttf";
         font_config.MergeMode = true;
         io.Fonts->AddFontFromFileTTF(font_file_path, style.FontSizeBase, &font_config);
     }
@@ -1326,8 +1337,8 @@ void ui_cleanup()
 }
 
 struct DrawSongTableParams {
-    std::vector<SongTrack>* song_tracks;
-    std::vector<LruCacheRef<Song>>* songs;
+    std::vector<SongAlbumArtistTrack>* song_tracks;
+    std::vector<SongAlbumArtist>* songs;
     std::vector<float*> column_offsets;
     bool show_track = false;
     bool show_art = true;
@@ -1373,7 +1384,7 @@ static void draw_song_table(DrawSongTableParams& params)
         {
             LruCacheRef<Song>& song = (params.show_track)
                                 ? params.song_tracks->at(*selected_row).song
-                                : params.songs->at(*selected_row);
+                                : params.songs->at(*selected_row).song;
             if (ImGui::Button("Show"))
             {
                 *selected_row = -1;
@@ -1415,8 +1426,9 @@ static void draw_song_table(DrawSongTableParams& params)
         custom_table_params.body_row_col_callback.push_back(
             [&params](ImVec2 region_start, ImVec2 region_size, int row)
             {
-                //imgui_aligned_text(std::to_string(tracks[row].track).c_str(), region_start, region_size, ALIGN_CENTER, ALIGN_CENTER);
-                auto& [song, track] = params.song_tracks->at(row);
+                SongAlbumArtistTrack& abysmal_conglomeration = params.song_tracks->at(row); 
+                LruCacheRef<Song>& song = abysmal_conglomeration.song;
+                int track = abysmal_conglomeration.track;
                 ImVec2 play_button_size(18.0f, 18.0f);
                 ImGui::SetCursorPos(ImVec2(region_start.x + (region_size.x - play_button_size.x) / 2.0f, region_start.y + (region_size.y - play_button_size.y) / 2.0f));
                 ImVec2 screen_pos = ImGui::GetCursorScreenPos();
@@ -1465,7 +1477,7 @@ static void draw_song_table(DrawSongTableParams& params)
             {
                 LruCacheRef<Song>& song = (params.show_track)
                                     ? params.song_tracks->at(row).song
-                                    : params.songs->at(row);
+                                    : params.songs->at(row).song;
 
                 ImVec2 picture_size{};
                 ImGui::SetCursorPos(region_start);
@@ -1519,16 +1531,14 @@ static void draw_song_table(DrawSongTableParams& params)
         custom_table_params.body_row_col_callback.push_back(
             [&center_artist, &params](ImVec2 region_start, ImVec2 region_size, int row)
             {
-                LruCacheRef<Song>& song = (params.show_track)
-                                    ? params.song_tracks->at(row).song
-                                    : params.songs->at(row);
+                LruCacheRef<Artist>& artist = (params.show_track)
+                                    ? params.song_tracks->at(row).artist
+                                    : params.songs->at(row).artist;
 
-                if (song == nullptr)
-                    return;
 
-                LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
                 if (artist == nullptr)
                     return;
+
                 if (imgui_aligned_text_button(artist->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
                     center_artist = mp_get_artist(artist->id);
             });
@@ -1545,16 +1555,13 @@ static void draw_song_table(DrawSongTableParams& params)
         custom_table_params.body_row_col_callback.push_back(
             [&center_album, &params](ImVec2 region_start, ImVec2 region_size, int row)
             {
-                LruCacheRef<Song>& song = (params.show_track)
-                                    ? params.song_tracks->at(row).song
-                                    : params.songs->at(row);
+                LruCacheRef<Album>& album = (params.show_track)
+                                    ? params.song_tracks->at(row).album
+                                    : params.songs->at(row).album;
 
-                if (song == nullptr)
-                    return;
-
-                LruCacheRef<Album> album = mp_get_album_from_song(song->id);
                 if (album == nullptr)
                     return;
+
                 if (imgui_aligned_text_button(album->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
                     center_album = mp_get_album(album->id);
             });
@@ -1573,7 +1580,7 @@ static void draw_song_table(DrawSongTableParams& params)
             {
                 LruCacheRef<Song>& song = (params.show_track)
                                     ? params.song_tracks->at(row).song
-                                    : params.songs->at(row);
+                                    : params.songs->at(row).song;
 
                 if (song == nullptr)
                     return;
@@ -2237,7 +2244,7 @@ static void draw_song_info_edit()
     if (imgui_aligned_text_button("Volume", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail()))
     {
         ctx.center.song->volume = 1.0f;
-        if (mp_ctx.current_song != nullptr && ctx.center.song->id == mp_ctx.current_song->id)
+        if (mp_ctx.current_song.song != nullptr && ctx.center.song->id == mp_ctx.current_song.song->id)
             mp_update_volume(ctx.center.song->volume);
         ctx.center.edit.changed_info = true;
     }
@@ -2251,7 +2258,7 @@ static void draw_song_info_edit()
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (volume_icon_size.y - volume_slider_size.y) / 2.0f);
     if (imgui_custom_slider_float("##Volume", &ctx.center.song->volume, 0.0f, 2.0f, volume_slider_size))
     {
-        if (mp_ctx.current_song != nullptr && ctx.center.song->id == mp_ctx.current_song->id)
+        if (mp_ctx.current_song.song != nullptr && ctx.center.song->id == mp_ctx.current_song.song->id)
             mp_update_volume(ctx.center.song->volume);
         ctx.center.edit.changed_info = true;
     }
@@ -2392,7 +2399,7 @@ static void draw_song_info_edit()
             copy_texture_slot(ctx.textures.edit_slot, ctx.textures.default_album_slot);
         }
         ctx.center.song->volume = ctx.center.edit.volume;
-        if (mp_ctx.current_song != nullptr && ctx.center.song->id == mp_ctx.current_song->id)
+        if (mp_ctx.current_song.song != nullptr && ctx.center.song->id == mp_ctx.current_song.song->id)
             mp_update_volume(ctx.center.song->volume);
 
         mp_get_song_lyrics(ctx.center.song->id, ctx.center.edit.song_lyrics, sizeof(ctx.center.edit.song_lyrics));
@@ -2892,7 +2899,7 @@ static void draw_album_info()
 {
     assert(ctx.center.album != nullptr);
 
-    std::vector<SongTrack>& tracks = ctx.center.song_tracks;
+    std::vector<SongAlbumArtistTrack>& tracks = ctx.center.song_tracks;
 
     LruCacheRef<Album>& album = ctx.center.album;
     LruCacheRef<Artist>& artist = ctx.center.artist;
@@ -2959,7 +2966,7 @@ static void draw_album_info()
 
     ImGui::SameLine();
     if (imgui_image_button(ctx.textures.show_queue_button.id, button_size))
-        for (const auto& [song, track] : tracks)
+        for (const auto& [song, album, artist, track] : tracks)
             mp_queue_song(song->id);
 
     ImGui::SameLine();
@@ -3173,7 +3180,7 @@ static void draw_playlist_info()
     assert(ctx.center.playlist != nullptr);
 
     LruCacheRef<Playlist>& playlist = ctx.center.playlist;
-    std::vector<SongTrack>& tracks = ctx.center.song_tracks;
+    std::vector<SongAlbumArtistTrack>& tracks = ctx.center.song_tracks;
 
     ImVec2 origin = ImGui::GetCursorPos();
 
@@ -3222,7 +3229,7 @@ static void draw_playlist_info()
     }
     ImGui::SameLine();
     if (imgui_image_button(ctx.textures.show_queue_button.id, button_size))
-        for (const auto& [song, track] : tracks)
+        for (const auto& [song, album, artist, track] : tracks)
             mp_queue_song(song->id);
 
     ImGui::SameLine();
@@ -3279,7 +3286,7 @@ static void draw_artist_info_songs()
     params.selected_row = &selected_row;
     params.menu_popup_callback = [](int* selected_row) -> MenuPopupEnum
         {
-            LruCacheRef<Song>& song = ctx.center.song_search_result.entries[*selected_row];
+            LruCacheRef<Song>& song = ctx.center.song_search_result.entries[*selected_row].song;
             if (ImGui::Button("Show"))
             {
                 *selected_row = -1;
@@ -3320,7 +3327,7 @@ static void draw_artist_info_songs()
     params.body_row_col_callback.push_back(
         [&center_song](ImVec2 region_start, ImVec2 region_size, int row)
         {
-            LruCacheRef<Song>& song = ctx.center.song_search_result.entries[row];
+            LruCacheRef<Song>& song = ctx.center.song_search_result.entries[row].song;
             ImVec2 picture_size(48, 48);
             GLTexture tex = get_texture_from_song(song->id);
             ImGui::SetCursorPos(region_start);
@@ -3370,7 +3377,7 @@ static void draw_artist_info_songs()
     params.body_row_col_callback.push_back(
         [&center_album](ImVec2 region_start, ImVec2 region_size, int row)
         {
-            LruCacheRef<Song>& song = ctx.center.song_search_result.entries[row];
+            LruCacheRef<Song>& song = ctx.center.song_search_result.entries[row].song;
             LruCacheRef<Album> album = mp_get_album_from_song(song->id);
             if (album == nullptr)
                 return;
@@ -3388,7 +3395,7 @@ static void draw_artist_info_songs()
     params.body_row_col_callback.push_back(
         [](ImVec2 region_start, ImVec2 region_size, int row)
         {
-            LruCacheRef<Song>& song = ctx.center.song_search_result.entries[row];
+            LruCacheRef<Song>& song = ctx.center.song_search_result.entries[row].song;
             char length_str[256];
             int length = static_cast<int>(song->length);
             snprintf(length_str, sizeof(length_str), "%d:%02d", length / 60, length % 60);
@@ -3897,13 +3904,19 @@ static void draw_edit()
         ctx.prompt_callback = []()
             {
                 current_search_type = static_cast<int>(SEARCH_TYPE_SONG);
-                SearchResult<Song>& result = ctx.center.added_songs; 
+                SearchResult<SongAlbumArtist>& result = ctx.center.added_songs; 
                 result.results_per_page = 20;
                 result.num_results = mp_ctx.added_songs.size();
                 result.num_pages = result.num_results / result.results_per_page;
                 result.page_num = 0;
                 for (int i = 0; i < static_cast<int>(mp_ctx.added_songs.size()) && i < result.results_per_page; i++)
-                    result.entries.emplace_back(mp_get_song(mp_ctx.added_songs[i]));
+                {
+                    result.entries.emplace_back(
+                                mp_get_song(mp_ctx.added_songs[i]),
+                                mp_get_album_from_song(mp_ctx.added_songs[i]),
+                                mp_get_artist_from_song(mp_ctx.added_songs[i])
+                            );
+                }
             };
     }
     ImGui::SameLine();
@@ -3922,7 +3935,7 @@ static void draw_edit()
         ctx.prompt_callback = []()
             {
                 current_search_type = static_cast<int>(SEARCH_TYPE_SONG);
-                SearchResult<Song>& result = ctx.center.added_songs; 
+                SearchResult<SongAlbumArtist>& result = ctx.center.added_songs; 
                 result.results_per_page = 20;
                 result.num_results = mp_ctx.added_songs.size();
                 result.num_pages = result.num_results / result.results_per_page;
@@ -4018,18 +4031,24 @@ static void draw_edit()
         {
             if (current_search_type == SEARCH_TYPE_SONG)
             {
-                SearchResult<Song>& result = ctx.center.added_songs; 
+                SearchResult<SongAlbumArtist>& result = ctx.center.added_songs; 
                 result.results_per_page = 20;
                 result.num_results = mp_ctx.added_songs.size();
                 result.num_pages = result.num_results / result.results_per_page;
                 result.page_num = 0;
                 ctx.center.added_songs.entries.clear();
                 for (int i = 0; i < static_cast<int>(mp_ctx.added_songs.size()) && i < result.results_per_page; i++)
-                    result.entries.emplace_back(mp_get_song(mp_ctx.added_songs[i]));
+                {
+                    result.entries.emplace_back(
+                                mp_get_song(mp_ctx.added_songs[i]),
+                                mp_get_album(mp_ctx.added_songs[i]),
+                                mp_get_artist(mp_ctx.added_songs[i])
+                            );
+                }
             }
             else if (current_search_type == SEARCH_TYPE_ALBUM)
             {
-                SearchResult<Album>& result = ctx.center.added_albums; 
+                SearchResult<LruCacheRef<Album>>& result = ctx.center.added_albums; 
                 result.results_per_page = 20;
                 result.num_results = mp_ctx.added_albums.size();
                 result.num_pages = result.num_results / result.results_per_page;
@@ -4040,7 +4059,7 @@ static void draw_edit()
             }
             else if (current_search_type == SEARCH_TYPE_ARTIST)
             {
-                SearchResult<Artist>& result = ctx.center.added_artists; 
+                SearchResult<LruCacheRef<Artist>>& result = ctx.center.added_artists; 
                 result.results_per_page = 20;
                 result.num_results = mp_ctx.added_artists.size();
                 result.num_pages = result.num_results / result.results_per_page;
@@ -4202,7 +4221,7 @@ static void draw_queue()
     ImVec2 root_pos = ImGui::GetCursorPos();
     root_pos.x = padding;
     float row_advance = 72.0f;
-    auto list_song = [&row, &root_pos, &row_advance](const LruCacheRef<Song>& song, const ImVec4& color)
+    auto list_song = [&row, &root_pos, &row_advance](const LruCacheRef<Song>& song, const LruCacheRef<Album>& album, const LruCacheRef<Artist>& artist, const ImVec4& color)
         {
             ImGui::SetCursorPos(ImVec2(root_pos.x, root_pos.y + row * row_advance));
             GLTexture tex = get_texture_from_song(song->id);
@@ -4218,33 +4237,31 @@ static void draw_queue()
             ImVec2 text_size = ImGui::CalcTextSize(song->name.c_str());
             cursor_pos.y += text_size.y;
             ImGui::SetCursorPos(cursor_pos);
-            LruCacheRef<Artist> artist = mp_get_artist_from_song(song->id);
             if (artist != nullptr)
             {
                 if (imgui_aligned_text_button(artist->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
-                    set_center_view_artist(std::move(artist));
+                    set_center_view_artist(mp_get_artist(artist->id));
                 cursor_pos.y += text_size.y;
             }
             ImGui::SetCursorPos(cursor_pos);
-            LruCacheRef<Album> album = mp_get_album_from_song(song->id);
             if (album != nullptr)
             {
                 if (imgui_aligned_text_button(album->name.c_str(), cursor_pos, ImGui::GetContentRegionAvail()))
-                    set_center_view_album(std::move(album));
+                    set_center_view_album(mp_get_album(album->id));
                 cursor_pos.y += text_size.y;
             }
 
             row++;
         };
 
-    for (const LruCacheRef<Song> & song : mp_ctx.queue)
-        list_song(song, RED);
+    for (const SongAlbumArtist& song : mp_ctx.queue)
+        list_song(song.song, song.album, song.artist, RED);
 
-    for (const auto& [song, track] : mp_ctx.group_queue)
-        list_song(song, GREEN);
+    for (const SongAlbumArtistTrack& song_track : mp_ctx.group_queue)
+        list_song(song_track.song, song_track.album, song_track.artist, GREEN);
     
-    for (const LruCacheRef<Song>& song : mp_ctx.autoplay_queue)
-        list_song(song, BLUE);
+    for (const SongAlbumArtist& song : mp_ctx.autoplay_queue)
+        list_song(song.song, song.album, song.artist, BLUE);
 }
 
 static void draw_player(const ImVec2 size)
@@ -4253,16 +4270,16 @@ static void draw_player(const ImVec2 size)
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     const ImVec2 album_art_size = ImVec2(100, 100);
-    GLTexture tex = (mp_ctx.current_song != nullptr) 
-        ? get_texture_from_song(mp_ctx.current_song->id)
+    GLTexture tex = (mp_ctx.current_song.song != nullptr) 
+        ? get_texture_from_song(mp_ctx.current_song.song->id)
         : get_texture_from_slot(ctx.textures.default_album_slot);
     ImGui::ImageWithBg(tex.id, album_art_size, tex.uv0, tex.uv1, BLACK);
     ImGui::PopStyleVar();
     ImGui::PopStyleVar();
 
-    const char* song_text = (mp_ctx.current_song == nullptr)
+    const char* song_text = (mp_ctx.current_song.song == nullptr)
         ? "No Song Playing"
-        : mp_ctx.current_song->name.c_str();
+        : mp_ctx.current_song.song->name.c_str();
 
     constexpr float padding = 3.0f;
 
@@ -4274,10 +4291,10 @@ static void draw_player(const ImVec2 size)
     {
         const ImVec2 region_start = song_info_offset;
         const ImVec2 region_size = ImVec2(song_cursor_x - song_info_offset.x, ImGui::GetContentRegionAvail().y);
-        if (mp_ctx.current_song != nullptr)
+        if (mp_ctx.current_song.song != nullptr)
         {
             if (imgui_aligned_text_button(song_text, region_start, region_size, ALIGN_LEFT, ALIGN_LEFT))
-                set_center_view_song(mp_get_song(mp_ctx.current_song->id));
+                set_center_view_song(mp_get_song(mp_ctx.current_song.song->id));
         }
         else
             imgui_aligned_text(song_text, region_start, region_size, ALIGN_LEFT, ALIGN_LEFT);
@@ -4285,19 +4302,19 @@ static void draw_player(const ImVec2 size)
 
     song_info_offset.y += ImGui::CalcTextSize(song_text).y + padding;
 
-    if (mp_ctx.current_song_artist != nullptr)
+    if (mp_ctx.current_song.artist != nullptr)
     {
-        const char* artist_name = mp_ctx.current_song_artist->name.c_str();
+        const char* artist_name = mp_ctx.current_song.artist->name.c_str();
         if (imgui_aligned_text_button(artist_name, song_info_offset, ImVec2(song_cursor_x - song_info_offset.x, ImGui::GetContentRegionAvail().y), ALIGN_LEFT, ALIGN_LEFT))
-            set_center_view_artist(mp_get_artist(mp_ctx.current_song_artist->id));
+            set_center_view_artist(mp_get_artist(mp_ctx.current_song.artist->id));
         song_info_offset.y += ImGui::CalcTextSize(artist_name).y + padding;
     }
-    if (mp_ctx.current_song_album != nullptr)
+    if (mp_ctx.current_song.album != nullptr)
     {
-        const char* album_name = mp_ctx.current_song_album->name.c_str();
+        const char* album_name = mp_ctx.current_song.album->name.c_str();
         ImGui::SetCursorPos(song_info_offset);
         if (imgui_aligned_text_button(album_name, song_info_offset, ImVec2(song_cursor_x - song_info_offset.x, ImGui::GetContentRegionAvail().y), ALIGN_LEFT, ALIGN_LEFT))
-            set_center_view_album(mp_get_album(mp_ctx.current_song_album->id));
+            set_center_view_album(mp_get_album(mp_ctx.current_song.album->id));
     }
 
     char cursor_str[256];
@@ -4387,8 +4404,8 @@ static void draw_player(const ImVec2 size)
         ImGui::SetCursorPos(ImVec2(size.x - slider_size.x - right_edge_spacing, slider_y_offset + (volume_icon_size.x - slider_size.y) / 2.0f));
         if (imgui_custom_slider_float("##volume", &mp_ctx.volume, 0.0f, 1.0f, slider_size))
         {
-            if (mp_ctx.current_song != nullptr)
-                mp_update_volume(mp_ctx.current_song->volume);
+            if (mp_ctx.current_song.song != nullptr)
+                mp_update_volume(mp_ctx.current_song.song->volume);
         }
 
         num_buttons = 4;

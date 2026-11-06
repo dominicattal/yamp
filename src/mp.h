@@ -26,6 +26,16 @@ struct SongTrack {
     int track;
 };
 
+struct SongAlbumArtistTrack {
+    LruCacheRef<Song> song;
+    LruCacheRef<Album> album;
+    LruCacheRef<Artist> artist;
+    int track;
+};
+
+using SongAlbumArtist = SongAlbumArtistTrack;
+using SongAlbum = SongAlbumArtistTrack;
+
 struct Pin {
     LruCacheRef<Song> song;
     LruCacheRef<Album> album;
@@ -38,7 +48,7 @@ struct Pin {
 
 template<typename T>
 struct SearchResult {
-    std::vector<LruCacheRef<T>> entries;
+    std::vector<T> entries;
     int page_num;
     int num_pages;
     int results_per_page;
@@ -65,28 +75,25 @@ struct MPContext {
     LruCache<AlbumID> song_album;
     LruCache<ArtistID> album_artist;
 
-    LruCacheRef<Song> current_song;
-    LruCacheRef<Artist> current_song_artist;
-    LruCacheRef<Album> current_song_album;
-    char current_song_lyrics[MAX_LYRICS_SIZE];
-
     int num_songs;
     int num_albums;
     int num_artists;
     int num_playlists;
 
     // in seconds
+    SongAlbumArtist current_song;
     float current_song_cursor;
     float current_song_length;
+    char current_song_lyrics[MAX_LYRICS_SIZE];
 
     // this stores songs the user explicity queues up
-    std::deque<LruCacheRef<Song>> queue;
+    std::deque<SongAlbumArtist> queue;
 
     // this stores songs that come on autoplay
-    std::deque<LruCacheRef<Song>> autoplay_queue;
+    std::deque<SongAlbumArtist> autoplay_queue;
 
     // this stores the order songs should be played in the group
-    std::deque<SongTrack> group_queue;
+    std::deque<SongAlbumArtistTrack> group_queue;
 
     // this stores the history of played songs
     std::deque<SongID> song_history;
@@ -162,13 +169,13 @@ void mp_play_playlist(PlaylistID playlist_id);
 void mp_play_album(AlbumID album_id);
 
 // Search for songs based on query
-SearchResult<Song> mp_search_songs(const char* search_query, int results_per_page, int page_num);
-SearchResult<Album> mp_search_albums(const char* search_query, int results_per_page, int page_num);
-SearchResult<Artist> mp_search_artists(const char* search_query, int results_per_page, int page_num);
-SearchResult<Playlist> mp_search_playlists(const char* search_query, int results_per_page, int page_num);
+SearchResult<SongAlbumArtist> mp_search_songs(const char* search_query, int results_per_page, int page_num);
+SearchResult<LruCacheRef<Album>> mp_search_albums(const char* search_query, int results_per_page, int page_num);
+SearchResult<LruCacheRef<Artist>> mp_search_artists(const char* search_query, int results_per_page, int page_num);
+SearchResult<LruCacheRef<Playlist>> mp_search_playlists(const char* search_query, int results_per_page, int page_num);
 
-SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
-SearchResult<Album> mp_get_paginated_albums_from_artist(ArtistID artist_id, int results_per_page, int page_num);
+SearchResult<SongAlbum> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
+SearchResult<LruCacheRef<Album>> mp_get_paginated_albums_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
 LruCacheRef<Song> mp_get_song(SongID song_id);
 LruCacheRef<Album> mp_get_album(AlbumID album_id);
