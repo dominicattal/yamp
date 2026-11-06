@@ -1139,7 +1139,7 @@ static void update_textures()
         // get away with unloading one texture every frame
         for (MPUID uid : ctx.unload_queue)
         {
-            if (ctx.textures.slot_map[uid].idx != ctx.textures.default_album_slot.idx)
+            if (mpuid_has_valid_texture(uid))
                 delete_texture(ctx.textures.slot_map[uid]);
             ctx.textures.slot_map.erase(ctx.textures.slot_map.find(uid));
         }
