@@ -29,7 +29,7 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_CXX_FLAGS_INIT": "-Wall -Wextra -Wpedantic -Werror -Wfatal-errors -O0 -g3 -Wno-language-extension-token -Wno-deprecated-declarations",
-        "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_TOOLCHAIN_FILE": "C:/Users/attal/Documents/repos/vcpkg/scripts/buildsystems/vcpkg.cmake"
       }
     }
   ]

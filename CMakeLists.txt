@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 4.0)
 
 project(yamp)
 
+find_package(OpenGL REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(TagLib 2.3.1 REQUIRED)
+find_package(freetype REQUIRED)
+
 set(PLUTOSVG_ENABLE_FREETYPE TRUE)
 
 add_subdirectory(vendor/glfw)
@@ -9,11 +14,8 @@ add_subdirectory(vendor/miniaudio)
 add_subdirectory(vendor/portable-file-dialogs)
 add_subdirectory(vendor/spdlog)
 add_subdirectory(vendor/utfcpp)
-add_subdirectory(vendor/freetype)
 add_subdirectory(vendor/plutosvg)
-find_package(OpenGL REQUIRED)
-find_package(ZLIB REQUIRED)
-find_package(TagLib 2.3.1 REQUIRED)
+
 
 add_executable(yamp
     ${CMAKE_HOME_DIRECTORY}/src/main.cpp

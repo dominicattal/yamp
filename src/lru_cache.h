@@ -80,6 +80,11 @@ public:
         return m_ptr == nullptr;
     }
 
+    bool operator!=(std::nullptr_t) const
+    {
+        return m_ptr != nullptr;
+    }
+
     val_t* get()
     {
         return m_ptr;

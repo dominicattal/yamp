@@ -13,8 +13,10 @@
 #include <imgui_freetype.h>
 #include <portable-file-dialogs.h>
 #include <iostream>
+#include <algorithm>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <optional>
 #include <queue>
 #include <vector>
 #include <spdlog/spdlog.h>
@@ -118,6 +120,11 @@ struct Slot {
 bool operator==(Slot& s1, Slot& s2)
 {
     return s1.tex == s2.tex && s1.idx == s2.idx && s1.xoff == s2.xoff && s1.yoff == s2.yoff;
+}
+
+bool operator!=(Slot& s1, Slot& s2)
+{
+    return !(s1 == s2);
 }
 
 struct UIContext {
@@ -370,7 +377,7 @@ static int get_utf8_char(unsigned int* out_char, const char* in_text, const char
 
     if (e)
     {
-        wanted = std::min(wanted, static_cast<int>(!!s[0] + !!s[1] + !!s[2] + !!s[3]));
+        wanted = (std::min)(wanted, static_cast<int>(!!s[0] + !!s[1] + !!s[2] + !!s[3]));
         *out_char = IM_UNICODE_CODEPOINT_INVALID;
     }
 
@@ -478,8 +485,8 @@ static void imgui_custom_table(CustomTableParams& params)
     params.col_offsets.push_back(&params.table_width);
     for (size_t i = 0; i < params.col_offsets.size() - 1; i++)
     {
-        *params.col_offsets[i] = std::min(*params.col_offsets[i], *params.col_offsets[i+1]);
-        *params.col_offsets[i] = std::max(*params.col_offsets[i], 0.0f);
+        *params.col_offsets[i] = (std::min)(*params.col_offsets[i], *params.col_offsets[i+1]);
+        *params.col_offsets[i] = (std::max)(*params.col_offsets[i], 0.0f);
     }
 
     for (size_t i = 0; i < params.col_offsets.size() - 1; i++)
@@ -2991,8 +2998,8 @@ static void draw_album_info()
 
     ImGui::SameLine();
     if (imgui_image_button(ctx.textures.show_queue_button.id, button_size))
-        for (const auto& [song, album, artist, track] : tracks)
-            mp_queue_song(song->id);
+        for (const SongAlbumArtistTrack& song : tracks)
+            mp_queue_song(song.song->id);
 
     ImGui::SameLine();
     if (imgui_image_button(ctx.textures.pin_button.id, button_size, (ctx.center.pinned) ? RED : WHITE))
@@ -3253,8 +3260,8 @@ static void draw_playlist_info()
     }
     ImGui::SameLine();
     if (imgui_image_button(ctx.textures.show_queue_button.id, button_size))
-        for (const auto& [song, album, artist, track] : tracks)
-            mp_queue_song(song->id);
+        for (const SongAlbumArtistTrack& song : tracks)
+            mp_queue_song(song.song->id);
 
     ImGui::SameLine();
     if (imgui_image_button(ctx.textures.pin_button.id, button_size, (ctx.center.pinned) ? RED : WHITE))

@@ -241,11 +241,14 @@ void mp_recursive_add_songs(const std::string& folder_paths)
         fs::recursive_directory_iterator entries = fs::recursive_directory_iterator(folder_path, options);
         for (auto const& dir_entry : entries)
         {
+            std::u8string path_u8 = dir_entry.path().u8string();
+            std::string path(reinterpret_cast<const char*>(path_u8.c_str()));
+            SPDLOG_INFO("{}", path);
             {
                 std::lock_guard lock{mp_ctx.adding_songs_mutex};
-                mp_ctx.adding_songs_current_path = dir_entry.path().string();
+                mp_ctx.adding_songs_current_path = path;
             }
-            add_song_from_path(conn, dir_entry.path().string());
+            add_song_from_path(conn, path);
             mp_ctx.num_songs_added++;
         }
     }

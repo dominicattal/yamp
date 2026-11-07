@@ -2,7 +2,7 @@
   "version": "0.2.1",
   "configurations": [
     {
-      "type": "default",
+      "type": "windows",
       "project": "CMakeLists.txt",
       "projectTarget": "yamp.exe",
       "name": "yamp.exe",
