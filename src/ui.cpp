@@ -1330,13 +1330,37 @@ void ui_init()
     const char* glsl_version = nullptr;
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    //mp_ctx.songs.set_constructor_callback(
-    //    [](Song* song) -> void
-    //    {
-    //        SPDLOG_INFO("Loading Song {} {}", song->id, song->name);
-    //        std::lock_guard lock{ctx.load_queue_lock};
-    //        ctx.load_queue.push_back(mp_get_song_uid(song->id));
-    //    });
+    mp_ctx.songs.set_constructor_callback(
+        [](Song* song) -> void
+        {
+            SPDLOG_INFO("Loading Song {} {}", song->id, song->name);
+            //std::lock_guard lock{ctx.load_queue_lock};
+            //ctx.load_queue.push_back(mp_get_song_uid(song->id));
+        });
+
+    mp_ctx.albums.set_constructor_callback(
+        [](Album* album) -> void
+        {
+            SPDLOG_INFO("Loading Album {} {}", album->id, album->name);
+            //std::lock_guard lock{ctx.load_queue_lock};
+            //ctx.load_queue.push_back(mp_get_album_uid(album->id));
+        });
+
+    mp_ctx.artists.set_constructor_callback(
+        [](Artist* artist) -> void
+        {
+            SPDLOG_INFO("Loading Artist {} {}", artist->id, artist->name);
+            //std::lock_guard lock{ctx.load_queue_lock};
+            //ctx.load_queue.push_back(mp_get_artist_uid(artist->id));
+        });
+
+    mp_ctx.playlists.set_constructor_callback(
+        [](Playlist* playlist) -> void
+        {
+            SPDLOG_INFO("Loading Playlist {} {}", playlist->id, playlist->name);
+            //std::lock_guard lock{ctx.load_queue_lock};
+            //ctx.load_queue.push_back(mp_get_playlist_uid(playlist->id));
+        });
 
     mp_ctx.songs.set_destructor_callback(
         [](Song* song) -> void
@@ -1346,14 +1370,6 @@ void ui_init()
             ctx.unload_queue.push_back(mp_get_song_uid(song->id));
         });
 
-    //mp_ctx.albums.set_constructor_callback(
-    //    [](Album* album) -> void
-    //    {
-    //        SPDLOG_INFO("Loading Album {} {}", album->id, album->name);
-    //        std::lock_guard lock{ctx.load_queue_lock};
-    //        ctx.load_queue.push_back(mp_get_album_uid(album->id));
-    //    });
-
     mp_ctx.albums.set_destructor_callback(
         [](Album* album) -> void
         {
@@ -1362,14 +1378,6 @@ void ui_init()
             ctx.unload_queue.push_back(mp_get_album_uid(album->id));
         });
 
-    //mp_ctx.artists.set_constructor_callback(
-    //    [](Artist* artist) -> void
-    //    {
-    //        SPDLOG_INFO("Loading Artist {} {}", artist->id, artist->name);
-    //        std::lock_guard lock{ctx.load_queue_lock};
-    //        ctx.load_queue.push_back(mp_get_artist_uid(artist->id));
-    //    });
-
     mp_ctx.artists.set_destructor_callback(
         [](Artist* artist) -> void
         {
@@ -1377,14 +1385,6 @@ void ui_init()
             std::lock_guard lock{ctx.unload_queue_lock};
             ctx.unload_queue.push_back(mp_get_artist_uid(artist->id));
         });
-
-    //mp_ctx.playlists.set_constructor_callback(
-    //    [](Playlist* playlist) -> void
-    //    {
-    //        SPDLOG_INFO("Loading Playlist {} {}", playlist->id, playlist->name);
-    //        std::lock_guard lock{ctx.load_queue_lock};
-    //        ctx.load_queue.push_back(mp_get_playlist_uid(playlist->id));
-    //    });
 
     mp_ctx.playlists.set_destructor_callback(
         [](Playlist* playlist) -> void

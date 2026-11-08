@@ -70,7 +70,7 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
         return;
     }
 
-    auto set_song_art_data = [&mp3_file_ref]() -> Art
+    auto get_song_art_data = [&mp3_file_ref]() -> Art
         {
             Art art{};
             TagLib::List<TagLib::VariantMap> props = mp3_file_ref.complexProperties("PICTURE");
@@ -111,7 +111,7 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
 
     int track = tag->track();
 
-    Art art = set_song_art_data();
+    Art art = get_song_art_data();
     conn.update_song_art(song.id, art);
 
     mp_ctx.added_songs.push_back(song.id);
@@ -1302,9 +1302,16 @@ void mp_init()
 
 void mp_cleanup()
 {
+    mp_ctx.queue.clear();
+    mp_ctx.autoplay_queue.clear();
+    mp_ctx.group_queue.clear();
+    mp_ctx.current_song.song.release();
+    mp_ctx.current_song.album.release();
+    mp_ctx.current_song.artist.release();
     if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
     ma_engine_uninit(&ctx.engine);
+    SPDLOG_INFO("MP cleaned up");
 }
 
 void mp_update()
