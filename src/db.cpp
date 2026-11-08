@@ -477,7 +477,7 @@ AlbumID DBConn::create_default_album()
 SongID DBConn::create_song(Song& song)
 {
     sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO Songs (name, path, year, length) VALUES (?1, ?2, ?3, ?4);";
+    const char* query = "INSERT INTO Songs (name, path, year, length) VALUES (?1, ?2, ?3, ?4)";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, song.name.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, song.path.c_str(), -1, SQLITE_STATIC);
@@ -1008,7 +1008,7 @@ void DBConn::update_pin(MPUID uid, uint64_t last_accessed)
 void DBConn::update_album_songs_year(AlbumID album_id, int year)
 {
     sqlite3_stmt* stmt;
-    const char* query = "UPDATE Songs SET year=?1 WHERE id IN (SELECT song_id FROM AlbumSong WHERE album_id=?2);";
+    const char* query = "UPDATE Songs SET year=?1 WHERE id IN (SELECT song_id FROM AlbumSong WHERE album_id=?2)";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, year);
     sqlite3_bind_int(stmt, 2, album_id);
@@ -1022,7 +1022,7 @@ void DBConn::update_album_songs_art(AlbumID album_id)
     const char* query = R"(
         UPDATE Songs
         SET cover=(SELECT cover FROM Albums WHERE id=?1)
-        WHERE id IN (SELECT song_id FROM AlbumSong WHERE album_id=?1);
+        WHERE id IN (SELECT song_id FROM AlbumSong WHERE album_id=?1)
     )";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);

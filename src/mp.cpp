@@ -84,10 +84,10 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
             uint8_t* raw_art_data = stbi_load_from_memory(reinterpret_cast<const uint8_t*>(data.data()), data.size(), &input_w, &input_h, &nc, 4);
             art.data = stbir_resize_uint8_linear(
                         raw_art_data, input_w, input_h, 0,
-                        NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
+                        NULL, ART_WIDTH, ART_WIDTH, 0,
                         STBIR_4CHANNEL
                     );
-            art.size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
+            art.size = ART_WIDTH * ART_WIDTH * 4;
             stbi_image_free(raw_art_data);
             return art;
         };
@@ -137,10 +137,10 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
                     uint8_t* raw_art_data = stbi_load(fs_song_path.string().c_str(), &input_w, &input_h, &nc, 4);
                     art.data = stbir_resize_uint8_linear(
                                 raw_art_data, input_w, input_h, 0,
-                                NULL, LARGE_COVER_ART_SIZE, LARGE_COVER_ART_SIZE, 0,
+                                NULL, ART_WIDTH, ART_WIDTH, 0,
                                 STBIR_4CHANNEL
                             );
-                    art.size = LARGE_COVER_ART_SIZE * LARGE_COVER_ART_SIZE * 4;
+                    art.size = ART_WIDTH * ART_WIDTH * 4;
                     stbi_image_free(raw_art_data);
 
                     conn.update_album_art(album.id, art);
@@ -309,6 +309,7 @@ void mp_play_song(SongID song_id)
     mp_ctx.current_song.song = std::move(song);
     mp_ctx.current_song.album = mp_get_album_from_song(song_id);
     mp_ctx.current_song.artist = mp_get_artist_from_song(song_id);
+    mp_ctx.current_song_cursor = 0.0f;
     if (mp_ctx.current_song.song != nullptr)
         mp_update_volume(mp_ctx.current_song.song->volume);
 
@@ -615,12 +616,12 @@ void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
     {
         std::lock_guard lock{mp_ctx.adding_songs_mutex};
         mp_ctx.added_artists.erase(
-            std::remove_if(mp_ctx.added_artists.begin(), mp_ctx.added_artists.end(),
-                [&src_artist_id](ArtistID artist_id)
-                {
-                    return artist_id == src_artist_id;
-                }),
-            mp_ctx.added_artists.end()
+                std::remove_if(mp_ctx.added_artists.begin(), mp_ctx.added_artists.end(),
+                    [&src_artist_id](ArtistID artist_id)
+                    {
+                        return artist_id == src_artist_id;
+                    }),
+                mp_ctx.added_artists.end()
             );
     }
 
@@ -633,12 +634,21 @@ void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
         mp_ctx.pins.end()
         );
 
-    bool update_current_song_artist{};
     if (mp_ctx.current_song.artist != nullptr && mp_ctx.current_song.artist->id == src_artist_id)
-    {
-        mp_ctx.current_song.artist.release();
-        update_current_song_artist = true;
-    }
+        mp_ctx.current_song.artist = mp_get_artist(dst_artist_id);
+
+    for (SongAlbumArtist& song : mp_ctx.queue)
+        if (song.artist != nullptr && song.artist->id == src_artist_id)
+            song.artist = mp_get_artist(dst_artist_id);
+
+    for (SongAlbumArtist& song : mp_ctx.autoplay_queue)
+        if (song.artist != nullptr && song.artist->id == src_artist_id)
+            song.artist = mp_get_artist(dst_artist_id);
+
+    for (SongAlbumArtistTrack& song_track : mp_ctx.group_queue)
+        if (song_track.artist != nullptr && song_track.artist->id == src_artist_id)
+            song_track.artist = mp_get_artist(dst_artist_id);
+
 
     mp_ctx.artists.remove(src_artist_id);
     mp_ctx.song_artist.clear();
@@ -648,9 +658,6 @@ void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
     ctx.conn.delete_pin(mp_get_artist_uid(src_artist_id));
     ctx.conn.merge_artists(dst_artist_id, src_artist_id);
     ctx.conn.commit_transaction();
-
-    if (update_current_song_artist)
-        mp_ctx.current_song.artist = mp_get_artist(dst_artist_id);
 }
 
 void mp_update_album_songs_year(AlbumID album_id, int year)
@@ -1128,6 +1135,8 @@ void mp_play_next()
             mp_ctx.current_song_lyrics[0] = '\0';
             ma_sound_uninit(&ctx.current_song_sound);
             ctx.current_song_loaded = false;
+            mp_ctx.current_song_length = 0.0f;
+            mp_ctx.current_song_cursor = 0.0f;
         }
     } else {
         SongAlbumArtist song = std::move(mp_ctx.queue.front());

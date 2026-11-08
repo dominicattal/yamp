@@ -19,6 +19,8 @@ using MPUID = uint64_t;
 #define INVALID_TRACK 0
 #define INVALID_YEAR 0
 
+#define ART_WIDTH 256
+
 typedef struct sqlite3 sqlite3;
 typedef struct sqlite3_stmt sqlite3_stmt;
 
