@@ -239,9 +239,10 @@ public:
     void update_pin(MPUID uid, uint64_t last_accessed);
 
     // Delete
-    void delete_artist(ArtistID artist_id);
-    void delete_album(AlbumID album_id);
     void delete_song(SongID song_id);
+    void delete_album(AlbumID album_id);
+    void delete_artist(ArtistID artist_id);
+    void delete_playlist(PlaylistID playlist_id);
     void delete_pin(MPUID uid);
 
 private:

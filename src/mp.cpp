@@ -659,6 +659,76 @@ void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
     ctx.conn.commit_transaction();
 }
 
+void mp_delete_song(SongID song_id)
+{
+    mp_ctx.queue.erase(
+        std::remove_if(mp_ctx.queue.begin(), mp_ctx.queue.end(),
+            [&song_id](SongAlbumArtist& song)
+            {
+                return song_id == song.song->id;
+            }),
+        mp_ctx.queue.end());
+
+    mp_ctx.autoplay_queue.erase(
+        std::remove_if(mp_ctx.autoplay_queue.begin(), mp_ctx.autoplay_queue.end(),
+            [&song_id](SongAlbumArtist& song)
+            {
+                return song_id == song.song->id;
+            }),
+        mp_ctx.autoplay_queue.end());
+
+    mp_ctx.group_queue.erase(
+        std::remove_if(mp_ctx.group_queue.begin(), mp_ctx.group_queue.end(),
+            [&song_id](SongAlbumArtistTrack& song)
+            {
+                return song_id == song.song->id;
+            }),
+        mp_ctx.group_queue.end());
+
+    mp_ctx.pins.erase(
+        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.begin(),
+            [&song_id](Pin& pin)
+            {
+                return pin.type == MPUID_SONG && pin.song->id == song_id;
+            }),
+        mp_ctx.pins.end());
+
+    mp_ctx.song_history.erase(std::remove(
+                  mp_ctx.song_history.begin(),
+                  mp_ctx.song_history.end(),
+                  song_id),
+               mp_ctx.song_history.end());
+
+    mp_ctx.added_songs.erase(std::remove(
+                  mp_ctx.added_songs.begin(),
+                  mp_ctx.added_songs.end(),
+                  song_id),
+               mp_ctx.added_songs.end());
+
+    if (mp_ctx.current_song.song != nullptr && mp_ctx.current_song.song->id == song_id)
+    {
+        mp_ctx.current_song.song.release();
+        mp_play_next();
+    }
+    mp_ctx.songs.remove(song_id);
+    ctx.conn.delete_song(song_id);
+}
+
+void mp_delete_album(AlbumID album_id)
+{
+    (void)album_id;
+}
+
+void mp_delete_artist(ArtistID artist_id)
+{
+    (void)artist_id;
+}
+
+void mp_delete_playlist(PlaylistID playlist_id)
+{
+    (void)playlist_id;
+}
+
 void mp_update_album_songs_year(AlbumID album_id, int year)
 {
     ctx.conn.update_album_songs_year(album_id, year);

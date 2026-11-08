@@ -928,6 +928,16 @@ void DBConn::delete_artist(ArtistID artist_id)
     sqlite3_finalize(stmt);
 }
 
+void DBConn::delete_playlist(PlaylistID playlist_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "DELETE FROM Playlists WHERE id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, playlist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
 void DBConn::create_artist_song(ArtistID artist_id, SongID song_id)
 {
     sqlite3_stmt* stmt;
@@ -952,11 +962,34 @@ void DBConn::delete_album(AlbumID album_id)
 void DBConn::delete_song(SongID song_id)
 {
     sqlite3_stmt* stmt;
-    const char* query = "DELETE FROM Songs WHERE song_id=?1";
+
+    this->begin_transaction();
+    const char* query = "DELETE FROM ArtistSong WHERE song_id=?1";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, song_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+
+    query = "DELETE FROM AlbumSong WHERE song_id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, song_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    query = "DELETE FROM PlaylistSong WHERE song_id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, song_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    this->delete_pin(db_get_song_uid(song_id));
+
+    query = "DELETE FROM Songs WHERE id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, song_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    this->commit_transaction();
 }
 
 void DBConn::delete_pin(MPUID uid)

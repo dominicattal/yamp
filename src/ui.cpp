@@ -2499,6 +2499,19 @@ static void draw_song_info_edit()
         ctx.center.edit.changed_art = false;
         ctx.center.edit.reset_art = false;
     }
+    ImGui::SetCursorPosX(col_1_cursor_x);
+    if (ImGui::Button("Delete"))
+    {
+        SongID song_id = ctx.center.song->id;
+        set_center_view_home();
+        mp_delete_song(song_id);
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        imgui_pop_font_scale();
+        ImGui::EndChild();
+        ImGui::EndTable();
+        return;
+    }
 
     ImGui::SetCursorPosX(col_1_cursor_x);
     if (ImGui::Button("Update Metadata"))
