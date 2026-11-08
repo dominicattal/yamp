@@ -4687,8 +4687,15 @@ static void draw_imgui()
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
+void window_refresh_callback(GLFWwindow* window)
+{
+    draw_imgui();
+    glfwSwapBuffers(window);
+}
+
 void ui_loop()
 {
+    glfwSetWindowRefreshCallback(ctx.window, window_refresh_callback);
     while (!glfwWindowShouldClose(ctx.window))
     {
         glfwPollEvents();
