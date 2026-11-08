@@ -886,12 +886,18 @@ static void refresh_added_songs()
 {
     if (ctx.center.edit.added_songs_search_type == SEARCH_TYPE_SONG)
     {
+        ctx.center.added_songs.entries.clear();
         SearchResult<SongAlbumArtist>& result = ctx.center.added_songs; 
         result.results_per_page = 20;
         result.num_results = mp_ctx.added_songs.size();
-        result.num_pages = result.num_results / result.results_per_page;
-        ctx.center.added_songs.entries.clear();
-        for (int i = result.page_num * result.results_per_page; i < (result.page_num + 1) * result.results_per_page && i < result.num_results; i++)
+        result.num_pages = (result.num_results + result.results_per_page - 1) / result.results_per_page;
+        if (result.num_pages == 0)
+        {
+            result.page_num = 0;
+            return;
+        }
+        result.page_num = std::clamp(result.page_num, 1, result.num_pages);
+        for (int i = (result.page_num - 1) * result.results_per_page; i < result.page_num * result.results_per_page && i < result.num_results; i++)
         {
             result.entries.emplace_back(
                         mp_get_song(mp_ctx.added_songs[i]),
@@ -902,22 +908,34 @@ static void refresh_added_songs()
     }
     else if (ctx.center.edit.added_songs_search_type == SEARCH_TYPE_ALBUM)
     {
+        ctx.center.added_albums.entries.clear();
         SearchResult<LruCacheRef<Album>>& result = ctx.center.added_albums; 
         result.results_per_page = 20;
         result.num_results = mp_ctx.added_albums.size();
-        result.num_pages = result.num_results / result.results_per_page;
-        ctx.center.added_albums.entries.clear();
-        for (int i = result.page_num * result.results_per_page; i < (result.page_num + 1) * result.results_per_page && i < result.num_results; i++)
+        result.num_pages = (result.num_results + result.results_per_page - 1) / result.results_per_page;
+        if (result.num_pages == 0)
+        {
+            result.page_num = 0;
+            return;
+        }
+        result.page_num = std::clamp(result.page_num, 1, result.num_pages);
+        for (int i = (result.page_num - 1) * result.results_per_page; i < result.page_num * result.results_per_page && i < result.num_results; i++)
             result.entries.emplace_back(mp_get_album(mp_ctx.added_albums[i]));
     }
     else if (ctx.center.edit.added_songs_search_type == SEARCH_TYPE_ARTIST)
     {
+        ctx.center.added_artists.entries.clear();
         SearchResult<LruCacheRef<Artist>>& result = ctx.center.added_artists; 
         result.results_per_page = 20;
         result.num_results = mp_ctx.added_artists.size();
-        result.num_pages = result.num_results / result.results_per_page;
-        ctx.center.added_artists.entries.clear();
-        for (int i = result.page_num * result.results_per_page; i < (result.page_num + 1) * result.results_per_page && i < result.num_results; i++)
+        result.num_pages = (result.num_results + result.results_per_page - 1) / result.results_per_page;
+        if (result.num_pages == 0)
+        {
+            result.page_num = 0;
+            return;
+        }
+        result.page_num = std::clamp(result.page_num, 1, result.num_pages);
+        for (int i = (result.page_num - 1) * result.results_per_page; i < result.page_num * result.results_per_page && i < result.num_results; i++)
             result.entries.emplace_back(mp_get_artist(mp_ctx.added_artists[i]));
     }
 }
@@ -3971,20 +3989,10 @@ static void draw_edit()
             });
         ctx.prompt_callback = []()
             {
+                assert(!mp_ctx.adding_songs);
                 ctx.center.edit.added_songs_search_type = static_cast<int>(SEARCH_TYPE_SONG);
-                SearchResult<SongAlbumArtist>& result = ctx.center.added_songs; 
-                result.results_per_page = 20;
-                result.num_results = mp_ctx.added_songs.size();
-                result.num_pages = result.num_results / result.results_per_page;
-                result.page_num = 0;
-                for (int i = 0; i < static_cast<int>(mp_ctx.added_songs.size()) && i < result.results_per_page; i++)
-                {
-                    result.entries.emplace_back(
-                                mp_get_song(mp_ctx.added_songs[i]),
-                                mp_get_album_from_song(mp_ctx.added_songs[i]),
-                                mp_get_artist_from_song(mp_ctx.added_songs[i])
-                            );
-                }
+                ctx.center.added_songs.page_num = 1;
+                refresh_added_songs();
             };
     }
     ImGui::SameLine();
@@ -4002,20 +4010,10 @@ static void draw_edit()
             });
         ctx.prompt_callback = []()
             {
+                assert(!mp_ctx.adding_songs);
                 ctx.center.edit.added_songs_search_type = static_cast<int>(SEARCH_TYPE_SONG);
-                SearchResult<SongAlbumArtist>& result = ctx.center.added_songs; 
-                result.results_per_page = 20;
-                result.num_results = mp_ctx.added_songs.size();
-                result.num_pages = result.num_results / result.results_per_page;
-                result.page_num = 0;
-                for (int i = 0; i < static_cast<int>(mp_ctx.added_songs.size()) && i < result.results_per_page; i++)
-                {
-                    result.entries.emplace_back(
-                                mp_get_song(mp_ctx.added_songs[i]),
-                                mp_get_album_from_song(mp_ctx.added_songs[i]),
-                                mp_get_artist_from_song(mp_ctx.added_songs[i])
-                            );
-                }
+                ctx.center.added_songs.page_num = 1;
+                refresh_added_songs();
             };
     }
 
@@ -4102,47 +4100,29 @@ static void draw_edit()
         }
 
         ImGui::SameLine();
-        if (ImGui::ArrowButton("Left", ImGuiDir_Left))
+        if (ImGui::ArrowButton("Left", ImGuiDir_Left) && page_num > 1)
         {
             if (ctx.center.edit.added_songs_search_type == SEARCH_TYPE_SONG)
-            {
-                ctx.center.added_songs.page_num = std::clamp(page_num - 1, 0, num_pages);
-                ctx.center.added_songs.entries.clear();
-            }
+                --ctx.center.added_songs.page_num;
             else if (ctx.center.edit.added_songs_search_type == SEARCH_TYPE_ALBUM)
-            {
-                ctx.center.added_albums.page_num = std::clamp(page_num - 1, 0, num_pages);
-                ctx.center.added_albums.entries.clear();
-            }
+                --ctx.center.added_albums.page_num;
             else if (ctx.center.edit.added_songs_search_type == SEARCH_TYPE_ARTIST)
-            {
-                ctx.center.added_artists.page_num = std::clamp(page_num - 1, 0, num_pages);
-                ctx.center.added_artists.entries.clear();
-            }
+                --ctx.center.added_artists.page_num;
             refresh_added_songs();
         }
         ImGui::SameLine();
-        if (ImGui::ArrowButton("Right", ImGuiDir_Right))
+        if (ImGui::ArrowButton("Right", ImGuiDir_Right) && page_num < num_pages)
         {
             if (ctx.center.edit.added_songs_search_type == SEARCH_TYPE_SONG)
-            {
-                ctx.center.added_songs.page_num = std::clamp(page_num + 1, 0, num_pages);
-                ctx.center.added_songs.entries.clear();
-            }
+                ++ctx.center.added_songs.page_num;
             else if (ctx.center.edit.added_songs_search_type == SEARCH_TYPE_ALBUM)
-            {
-                ctx.center.added_albums.page_num = std::clamp(page_num + 1, 0, num_pages);
-                ctx.center.added_albums.entries.clear();
-            }
+                ++ctx.center.added_albums.page_num;
             else if (ctx.center.edit.added_songs_search_type == SEARCH_TYPE_ARTIST)
-            {
-                ctx.center.added_artists.page_num = std::clamp(page_num + 1, 0, num_pages);
-                ctx.center.added_artists.entries.clear();
-            }
+                ++ctx.center.added_artists.page_num;
             refresh_added_songs();
         }
         ImGui::SameLine();
-        ImGui::Text("%d/%d (%d results)", page_num + 1, num_pages + 1, num_results);
+        ImGui::Text("%d/%d (%d results)", page_num, num_pages, num_results);
 
         ImGui::SetCursorPosX(0.0f);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + padding - ImGui::GetStyle().ItemSpacing.y);

@@ -114,6 +114,8 @@ struct MPContext {
 
     std::deque<Pin> pins;
 
+    // Avoid using a lock by using num_songs_added instead of
+    // reading the changing added_songs vector
     bool adding_songs;
     int num_songs_added;
     int num_songs_to_add;
@@ -136,7 +138,6 @@ void mp_update();
 
 // Add a song to the database. Right now, just add it to the database whether or not it exists already.
 // Eventually, flow should be like preview song in ui -> add config -> choose to save to database
-void mp_add_song(std::string&& song_path);
 void mp_add_songs(std::vector<std::string>&& song_paths);
 // Folder paths delimited by '\n'
 void mp_recursive_add_songs(const std::string& folder_paths);

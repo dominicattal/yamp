@@ -107,26 +107,14 @@ int db_get_id(MPUID uid)
     return uid & MPUID_ID_MASK;
 }
 
-Art::~Art()
-{
-    sqlite3_finalize(this->stmt);
-}
-
-void Art::clear()
-{
-    sqlite3_finalize(this->stmt);
-    this->stmt = nullptr;
-    this->data = nullptr;
-    this->size = 0;
-}
-
 DBConn::DBConn()
 {
-    sqlite3_open("build/yamp.db", &this->conn);
+    sqlite3_open_v2("build/yamp.db", &this->conn, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+    //sqlite3_exec(this->conn, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
     char* error_msg{};
     sqlite3_exec(DBConn::conn, schema, NULL, NULL, &error_msg);
     if (error_msg != NULL) {
-        SPDLOG_INFO("Failed to create DB connection: SQLite3 error - {}", error_msg);
+        SPDLOG_ERROR("Failed to create DB connection {}: {}", static_cast<void*>(this->conn), error_msg);
         sqlite3_free(error_msg);
         return;
     }
@@ -136,20 +124,35 @@ DBConn::DBConn()
 DBConn::~DBConn()
 {
     int res = sqlite3_close(this->conn);
-    if (res == SQLITE_BUSY)
-        SPDLOG_WARN("Failed to close DB connection {}: SQLITE_BUSY", static_cast<void*>(this->conn));
-    else
+    if (res == SQLITE_OK)
         SPDLOG_INFO("Successfully closed DB connection {}", static_cast<void*>(this->conn));
+    else
+        SPDLOG_WARN("Failed to close DB: error code %d - %s", static_cast<void*>(this->conn), sqlite3_errmsg(this->conn));
 }
 
 void DBConn::begin_transaction()
 {
-    sqlite3_exec(this->conn, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+    char* error_msg{};
+    sqlite3_exec(this->conn, "BEGIN TRANSACTION", nullptr, nullptr, &error_msg);
+    if (error_msg != NULL)
+    {
+        SPDLOG_ERROR("Failed to begin transaction for DB connection {}: {}", static_cast<void*>(this->conn), error_msg);
+        sqlite3_free(error_msg);
+        return;
+    }
 }
 
 void DBConn::commit_transaction()
 {
-    sqlite3_exec(this->conn, "COMMIT TRANSACTION", nullptr, nullptr, nullptr);
+    // https://www.sqlite.org/lang_transaction.html Section 2.3
+    char* error_msg{};
+    sqlite3_exec(this->conn, "COMMIT TRANSACTION", nullptr, nullptr, &error_msg);
+    if (error_msg != NULL)
+    {
+        SPDLOG_ERROR("Failed to commit transaction for DB connection {}: {}", static_cast<void*>(this->conn), error_msg);
+        sqlite3_free(error_msg);
+        return;
+    }
 }
 
 SongID DBConn::get_song_id(const char* song_path)
@@ -191,10 +194,21 @@ Art DBConn::get_song_art(SongID song_id)
     sqlite3_bind_int(stmt, 1, song_id);
     int res = sqlite3_step(stmt);
     if (res != SQLITE_ROW)
-        return {stmt, NULL, 0};
+    {
+        sqlite3_finalize(stmt);
+        return {};
+    }
     const unsigned char* blob = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 0));
     int blob_bytes = sqlite3_column_bytes(stmt, 0);
-    return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
+    Art art{};
+    if (blob != nullptr)
+    {
+        art.data = new uint8_t[blob_bytes];
+        art.size = blob_bytes;
+        memcpy(art.data, blob, blob_bytes);
+    }
+    sqlite3_finalize(stmt);
+    return art;
 }
 
 Album DBConn::get_album_info(AlbumID album_id)
@@ -224,10 +238,21 @@ Art DBConn::get_album_art(AlbumID album_id)
     sqlite3_bind_int(stmt, 1, album_id);
     int res = sqlite3_step(stmt);
     if (res != SQLITE_ROW)
-        return Art{stmt, NULL, 0};
+    {
+        sqlite3_finalize(stmt);
+        return {};
+    }
     const unsigned char* blob = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 0));
     int blob_bytes = sqlite3_column_bytes(stmt, 0);
-    return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
+    Art art{};
+    if (blob != nullptr)
+    {
+        art.data = new uint8_t[blob_bytes];
+        art.size = blob_bytes;
+        memcpy(art.data, blob, blob_bytes);
+    }
+    sqlite3_finalize(stmt);
+    return art;
 }
 
 Art DBConn::get_artist_art(ArtistID artist_id)
@@ -238,10 +263,21 @@ Art DBConn::get_artist_art(ArtistID artist_id)
     sqlite3_bind_int(stmt, 1, artist_id);
     int res = sqlite3_step(stmt);
     if (res != SQLITE_ROW)
-        return Art{stmt, NULL, 0};
+    {
+        sqlite3_finalize(stmt);
+        return {};
+    }
     const unsigned char* blob = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 0));
     int blob_bytes = sqlite3_column_bytes(stmt, 0);
-    return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
+    Art art{};
+    if (blob != nullptr)
+    {
+        art.data = new uint8_t[blob_bytes];
+        art.size = blob_bytes;
+        memcpy(art.data, blob, blob_bytes);
+    }
+    sqlite3_finalize(stmt);
+    return art;
 }
 
 Art DBConn::get_playlist_art(PlaylistID playlist_id)
@@ -252,10 +288,21 @@ Art DBConn::get_playlist_art(PlaylistID playlist_id)
     sqlite3_bind_int(stmt, 1, playlist_id);
     int res = sqlite3_step(stmt);
     if (res != SQLITE_ROW)
-        return Art{stmt, NULL, 0};
+    {
+        sqlite3_finalize(stmt);
+        return {};
+    }
     const unsigned char* blob = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 0));
     int blob_bytes = sqlite3_column_bytes(stmt, 0);
-    return Art{stmt, blob, static_cast<size_t>(blob_bytes)};
+    Art art{};
+    if (blob != nullptr)
+    {
+        art.data = new uint8_t[blob_bytes];
+        art.size = blob_bytes;
+        memcpy(art.data, blob, blob_bytes);
+    }
+    sqlite3_finalize(stmt);
+    return art;
 }
 
 Artist DBConn::get_artist_info(ArtistID artist_id)
@@ -272,6 +319,7 @@ Artist DBConn::get_artist_info(ArtistID artist_id)
     const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
     if (name != nullptr)
         artist.name = name;
+    sqlite3_finalize(stmt);
 
     return artist;
 }
@@ -441,7 +489,8 @@ ArtistID DBConn::create_artist(Artist& artist)
     const char* query = "INSERT INTO Artists (name) VALUES (?1)";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL);
     sqlite3_bind_text(stmt, 1, artist.name.c_str(), -1, SQLITE_STATIC);
-    sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
+    assert(res != SQLITE_BUSY);
     sqlite3_finalize(stmt);
     return sqlite3_last_insert_rowid(this->conn);
 }
@@ -484,6 +533,7 @@ SongID DBConn::create_song(Song& song)
     sqlite3_bind_int(stmt, 3, song.year);
     sqlite3_bind_double(stmt, 4, song.length);
     int res = sqlite3_step(stmt);
+    assert(res != SQLITE_BUSY);
     sqlite3_finalize(stmt);
     if (res == SQLITE_CONSTRAINT)
         SPDLOG_WARN("song name={} path={} exists in db already", song.name, song.path);
@@ -507,7 +557,9 @@ SearchResultID<SongID> DBConn::search_songs(const char* search_query, int result
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     search_result_id.num_results = sqlite3_column_int(stmt, 0);
-    search_result_id.num_pages = (search_result_id.num_results - 1) / search_result_id.results_per_page + 1;
+    search_result_id.num_pages = (search_result_id.num_results + search_result_id.results_per_page - 1) / search_result_id.results_per_page;
+    if (search_result_id.num_pages == 0)
+        search_result_id.page_num = 0;
     sqlite3_finalize(stmt);
 
     query = "SELECT id FROM Songs WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
@@ -540,7 +592,9 @@ SearchResultID<AlbumID> DBConn::search_albums(const char* search_query, int resu
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     search_result_id.num_results = sqlite3_column_int(stmt, 0);
-    search_result_id.num_pages = (search_result_id.num_results - 1) / search_result_id.results_per_page + 1;
+    search_result_id.num_pages = (search_result_id.num_results + search_result_id.results_per_page - 1) / search_result_id.results_per_page;
+    if (search_result_id.num_pages == 0)
+        search_result_id.page_num = 0;
     sqlite3_finalize(stmt);
 
     query = "SELECT id FROM Albums WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
@@ -573,7 +627,9 @@ SearchResultID<ArtistID> DBConn::search_artists(const char* search_query, int re
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     search_result_id.num_results = sqlite3_column_int(stmt, 0);
-    search_result_id.num_pages = (search_result_id.num_results - 1) / search_result_id.results_per_page + 1;
+    search_result_id.num_pages = (search_result_id.num_results + search_result_id.results_per_page - 1) / search_result_id.results_per_page;
+    if (search_result_id.num_pages == 0)
+        search_result_id.page_num = 0;
     sqlite3_finalize(stmt);
 
     query = "SELECT id FROM Artists WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
@@ -606,7 +662,9 @@ SearchResultID<PlaylistID> DBConn::search_playlists(const char* search_query, in
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     search_result_id.num_results = sqlite3_column_int(stmt, 0);
-    search_result_id.num_pages = (search_result_id.num_results - 1) / search_result_id.results_per_page + 1;
+    search_result_id.num_pages = (search_result_id.num_results + search_result_id.results_per_page - 1) / search_result_id.results_per_page;
+    if (search_result_id.num_pages == 0)
+        search_result_id.page_num = 0;
     sqlite3_finalize(stmt);
 
     query = "SELECT id FROM Playlists WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
@@ -930,7 +988,8 @@ AlbumID DBConn::create_album(Album& album)
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL);
     sqlite3_bind_text(stmt, 1, album.name.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, album.year);
-    sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
+    assert(res != SQLITE_BUSY);
     sqlite3_finalize(stmt);
     return sqlite3_last_insert_rowid(this->conn);
 }
@@ -966,7 +1025,8 @@ PlaylistID DBConn::create_playlist(Playlist& playlist)
     const char* query = "INSERT INTO Playlists (name) VALUES (?1)";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL);
     sqlite3_bind_text(stmt, 1, playlist.name.c_str(), -1, SQLITE_STATIC);
-    sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
+    assert(res != SQLITE_BUSY);
     sqlite3_finalize(stmt);
     return sqlite3_last_insert_rowid(this->conn);
 }

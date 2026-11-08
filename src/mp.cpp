@@ -186,23 +186,22 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
         conn.create_artist_album(artist.id, album.id);
 }
 
-void mp_add_song(std::string&& song_path)
-{
-    DBConn conn{};
-    mp_ctx.adding_songs = true;
-    conn.begin_transaction();
-    add_song_from_path(conn, song_path);
-    conn.commit_transaction();
-    mp_ctx.adding_songs = false;
-}
-
 void mp_add_songs(std::vector<std::string>&& song_paths)
 {
     DBConn conn{};
+    mp_ctx.num_songs_to_add = song_paths.size();
+    mp_ctx.num_songs_added = 0;
     mp_ctx.adding_songs = true;
     conn.begin_transaction();
     for (std::string& song_path : song_paths)
+    {
+        {
+            std::lock_guard lock{mp_ctx.adding_songs_mutex};
+            mp_ctx.adding_songs_current_path = song_path;
+        }
         add_song_from_path(conn, song_path);
+        mp_ctx.num_songs_added++;
+    }
     conn.commit_transaction();
     mp_ctx.adding_songs = false;
 }

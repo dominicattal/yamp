@@ -85,17 +85,18 @@ struct PinID {
 
 class Art {
 public:
-    const uint8_t* data;
+    uint8_t* data;
     size_t size;
 
-    Art()
-        : data{nullptr}, size{}, stmt{nullptr}
+    Art() = default;
+    Art(uint8_t* data, size_t size)
+        : data{data}, size{size}
     {
     }
 
-    Art(sqlite3_stmt* stmt, const uint8_t* data, size_t size)
-        : data{data}, size{size}, stmt{stmt}
+    ~Art()
     {
+        delete[] data;
     }
 
     Art(Art& other) = delete;
@@ -105,9 +106,7 @@ public:
     {
         this->data = other.data;
         this->size = other.size;
-        this->stmt = other.stmt;
         other.data = nullptr;
-        other.stmt = nullptr;
         other.size = 0;
     }
 
@@ -115,33 +114,31 @@ public:
     {
         clear();
         this->data = nullptr;
-        this->stmt = nullptr;
         this->size = 0;
         return *this;
     }
 
     Art& operator=(Art&& other)
     {
+        clear();
         this->data = other.data;
         this->size = other.size;
-        this->stmt = other.stmt;
         other.data = nullptr;
-        other.stmt = nullptr;
         other.size = 0;
         return *this;
     }
 
-    ~Art();
-
-    void clear();
+    void clear()
+    {
+        free(this->data);
+        this->data = nullptr;
+        this->size = 0;
+    }
 
     bool operator==(std::nullptr_t)
     {
         return data == nullptr;
     }
-
-private:
-    sqlite3_stmt* stmt;
 };
 
 class DBConn {
