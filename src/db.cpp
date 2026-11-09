@@ -22,6 +22,8 @@ const char* schema = R"(
         lyrics TEXT
     );
 
+    CREATE INDEX IF NOT EXISTS SongNameIndex ON Songs(name);
+
     CREATE TABLE IF NOT EXISTS Albums (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name VARCHAR(256),
@@ -107,10 +109,46 @@ int db_get_id(MPUID uid)
     return uid & MPUID_ID_MASK;
 }
 
+#ifndef NDEBUG
+static int trace_callback(unsigned int trace, void* context, void* stmt, void* ptr)
+{
+    (void)context;
+    (void)stmt;
+    if (trace == SQLITE_TRACE_STMT)
+    {
+        [[maybe_unused]] const char* stmt_txt = reinterpret_cast<const char*>(ptr);
+        SPDLOG_TRACE("DB stmt {} : {}", stmt, stmt_txt);
+    }
+    else if (trace == SQLITE_TRACE_PROFILE)
+    {
+        [[maybe_unused]] uint64_t nanoseconds = *reinterpret_cast<uint64_t*>(ptr);
+        SPDLOG_TRACE("DB stmt {} completed in {} ms", stmt, static_cast<double>(nanoseconds) / 1000000.0);
+    }
+    else if (trace == SQLITE_TRACE_ROW)
+    {
+        SPDLOG_TRACE("ROW");
+    }
+    else if (trace == SQLITE_TRACE_CLOSE)
+    {
+        SPDLOG_INFO("Successfully closed DB connection {}", stmt);
+    }
+    return 0;
+}
+#endif
+
 DBConn::DBConn()
 {
-    sqlite3_open_v2("build/yamp.db", &this->conn, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+    sqlite3_open_v2("build/test.db", &this->conn, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
     //sqlite3_exec(this->conn, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
+
+#ifndef NDEBUG
+    sqlite3_trace_v2(
+            this->conn,
+            SQLITE_TRACE_STMT | SQLITE_TRACE_PROFILE | SQLITE_TRACE_ROW | SQLITE_TRACE_CLOSE,
+            trace_callback,
+            NULL);
+#endif
+
     char* error_msg{};
     sqlite3_exec(DBConn::conn, schema, NULL, NULL, &error_msg);
     if (error_msg != NULL) {
@@ -124,9 +162,7 @@ DBConn::DBConn()
 DBConn::~DBConn()
 {
     int res = sqlite3_close(this->conn);
-    if (res == SQLITE_OK)
-        SPDLOG_INFO("Successfully closed DB connection {}", static_cast<void*>(this->conn));
-    else
+    if (res != SQLITE_OK)
         SPDLOG_WARN("Failed to close DB: error code %d - %s", static_cast<void*>(this->conn), sqlite3_errmsg(this->conn));
 }
 
@@ -546,7 +582,7 @@ SearchResultID<SongID> DBConn::search_songs(const char* search_query, int result
     sqlite3_stmt* stmt;
     const char* query;
     char buffer[256];
-    snprintf(buffer, sizeof(buffer), "%%%s%%", search_query);
+    snprintf(buffer, sizeof(buffer), "%s%%", search_query);
 
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;
@@ -921,21 +957,48 @@ void DBConn::merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
 void DBConn::delete_artist(ArtistID artist_id)
 {
     sqlite3_stmt* stmt;
-    const char* query = "DELETE FROM Artists WHERE id=?1";
+
+    this->begin_transaction();
+    const char* query = "DELETE FROM ArtistAlbum WHERE artist_id=?1";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, artist_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+
+    query = "DELETE FROM ArtistSong WHERE artist_id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, artist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    this->delete_pin(db_get_artist_uid(artist_id));
+
+    query = "DELETE FROM Artists WHERE id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, artist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    this->commit_transaction();
 }
 
 void DBConn::delete_playlist(PlaylistID playlist_id)
 {
     sqlite3_stmt* stmt;
-    const char* query = "DELETE FROM Playlists WHERE id=?1";
+    this->begin_transaction();
+    const char* query = "DELETE FROM PlaylistSong WHERE playlist_id=?1";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, playlist_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+
+    this->delete_pin(db_get_playlist_uid(playlist_id));
+
+    query = "DELETE FROM Playlists WHERE id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, playlist_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    this->commit_transaction();
 }
 
 void DBConn::create_artist_song(ArtistID artist_id, SongID song_id)
@@ -952,11 +1015,28 @@ void DBConn::create_artist_song(ArtistID artist_id, SongID song_id)
 void DBConn::delete_album(AlbumID album_id)
 {
     sqlite3_stmt* stmt;
-    const char* query = "DELETE FROM Albums WHERE album_id=?1";
+
+    this->begin_transaction();
+    const char* query = "DELETE FROM ArtistAlbum WHERE album_id=?1";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+
+    query = "DELETE FROM AlbumSong WHERE album_id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, album_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    this->delete_pin(db_get_album_uid(album_id));
+
+    query = "DELETE FROM Albums WHERE id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, album_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    this->commit_transaction();
 }
 
 void DBConn::delete_song(SongID song_id)
@@ -1093,7 +1173,7 @@ void DBConn::update_pin(MPUID uid, uint64_t last_accessed)
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int64(stmt, 1, last_accessed);
     sqlite3_bind_int64(stmt, 2, uid);
-    int res = sqlite3_step(stmt);
+    [[maybe_unused]] int res = sqlite3_step(stmt);
     assert(res == SQLITE_OK || res == SQLITE_DONE);
     sqlite3_finalize(stmt);
 }

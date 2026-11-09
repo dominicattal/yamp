@@ -536,7 +536,7 @@ void mp_update_song(Song& song)
         SPDLOG_ERROR("Could not read {}", song.path);
         return;
     }
-    TagLib::Tag* tag = mp3_file_ref.tag();
+    [[maybe_unused]] TagLib::Tag* tag = mp3_file_ref.tag();
     assert(tag);
     TagLib::AudioProperties* properties = mp3_file_ref.audioProperties();
     song.length = properties->lengthInMilliseconds() / 1000.0;
@@ -705,23 +705,92 @@ void mp_delete_song(SongID song_id)
                   song_id),
                mp_ctx.added_songs.end());
 
+    mp_ctx.song_album.remove(song_id);
+    mp_ctx.song_artist.remove(song_id);
+
     if (mp_ctx.current_song.song != nullptr && mp_ctx.current_song.song->id == song_id)
     {
         mp_ctx.current_song.song.release();
         mp_play_next();
     }
+
     mp_ctx.songs.remove(song_id);
     ctx.conn.delete_song(song_id);
 }
 
 void mp_delete_album(AlbumID album_id)
 {
-    (void)album_id;
+    for (SongAlbumArtist& song : mp_ctx.queue)
+        if (song.album != nullptr && song.album->id == album_id)
+            song.album.release();
+
+    for (SongAlbumArtist& song : mp_ctx.autoplay_queue)
+        if (song.album != nullptr && song.album->id == album_id)
+            song.album.release();
+
+    for (SongAlbumArtistTrack& song : mp_ctx.group_queue)
+        if (song.album != nullptr && song.album->id == album_id)
+            song.album.release();
+
+    mp_ctx.added_albums.erase(std::remove(
+                  mp_ctx.added_albums.begin(),
+                  mp_ctx.added_albums.end(),
+                  album_id),
+               mp_ctx.added_albums.end());
+
+    mp_ctx.pins.erase(
+        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.begin(),
+            [&album_id](Pin& pin)
+            {
+                return pin.type == MPUID_ALBUM && pin.album->id == album_id;
+            }),
+        mp_ctx.pins.end());
+
+    mp_ctx.song_album.clear();
+    mp_ctx.album_artist.remove(album_id);
+
+    if (mp_ctx.current_song.album != nullptr && mp_ctx.current_song.album->id == album_id)
+        mp_ctx.current_song.album.release();
+
+    mp_ctx.albums.remove(album_id);
+    ctx.conn.delete_album(album_id);
 }
 
 void mp_delete_artist(ArtistID artist_id)
 {
-    (void)artist_id;
+    for (SongAlbumArtist& song : mp_ctx.queue)
+        if (song.artist != nullptr && song.artist->id == artist_id)
+            song.artist.release();
+
+    for (SongAlbumArtist& song : mp_ctx.autoplay_queue)
+        if (song.artist != nullptr && song.artist->id == artist_id)
+            song.artist.release();
+
+    for (SongAlbumArtistTrack& song : mp_ctx.group_queue)
+        if (song.artist != nullptr && song.artist->id == artist_id)
+            song.artist.release();
+
+    mp_ctx.added_artists.erase(std::remove(
+                  mp_ctx.added_artists.begin(),
+                  mp_ctx.added_artists.end(),
+                  artist_id),
+               mp_ctx.added_artists.end());
+
+    mp_ctx.pins.erase(
+        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.begin(),
+            [&artist_id](Pin& pin)
+            {
+                return pin.type == MPUID_ALBUM && pin.artist->id == artist_id;
+            }),
+        mp_ctx.pins.end());
+
+    mp_ctx.song_artist.clear();
+
+    if (mp_ctx.current_song.artist != nullptr && mp_ctx.current_song.artist->id == artist_id)
+        mp_ctx.current_song.artist.release();
+
+    mp_ctx.artists.remove(artist_id);
+    ctx.conn.delete_artist(artist_id);
 }
 
 void mp_delete_playlist(PlaylistID playlist_id)

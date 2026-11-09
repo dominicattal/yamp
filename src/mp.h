@@ -13,7 +13,7 @@
 
 #define HISTORY_MAX_SIZE 1000
 #define TEXTURE_SIZE 4096
-#define SLOTS_PER_TEXTURE (TEXTURE_SIZE / ART_WIDTH)
+#define SLOTS_PER_TEXTURE ((TEXTURE_SIZE / ART_WIDTH) * (TEXTURE_SIZE / ART_WIDTH))
 #define MAX_LYRICS_SIZE 4096
 
 struct SongTrack {
@@ -226,8 +226,8 @@ bool mp_toggle_pin_album(AlbumID album_id);
 bool mp_toggle_pin_artist(ArtistID artist_id);
 bool mp_toggle_pin_playlist(PlaylistID playlist_id);
 
-void mp_add_song_to_playlist(SongID song_id, int playlist_id);
-void mp_add_album_to_playlist(AlbumID album_id, int playlist_id);
+void mp_add_song_to_playlist(SongID song_id, PlaylistID playlist_id);
+void mp_add_album_to_playlist(AlbumID album_id, PlaylistID playlist_id);
 
 Art mp_get_song_art(SongID song_id);
 Art mp_get_album_art(AlbumID album_id);

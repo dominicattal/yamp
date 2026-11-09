@@ -176,11 +176,6 @@ struct UIContext {
         double fps;
     } debug;
 
-    std::mutex load_queue_lock;
-    std::vector<MPUID> load_queue;
-    std::mutex unload_queue_lock;
-    std::vector<MPUID> unload_queue;
-
     bool show_demo_window;
     bool show_debug_window;
 
@@ -796,9 +791,26 @@ static GLTexture get_texture_from_playlist(PlaylistID playlist_id)
     return get_texture_from_slot(slot);
 }
 
+static bool mpuid_has_valid_texture(MPUID uid)
+{
+    return ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end() 
+        && ctx.textures.slot_map[uid] != ctx.textures.default_album_slot
+        && ctx.textures.slot_map[uid] != ctx.textures.default_artist_slot;
+}
+
 static void delete_texture(Slot& slot)
 {
     ctx.textures.free_slot_textures.push(slot.idx);
+}
+
+static void delete_texture_with_uid(MPUID uid)
+{
+    if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
+    {
+        if (mpuid_has_valid_texture(uid))
+            delete_texture(ctx.textures.slot_map[uid]);
+        ctx.textures.slot_map.erase(ctx.textures.slot_map.find(uid));
+    }
 }
 
 static void push_history_entry(ViewEnum type, int id)
@@ -809,13 +821,6 @@ static void push_history_entry(ViewEnum type, int id)
         if (ctx.view_history.size() > HISTORY_MAX_SIZE)
             ctx.view_history.pop_front();
     }
-}
-
-static bool mpuid_has_valid_texture(MPUID uid)
-{
-    return ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end() 
-        && ctx.textures.slot_map[uid] != ctx.textures.default_album_slot
-        && ctx.textures.slot_map[uid] != ctx.textures.default_artist_slot;
 }
 
 // this has to be called after the objects have been moved bc those objects
@@ -1197,47 +1202,6 @@ static void initialize_default_textures()
     initialize_default_texture(&ctx.textures.search.id, "assets/icons/search.png");
 }
 
-static void update_textures()
-{
-    //if (ctx.load_queue.size() > 0)
-    //{
-    //    std::lock_guard lock_guard{ctx.load_queue_lock};
-
-    //    double start = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    //    for (MPUID uid : ctx.load_queue)
-    //    {
-    //        Art art = mp_get_art(uid);
-    //        if (art == nullptr)
-    //            ctx.textures.slot_map[uid] = (mp_get_uid_type(uid) == MPUID_ARTIST) ? ctx.textures.default_artist_slot : ctx.textures.default_album_slot;
-    //        else
-    //            ctx.textures.slot_map[uid] = create_texture(art.data);
-    //    }
-    //    double end = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    //    SPDLOG_INFO("Updated textures in {} ms", (end - start) / 1000);
-
-    //    ctx.load_queue.clear();
-    //}
-
-    if (ctx.unload_queue.size() > 0)
-    {
-        std::lock_guard lock_guard{ctx.load_queue_lock};
-
-        // if more songs are add than removed, then number of
-        // texture slots used might blow up. otherwise, you could
-        // get away with unloading one texture every frame
-        for (MPUID uid : ctx.unload_queue)
-        {
-            if (ctx.textures.slot_map.find(uid) != ctx.textures.slot_map.end())
-            {
-                if (mpuid_has_valid_texture(uid))
-                    delete_texture(ctx.textures.slot_map[uid]);
-                ctx.textures.slot_map.erase(ctx.textures.slot_map.find(uid));
-            }
-        }
-        ctx.unload_queue.clear();
-    }
-}
-
 void ui_init()
 {
     glfwSetErrorCallback(glfw_error_callback);
@@ -1331,67 +1295,55 @@ void ui_init()
     ImGui_ImplOpenGL3_Init(glsl_version);
 
     mp_ctx.songs.set_constructor_callback(
-        [](Song* song) -> void
+        []([[maybe_unused]] Song* song) -> void
         {
             SPDLOG_INFO("Loading Song {} {}", song->id, song->name);
-            //std::lock_guard lock{ctx.load_queue_lock};
-            //ctx.load_queue.push_back(mp_get_song_uid(song->id));
         });
 
     mp_ctx.albums.set_constructor_callback(
-        [](Album* album) -> void
+        []([[maybe_unused]] Album* album) -> void
         {
             SPDLOG_INFO("Loading Album {} {}", album->id, album->name);
-            //std::lock_guard lock{ctx.load_queue_lock};
-            //ctx.load_queue.push_back(mp_get_album_uid(album->id));
         });
 
     mp_ctx.artists.set_constructor_callback(
-        [](Artist* artist) -> void
+        []([[maybe_unused]] Artist* artist) -> void
         {
             SPDLOG_INFO("Loading Artist {} {}", artist->id, artist->name);
-            //std::lock_guard lock{ctx.load_queue_lock};
-            //ctx.load_queue.push_back(mp_get_artist_uid(artist->id));
         });
 
     mp_ctx.playlists.set_constructor_callback(
-        [](Playlist* playlist) -> void
+        []([[maybe_unused]] Playlist* playlist) -> void
         {
             SPDLOG_INFO("Loading Playlist {} {}", playlist->id, playlist->name);
-            //std::lock_guard lock{ctx.load_queue_lock};
-            //ctx.load_queue.push_back(mp_get_playlist_uid(playlist->id));
         });
 
     mp_ctx.songs.set_destructor_callback(
         [](Song* song) -> void
         {
             SPDLOG_INFO("Unloading Song {} {}", song->id, song->name);
-            std::lock_guard lock{ctx.unload_queue_lock};
-            ctx.unload_queue.push_back(mp_get_song_uid(song->id));
+            delete_texture_with_uid(mp_get_song_uid(song->id));
         });
 
     mp_ctx.albums.set_destructor_callback(
         [](Album* album) -> void
         {
             SPDLOG_INFO("Unloading Album {} {}", album->id, album->name);
-            std::lock_guard lock{ctx.unload_queue_lock};
-            ctx.unload_queue.push_back(mp_get_album_uid(album->id));
+            delete_texture_with_uid(mp_get_album_uid(album->id));
         });
 
     mp_ctx.artists.set_destructor_callback(
         [](Artist* artist) -> void
         {
             SPDLOG_INFO("Unloading Artist {} {}", artist->id, artist->name);
-            std::lock_guard lock{ctx.unload_queue_lock};
-            ctx.unload_queue.push_back(mp_get_artist_uid(artist->id));
+            delete_texture_with_uid(mp_get_artist_uid(artist->id));
         });
 
     mp_ctx.playlists.set_destructor_callback(
         [](Playlist* playlist) -> void
         {
             SPDLOG_INFO("Unloading Playlist {} {}", playlist->id, playlist->name);
-            std::lock_guard lock{ctx.unload_queue_lock};
-            ctx.unload_queue.push_back(mp_get_playlist_uid(playlist->id));
+            delete_texture_with_uid(mp_get_playlist_uid(playlist->id));
         });
 }
 
@@ -1426,6 +1378,26 @@ void ui_cleanup()
     destroy_cache_references();
 
     SPDLOG_INFO("UI cleaned up");
+}
+
+static void draw_add_to_playlist_popup(SongID song_id)
+{
+    (void)song_id;
+    if (ImGui::Button("Add to Playlist"))
+        ImGui::OpenPopup("add_to_playlist_popup");
+    if (ImGui::BeginPopup("add_to_playlist_popup"))
+    {
+        if (ImGui::Button("Add To Playlist"))
+        {
+            //mp_add_song_to_playlist(song_id, playlist_id);
+        }
+        ImGui::Text("Create Playlist");
+        if (ImGui::Button("Close"))
+        {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
 struct DrawSongTableParams {
@@ -1493,14 +1465,7 @@ static void draw_song_table(DrawSongTableParams& params)
                 mp_queue_song(song->id);
                 return MENU_CLOSE_POPUP;
             }
-            if (ImGui::Button("Add to Playlist"))
-                ImGui::OpenPopup("add_to_playlist_popup");
-            if (ImGui::BeginPopup("add_to_playlist_popup"))
-            {
-                ImGui::Text("Add To Playlist");
-                ImGui::Text("Create Playlist");
-                ImGui::EndPopup();
-            }
+            draw_add_to_playlist_popup(song->id);
             if (ImGui::Button("Close"))
                 return MENU_CLOSE_POPUP;
 
@@ -1612,6 +1577,29 @@ static void draw_song_table(DrawSongTableParams& params)
             });
     }
 
+    if (params.show_album)
+    {
+        custom_table_params.col_widths.push_back(album_col_width);
+        custom_table_params.header_row_col_callback.push_back(
+            [](ImVec2 region_start, ImVec2 region_size)
+            {
+                imgui_aligned_text("Album", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
+            });
+        custom_table_params.body_row_col_callback.push_back(
+            [&center_album, &params](ImVec2 region_start, ImVec2 region_size, int row)
+            {
+                LruCacheRef<Album>& album = (params.show_track)
+                                    ? params.song_tracks->at(row).album
+                                    : params.songs->at(row).album;
+
+                if (album == nullptr)
+                    return;
+
+                if (imgui_aligned_text_button(album->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
+                    center_album = mp_get_album(album->id);
+            });
+    }
+
     if (params.show_artist)
     {
         custom_table_params.col_widths.push_back(artist_col_width);
@@ -1633,29 +1621,6 @@ static void draw_song_table(DrawSongTableParams& params)
 
                 if (imgui_aligned_text_button(artist->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
                     center_artist = mp_get_artist(artist->id);
-            });
-    }
-
-    if (params.show_album)
-    {
-        custom_table_params.col_widths.push_back(album_col_width);
-        custom_table_params.header_row_col_callback.push_back(
-            [](ImVec2 region_start, ImVec2 region_size)
-            {
-                imgui_aligned_text("Album", region_start, region_size, ALIGN_LEFT, ALIGN_CENTER);
-            });
-        custom_table_params.body_row_col_callback.push_back(
-            [&center_album, &params](ImVec2 region_start, ImVec2 region_size, int row)
-            {
-                LruCacheRef<Album>& album = (params.show_track)
-                                    ? params.song_tracks->at(row).album
-                                    : params.songs->at(row).album;
-
-                if (album == nullptr)
-                    return;
-
-                if (imgui_aligned_text_button(album->name.c_str(), region_start, region_size, ALIGN_LEFT, ALIGN_CENTER))
-                    center_album = mp_get_album(album->id);
             });
     }
 
@@ -2968,9 +2933,21 @@ static void draw_album_info_edit()
                 copy_texture_slot(ctx.textures.slot_map[song_uid], album_art_slot);
         }
     }
+    ImGui::SetCursorPosX(col_1_cursor_x);
+    if (ImGui::Button("Delete"))
+    {
+        AlbumID album_id = ctx.center.album->id;
+        set_center_view_home();
+        mp_delete_album(album_id);
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(2);
+        imgui_pop_font_scale();
+        ImGui::EndTable();
+        return;
+    }
     ImGui::PopStyleColor();
-    imgui_pop_font_scale(); 
     ImGui::PopStyleVar(2);
+    imgui_pop_font_scale(); 
     if (split)
     {
         ImGui::TableNextColumn();
@@ -3405,14 +3382,7 @@ static void draw_artist_info_songs()
                 mp_queue_song(song->id);
                 return MENU_CLOSE_POPUP;
             }
-            if (ImGui::Button("Add to Playlist"))
-                ImGui::OpenPopup("add_to_playlist_popup");
-            if (ImGui::BeginPopup("add_to_playlist_popup"))
-            {
-                ImGui::Text("Add To Playlist");
-                ImGui::Text("Create Playlist");
-                ImGui::EndPopup();
-            }
+            draw_add_to_playlist_popup(song->id);
             if (ImGui::Button("Close"))
                 return MENU_CLOSE_POPUP;
 
@@ -3736,14 +3706,27 @@ static void draw_artist_info_edit()
         }
     }
     ImGui::SetCursorPosX(col_1_cursor_x);
+    if (ImGui::Button("Delete"))
+    {
+        ArtistID artist_id = ctx.center.artist->id;
+        set_center_view_home();
+        mp_delete_artist(artist_id);
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(2);
+        imgui_pop_font_scale();
+        ImGui::EndChild();
+        ImGui::EndTable();
+        return;
+    }
+    ImGui::SetCursorPosX(col_1_cursor_x);
     if (ImGui::Button("Merge"))
     {
         ctx.center.show_split = SHOW_ARTIST_MERGE;
         ctx.center.artist_search_result = mp_search_artists(ctx.search_query, SEARCH_RESULTS_PER_PAGE, 1);
     }
+    ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
     imgui_pop_font_scale(); 
-    ImGui::PopStyleColor();
     ImGui::EndChild();
 
     if (split)
@@ -4454,6 +4437,7 @@ static void draw_player(const ImVec2 size)
     }
 }
 
+#ifndef NDEBUG
 static void draw_debug_info()
 {
     ImGui::PushStyleColor(ImGuiCol_Border, GRAY);
@@ -4466,6 +4450,20 @@ static void draw_debug_info()
         ImGui::Text("Song History size: %zu", mp_ctx.song_history.size());
         ImGui::Text("Max num slots: %d", ctx.textures.num_slots);
         ImGui::Text("Num slots in use: %zd", ctx.textures.num_slots - ctx.textures.free_slot_textures.size());
+
+        static int log_level = SPDLOG_LEVEL_TRACE;
+        const char* log_levels[] = {
+            "TRACE",
+            "DEBUG",
+            "INFO",
+            "WARN",
+            "ERROR",
+            "CRITICAL",
+            "OFF"
+        };
+        ImGui::SetNextItemWidth(150.0f);
+        if (ImGui::Combo("Log Level", &log_level, log_levels, std::size(log_levels)))
+            spdlog::set_level(static_cast<spdlog::level::level_enum>(log_level));
 
         if (ctx.textures.textures.size() == 0)
         {
@@ -4490,6 +4488,7 @@ static void draw_debug_info()
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 }
+#endif
 
 static void draw_pins()
 {
@@ -4692,8 +4691,10 @@ static void draw_imgui()
     if (ctx.show_demo_window)
         ImGui::ShowDemoWindow(&ctx.show_demo_window);
 
+#ifndef NDEBUG
     if (ctx.show_debug_window)
         draw_debug_info();
+#endif
 
     // Rendering
     ImGui::Render();
@@ -4724,7 +4725,6 @@ void ui_loop()
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        update_textures();
         draw_imgui();
         double end = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         ctx.debug.fps = end - start;

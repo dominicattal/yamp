@@ -50,6 +50,11 @@ PRIVATE
 target_compile_definitions(yamp PRIVATE IMGUI_ENABLE_FREETYPE)
 target_compile_definitions(yamp PRIVATE IMGUI_ENABLE_FREETYPE_PLUTOSVG)
 target_compile_definitions(yamp PRIVATE IMGUI_USE_WCHAR32)
-target_compile_definitions(yamp PRIVATE SPDLOG_ACTIVE_LEVEL)
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_definitions(yamp PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
+else()
+    target_compile_definitions(yamp PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
+endif()
 
 target_link_libraries(yamp PRIVATE glfw portable_file_dialogs miniaudio spdlog utf8cpp freetype TagLib::tag plutosvg)
