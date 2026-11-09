@@ -686,7 +686,7 @@ void mp_delete_song(SongID song_id)
         mp_ctx.group_queue.end());
 
     mp_ctx.pins.erase(
-        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.begin(),
+        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
             [&song_id](Pin& pin)
             {
                 return pin.type == MPUID_SONG && pin.song->id == song_id;
@@ -739,7 +739,7 @@ void mp_delete_album(AlbumID album_id)
                mp_ctx.added_albums.end());
 
     mp_ctx.pins.erase(
-        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.begin(),
+        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
             [&album_id](Pin& pin)
             {
                 return pin.type == MPUID_ALBUM && pin.album->id == album_id;
@@ -777,7 +777,7 @@ void mp_delete_artist(ArtistID artist_id)
                mp_ctx.added_artists.end());
 
     mp_ctx.pins.erase(
-        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.begin(),
+        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
             [&artist_id](Pin& pin)
             {
                 return pin.type == MPUID_ALBUM && pin.artist->id == artist_id;
