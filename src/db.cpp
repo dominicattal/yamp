@@ -109,6 +109,16 @@ int db_get_id(MPUID uid)
     return uid & MPUID_ID_MASK;
 }
 
+DBConn::~DBConn()
+{
+    this->close();
+}
+
+DBConn::DBConn(const char* db_path)
+{
+    this->open(db_path);
+}
+
 #ifndef NDEBUG
 static int trace_callback(unsigned int trace, void* context, void* stmt, void* ptr)
 {
@@ -136,9 +146,9 @@ static int trace_callback(unsigned int trace, void* context, void* stmt, void* p
 }
 #endif
 
-DBConn::DBConn()
+bool DBConn::open(const char* db_path)
 {
-    sqlite3_open_v2("build/test.db", &this->conn, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+    sqlite3_open_v2(db_path, &this->conn, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
     //sqlite3_exec(this->conn, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
 
 #ifndef NDEBUG
@@ -154,16 +164,25 @@ DBConn::DBConn()
     if (error_msg != NULL) {
         SPDLOG_ERROR("Failed to create DB connection {}: {}", static_cast<void*>(this->conn), error_msg);
         sqlite3_free(error_msg);
-        return;
+        return false;
     }
     SPDLOG_INFO("Successfully created DB connection {}", static_cast<void*>(this->conn));
+    return true;
 }
 
-DBConn::~DBConn()
+bool DBConn::close()
 {
+    if (this->conn != nullptr)
+        return true;
+
     int res = sqlite3_close(this->conn);
     if (res != SQLITE_OK)
+    {
         SPDLOG_WARN("Failed to close DB: error code %d - %s", static_cast<void*>(this->conn), sqlite3_errmsg(this->conn));
+        return false;
+    }
+    this->conn = nullptr;
+    return true;
 }
 
 void DBConn::begin_transaction()
@@ -582,7 +601,7 @@ SearchResultID<SongID> DBConn::search_songs(const char* search_query, int result
     sqlite3_stmt* stmt;
     const char* query;
     char buffer[256];
-    snprintf(buffer, sizeof(buffer), "%s%%", search_query);
+    snprintf(buffer, sizeof(buffer), "%%%s%%", search_query);
 
     search_result_id.page_num = page_num;
     search_result_id.results_per_page = results_per_page;

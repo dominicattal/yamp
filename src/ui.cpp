@@ -176,9 +176,6 @@ struct UIContext {
         double fps;
     } debug;
 
-    bool show_demo_window;
-    bool show_debug_window;
-
     bool quick_access_open = true;
     bool queue_open = true;
 
@@ -247,6 +244,11 @@ struct UIContext {
     // for file dialogs
     std::optional<std::future<std::string>> prompt;
     std::function<void()> prompt_callback;
+
+#ifndef NDEBUG
+    bool show_demo_window;
+    bool show_debug_window;
+#endif
 };
 
 static UIContext ctx;
@@ -655,10 +657,14 @@ static bool ui_key_callback(int key, int scancode, int action, int mods)
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     (void)window;
+
+#ifndef NDEBUG
     if (key == GLFW_KEY_F1 && action == GLFW_PRESS)
         ctx.show_demo_window = !ctx.show_demo_window;
     if (key == GLFW_KEY_F2 && action == GLFW_PRESS)
         ctx.show_debug_window = !ctx.show_debug_window;
+#endif
+
     if (ui_key_callback(key, scancode, action, mods))
         return;
 }
@@ -4688,10 +4694,10 @@ static void draw_imgui()
     ImGui::End();
     ImGui::PopStyleVar();
 
+#ifndef NDEBUG
     if (ctx.show_demo_window)
         ImGui::ShowDemoWindow(&ctx.show_demo_window);
 
-#ifndef NDEBUG
     if (ctx.show_debug_window)
         draw_debug_info();
 #endif

@@ -143,8 +143,12 @@ public:
 
 class DBConn {
 public:
-    DBConn();
+    DBConn() = default;
+    DBConn(const char* db_path);
     ~DBConn();
+
+    bool open(const char* db_path);
+    bool close();
 
     DBConn(DBConn& other) = delete;
     DBConn(DBConn&& other) = delete;

@@ -188,7 +188,7 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
 
 void mp_add_songs(std::vector<std::string>&& song_paths)
 {
-    DBConn conn{};
+    DBConn conn{config.db_path.c_str()};
     mp_ctx.num_songs_to_add = song_paths.size();
     mp_ctx.num_songs_added = 0;
     mp_ctx.adding_songs = true;
@@ -233,7 +233,7 @@ void mp_recursive_add_songs(const std::string& folder_paths)
         separated_paths.push_back(std::move(folder_path));
     }
 
-    DBConn conn{};
+    DBConn conn{config.db_path.c_str()};
     conn.begin_transaction();
     for (std::string& folder_path : separated_paths)
     {
@@ -1398,6 +1398,8 @@ void mp_init()
 {
     ctx.mt.seed(std::chrono::steady_clock::now().time_since_epoch().count());
 
+    ctx.conn.open(config.db_path.c_str());
+
     mp_ctx.volume = 1.0f;
     mp_ctx.shuffle = true;
     ma_result res;
@@ -1444,6 +1446,7 @@ void mp_cleanup()
     mp_ctx.queue.clear();
     mp_ctx.autoplay_queue.clear();
     mp_ctx.group_queue.clear();
+    mp_ctx.pins.clear();
     mp_ctx.current_song.song.release();
     mp_ctx.current_song.album.release();
     mp_ctx.current_song.artist.release();
