@@ -752,6 +752,18 @@ void mp_delete_album(AlbumID album_id)
     if (mp_ctx.current_song.album != nullptr && mp_ctx.current_song.album->id == album_id)
         mp_ctx.current_song.album.release();
 
+    if (mp_ctx.group_is_album && mp_ctx.group_id == album_id)
+    {
+        std::move(
+            mp_ctx.group_queue.begin(),
+            mp_ctx.group_queue.end(),
+            std::back_inserter(mp_ctx.queue)
+        );
+        mp_ctx.group_queue.clear();
+        mp_ctx.group_id = INVALID_ID;
+        mp_ctx.playing_group = false;
+    }
+
     mp_ctx.albums.remove(album_id);
     ctx.conn.delete_album(album_id);
 }
@@ -780,7 +792,7 @@ void mp_delete_artist(ArtistID artist_id)
         std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
             [&artist_id](Pin& pin)
             {
-                return pin.type == MPUID_ALBUM && pin.artist->id == artist_id;
+                return pin.type == MPUID_ARTIST && pin.artist->id == artist_id;
             }),
         mp_ctx.pins.end());
 
@@ -795,7 +807,28 @@ void mp_delete_artist(ArtistID artist_id)
 
 void mp_delete_playlist(PlaylistID playlist_id)
 {
-    (void)playlist_id;
+    mp_ctx.pins.erase(
+        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
+            [&playlist_id](Pin& pin)
+            {
+                return pin.type == MPUID_PLAYLIST && pin.playlist->id == playlist_id;
+            }),
+        mp_ctx.pins.end());
+
+    if (!mp_ctx.group_is_album && mp_ctx.group_id == playlist_id)
+    {
+        std::move(
+            mp_ctx.group_queue.begin(),
+            mp_ctx.group_queue.end(),
+            std::back_inserter(mp_ctx.queue)
+        );
+        mp_ctx.group_queue.clear();
+        mp_ctx.group_id = INVALID_ID;
+        mp_ctx.playing_group = false;
+    }
+
+    mp_ctx.playlists.remove(playlist_id);
+    ctx.conn.delete_playlist(playlist_id);
 }
 
 void mp_update_album_songs_year(AlbumID album_id, int year)
