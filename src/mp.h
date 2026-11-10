@@ -98,7 +98,7 @@ struct MPContext {
     // true if group is album, false otherwise
     bool group_is_album;
     // album_id if group_is_album == true, playlist_id otherwise
-    int group_id;
+    GenericID group_id;
 
     bool mute;
     float volume;
