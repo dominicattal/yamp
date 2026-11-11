@@ -123,7 +123,7 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
         if (album.id == INVALID_ID) 
         {
             bool loaded_art = false;
-            std::vector filenames{"cover.jpg", "cover.png"};
+            std::vector filenames{"cover.jpg", "cover.jpeg", "cover.png"};
             for (const char* cover_path : filenames)
             {
                 std::filesystem::path fs_song_path = std::filesystem::path(song_path).replace_filename(cover_path);
