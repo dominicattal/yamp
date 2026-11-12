@@ -60,11 +60,11 @@
 
 #define DEFAULT_MARGIN 10.0f
 
+#define MAX_HISTORY_SIZE 200
+
 using Key = int;
 
 enum ViewEnum {
-    SHOW_RIGHT_NONE,
-    SHOW_RIGHT_QUEUE,
     SHOW_CENTER_NONE,
     SHOW_CENTER_HOME,
     SHOW_CENTER_SETTINGS,
@@ -185,7 +185,7 @@ struct UIContext {
     } debug;
 
     struct {
-        ViewEnum type;
+        ViewEnum type = SHOW_CENTER_NONE;
 
         LruCacheRef<Song> song;
         LruCacheRef<Album> album;
@@ -254,12 +254,14 @@ struct UIContext {
     bool queue_open = true;
 
     std::deque<std::pair<ViewEnum, GenericID>> view_history;
+    size_t view_history_idx;
 
     char search_query[256];
 
     bool window_maximized;
 
     bool confirm_delete;
+    bool popped_history;
 
     // for file dialogs
     std::optional<std::future<std::string>> prompt;
@@ -915,14 +917,28 @@ static void delete_texture_with_uid(MPUID uid)
     }
 }
 
-static void push_history_entry(ViewEnum type, int id)
+static void push_history_entry()
 {
-    std::pair<ViewEnum, int> entry{type, id};
-    if (ctx.view_history.empty() || ctx.view_history.back() != entry) {
-        ctx.view_history.push_back(entry);
-        if (ctx.view_history.size() > HISTORY_MAX_SIZE)
-            ctx.view_history.pop_front();
-    }
+    if (ctx.popped_history)
+        return;
+
+    GenericID id = INVALID_ID;
+
+    if (ctx.center.type == SHOW_CENTER_SONG)
+        id = ctx.center.song->id;
+    else if (ctx.center.type == SHOW_CENTER_ALBUM)
+        id = ctx.center.album->id;
+    else if (ctx.center.type == SHOW_CENTER_ARTIST)
+        id = ctx.center.artist->id;
+    else if (ctx.center.type == SHOW_CENTER_PLAYLIST)
+        id = ctx.center.playlist->id;
+    else
+        SPDLOG_WARN("Pushing invalid history entry {}", static_cast<int>(ctx.center.type));
+        
+    ctx.view_history.emplace_back(ctx.center.type, id);
+
+    if (ctx.view_history.size() > MAX_HISTORY_SIZE)
+        ctx.view_history.pop_front();
 }
 
 // this has to be called after the objects have been moved bc those objects
@@ -960,24 +976,28 @@ static void reset_center_view_containers()
     ctx.center.show = SHOW_NONE;
     ctx.center.show_split = SHOW_NONE;
     ctx.confirm_delete = false;
+    ctx.popped_history = false;
     if (ctx.center.edit.art.data != nullptr)
         ctx.center.edit.art.clear();
 }
 
 static void set_center_view_lyrics()
 {
+    push_history_entry();
     ctx.center.type = SHOW_CENTER_LYRICS;
     reset_center_view_containers();
 }
 
 static void set_center_view_home()
 {
+    push_history_entry();
     ctx.center.type = SHOW_CENTER_HOME;
     reset_center_view_containers();
 }
 
 static void set_center_view_settings()
 {
+    push_history_entry();
     ctx.center.type = SHOW_CENTER_SETTINGS;
     reset_center_view_containers();
 }
@@ -1042,6 +1062,7 @@ static void refresh_added_songs()
 
 static void set_center_view_edit()
 {
+    push_history_entry();
     ctx.center.type = SHOW_CENTER_EDIT;
     reset_center_view_containers();
     refresh_added_songs();
@@ -1086,6 +1107,8 @@ static void update_from_edit_art_slot(MPUID uid)
 
 static void set_center_view_song(LruCacheRef<Song>&& song)
 {
+    push_history_entry();
+
     ctx.center.type = SHOW_CENTER_SONG;
     reset_center_view_containers();
 
@@ -1114,12 +1137,12 @@ static void set_center_view_song(LruCacheRef<Song>&& song)
     ctx.center.edit.volume = ctx.center.song->volume;
 
     set_edit_art_slot(mp_get_song_uid(ctx.center.song->id));
-
-    push_history_entry(SHOW_CENTER_SONG, ctx.center.song->id);
 }
 
 static void set_center_view_album(LruCacheRef<Album>&& album)
 {
+    push_history_entry();
+
     ctx.center.type = SHOW_CENTER_ALBUM;
     reset_center_view_containers();
 
@@ -1146,12 +1169,12 @@ static void set_center_view_album(LruCacheRef<Album>&& album)
     ctx.center.edit.year = ctx.center.album->year;
 
     set_edit_art_slot(mp_get_album_uid(ctx.center.album->id));
-
-    push_history_entry(SHOW_CENTER_ALBUM, ctx.center.album->id);
 }
 
 static void set_center_view_playlist(LruCacheRef<Playlist>&& playlist)
 {
+    push_history_entry();
+
     ctx.center.type = SHOW_CENTER_PLAYLIST;
     reset_center_view_containers();
 
@@ -1171,12 +1194,12 @@ static void set_center_view_playlist(LruCacheRef<Playlist>&& playlist)
     snprintf(ctx.center.edit.playlist, sizeof(ctx.center.edit.playlist), "%s", ctx.center.playlist->name.c_str());
 
     set_edit_art_slot(mp_get_playlist_uid(ctx.center.playlist->id));
-
-    push_history_entry(SHOW_CENTER_PLAYLIST, ctx.center.playlist->id);
 }
 
 static void set_center_view_artist(LruCacheRef<Artist>&& artist)
 {
+    push_history_entry();
+
     ctx.center.type = SHOW_CENTER_ARTIST;
     reset_center_view_containers();
 
@@ -1191,12 +1214,12 @@ static void set_center_view_artist(LruCacheRef<Artist>&& artist)
     snprintf(ctx.center.edit.artist, sizeof(ctx.center.edit.artist), "%s", ctx.center.artist->name.c_str());
 
     set_edit_art_slot(mp_get_artist_uid(ctx.center.artist->id));
-
-    push_history_entry(SHOW_CENTER_ARTIST, ctx.center.artist->id);
 }
 
 static void set_center_view_search()
 {
+    push_history_entry();
+
     ctx.center.type = SHOW_CENTER_SEARCH;
     reset_center_view_containers();
 
@@ -1212,6 +1235,12 @@ static void set_center_view_search()
 
 static void set_next_frame_center_view()
 {
+    if (ctx.popped_history && ctx.next_frame_center.type == SHOW_CENTER_NONE)
+    {
+        ctx.center.type = SHOW_CENTER_NONE;
+        reset_center_view_containers();
+    }
+
     if (ctx.next_frame_center.type == SHOW_CENTER_HOME)
         set_center_view_home();
     else if (ctx.next_frame_center.type == SHOW_CENTER_SETTINGS)
@@ -1907,14 +1936,6 @@ static void draw_song_table(DrawSongTableParams& params)
     float right_column_offset = custom_table_params.table_width - (*org_right_column_offset);
     custom_table_params.col_offsets.push_back(&right_column_offset);
 
-    if (glfw_key_down(ctx.key_bindings.reset_table))
-    {
-        float width = *custom_table_params.col_offsets.back() - *custom_table_params.col_offsets.front();
-        float offset = width / (params.column_offsets.size() - 1);
-        for (size_t i = 1; i < params.column_offsets.size() - 1; i++)
-            *custom_table_params.col_offsets[i] = *custom_table_params.col_offsets.front() + i * offset;
-    }
-
     imgui_custom_table(custom_table_params);
 
     *org_right_column_offset = custom_table_params.table_width - right_column_offset;
@@ -2030,6 +2051,15 @@ static void draw_search_results()
         static float artist_col_offset = 300.0f;
         static float album_col_offset = 550.0f;
         static float length_col_right_offset = 100.0f;
+
+        if (glfw_key_down(ctx.key_bindings.reset_table))
+        {
+            float width = ImGui::GetContentRegionAvail().x;
+            float offset = width / 3.0f;
+            artist_col_offset = name_col_offset + offset;
+            album_col_offset = name_col_offset + 2 * offset;
+            length_col_right_offset = 100.0f;
+        }
 
         DrawSongTableParams params{};
         params.songs = &ctx.center.song_search_result.entries;
@@ -3043,6 +3073,13 @@ static void draw_album_info_tracklist()
     static float name_col_offset = 70.0f;
     static float length_col_right_offset = 100.0f;
 
+    if (glfw_key_down(ctx.key_bindings.reset_table))
+    {
+        track_col_offset = 10.0f;
+        name_col_offset = 70.0f;
+        length_col_right_offset = 100.0f;
+    }
+
     DrawSongTableParams params{};
     params.show_track = true;
     params.show_album = false;
@@ -3361,6 +3398,13 @@ static void draw_artist_info_songs()
     static float album_col_offset = 550.0f;
     static float length_col_right_offset = 100.0f;
 
+    if (glfw_key_down(ctx.key_bindings.reset_table))
+    {
+        name_col_offset = 10.0f;
+        album_col_offset = 550.0f;
+        length_col_right_offset = 100.0f;
+    }
+
     params.songs = &ctx.center.song_search_result.entries;
     params.show_artist = false;
     params.column_offsets = {&name_col_offset, &album_col_offset, &length_col_right_offset};
@@ -3656,22 +3700,24 @@ static void draw_artist_info()
 
 static void pop_history()
 {
-    ctx.view_history.pop_back();
+    ctx.popped_history = true;
     if (ctx.view_history.empty())
     {
-        ctx.center.type = SHOW_CENTER_NONE;
+        ctx.next_frame_center.type = SHOW_CENTER_NONE;
         return;
     }
     auto [view_type, id] = ctx.view_history.back();
+    ctx.next_frame_center.type = view_type;
+    ctx.view_history.pop_back();
 
     if (view_type == SHOW_CENTER_SONG)
         ctx.next_frame_center.song = mp_get_song(id);
-    else if (view_type == SHOW_CENTER_SONG)
+    else if (view_type == SHOW_CENTER_ALBUM)
         ctx.next_frame_center.album = mp_get_album(id);
-    else if (view_type == SHOW_CENTER_PLAYLIST)
-        ctx.next_frame_center.playlist = mp_get_playlist(id);
     else if (view_type == SHOW_CENTER_ARTIST)
         ctx.next_frame_center.artist = mp_get_artist(id);
+    else if (view_type == SHOW_CENTER_PLAYLIST)
+        ctx.next_frame_center.playlist = mp_get_playlist(id);
 }
 
 static void draw_header(ImVec2 size)
@@ -3712,7 +3758,7 @@ static void draw_header(ImVec2 size)
 
     ImGui::SameLine();
 
-    const bool history_non_empty = ctx.view_history.empty();
+    const bool history_non_empty = ctx.view_history.empty() && ctx.center.type == SHOW_CENTER_NONE;
     if (history_non_empty)
         ImGui::BeginDisabled();
 

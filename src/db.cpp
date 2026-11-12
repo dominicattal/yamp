@@ -617,7 +617,7 @@ SearchResultID<SongID> DBConn::search_songs(const char* search_query, int result
         search_result_id.page_num = 0;
     sqlite3_finalize(stmt);
 
-    query = "SELECT id FROM Songs WHERE name LIKE ?1 LIMIT ?2 OFFSET ?3";
+    query = "SELECT id FROM Songs WHERE name LIKE ?1 ORDER BY id LIMIT ?2 OFFSET ?3";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, results_per_page);
