@@ -136,7 +136,25 @@ bool operator!=(Slot& s1, Slot& s2)
 struct UIContext {
 
     struct KeyBindings {
-        Key reset_table = GLFW_KEY_Q;
+        Key reset_table = GLFW_KEY_GRAVE_ACCENT;
+        Key toggle_pins = GLFW_KEY_Q;
+        Key toggle_queue = GLFW_KEY_W;
+        Key history_previous = GLFW_KEY_E;
+        Key history_next = GLFW_KEY_R;
+        Key show_home = GLFW_KEY_1;
+        Key show_settings = GLFW_KEY_2;
+        Key show_edit = GLFW_KEY_3;
+        Key show_search = GLFW_KEY_4;
+        Key show_lyrics = GLFW_KEY_5;
+        Key clear_queue = GLFW_KEY_T;
+        Key toggle_autoplay = GLFW_KEY_A;
+        Key toggle_shuffle = GLFW_KEY_S;
+        Key toggle_loop = GLFW_KEY_D;
+        Key toggle_mute = GLFW_KEY_F;
+        Key song_next = GLFW_KEY_C;
+        Key song_previous = GLFW_KEY_X;
+        Key song_forward = GLFW_KEY_V;
+        Key song_backward = GLFW_KEY_Z;
     } key_bindings;
 
     struct TextureInfo {
@@ -253,7 +271,7 @@ struct UIContext {
     } next_frame_center;
 
     GLFWwindow* window;
-    bool quick_access_open = true;
+    bool pins_open = true;
     bool queue_open = true;
 
     // View history keeps track of the views the user has visited.
@@ -765,27 +783,6 @@ static bool glfw_key_down(Key key)
     return glfwGetKey(ctx.window, key) == GLFW_PRESS;
 }
 
-static bool ui_key_callback(int key, int scancode, int action, int mods)
-{
-    (void)key; (void)scancode; (void)action; (void)mods;
-    return ImGui::GetIO().WantCaptureKeyboard;
-}
-
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
-{
-    (void)window;
-
-#ifndef NDEBUG
-    if (key == GLFW_KEY_F1 && action == GLFW_PRESS)
-        ctx.show_demo_window = !ctx.show_demo_window;
-    if (key == GLFW_KEY_F2 && action == GLFW_PRESS)
-        ctx.show_debug_window = !ctx.show_debug_window;
-#endif
-
-    if (ui_key_callback(key, scancode, action, mods))
-        return;
-}
-
 static GLTexture get_texture_from_slot(Slot& slot)
 {
     return GLTexture{ 
@@ -995,7 +992,8 @@ static void history_previous()
 
 static void history_next()
 {
-    assert(ctx.view_history_cursor <= ctx.view_history.size());
+    if (ctx.view_history_cursor >= ctx.view_history.size())
+        return;
     ctx.dont_push_next_history_entry = true;
     auto [view_type, id] = ctx.view_history[ctx.view_history_cursor++];
     history_set_next_frame(view_type, id);
@@ -1044,21 +1042,18 @@ static void set_center_view_lyrics()
 {
     ctx.center.type = SHOW_CENTER_LYRICS;
     reset_center_view_containers();
-    history_push_entry();
 }
 
 static void set_center_view_home()
 {
     ctx.center.type = SHOW_CENTER_HOME;
     reset_center_view_containers();
-    history_push_entry();
 }
 
 static void set_center_view_settings()
 {
     ctx.center.type = SHOW_CENTER_SETTINGS;
     reset_center_view_containers();
-    history_push_entry();
 }
 
 static void refresh_added_songs()
@@ -1161,7 +1156,6 @@ static void set_center_view_edit()
     ctx.center.type = SHOW_CENTER_EDIT;
     reset_center_view_containers();
     refresh_added_songs();
-    history_push_entry();
 }
 
 static void set_center_view_song(LruCacheRef<Song>&& song)
@@ -1559,6 +1553,77 @@ static void initialize_default_textures()
     initialize_default_texture(&ctx.textures.round_rewind_button.id, "assets/icons/round-rewind.png");
     initialize_default_texture(&ctx.textures.mixer_button.id, "assets/icons/mixer.png");
     initialize_default_texture(&ctx.textures.search.id, "assets/icons/search.png");
+}
+
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    (void)window;
+    (void)scancode;
+    (void)mods;
+
+    if (action == GLFW_PRESS)
+    {
+        if (key == ctx.key_bindings.toggle_pins)
+            ctx.pins_open = !ctx.pins_open;
+
+        if (key == ctx.key_bindings.toggle_queue)
+            ctx.queue_open = !ctx.queue_open;
+
+        if (key == ctx.key_bindings.toggle_autoplay)
+            mp_toggle_autoplay();
+
+        if (key == ctx.key_bindings.toggle_shuffle)
+            mp_toggle_shuffle();
+
+        if (key == ctx.key_bindings.toggle_mute)
+            mp_toggle_mute();
+
+        if (key == ctx.key_bindings.toggle_loop)
+            mp_ctx.loop_mode = static_cast<LoopMode>((static_cast<int>(mp_ctx.loop_mode) + 1) % 3);
+
+        if (key == ctx.key_bindings.history_previous)
+            history_previous();
+
+        if (key == ctx.key_bindings.history_next)
+            history_next();
+
+        if (key == ctx.key_bindings.clear_queue)
+            mp_queue_clear();
+
+        if (key == ctx.key_bindings.show_home)
+            ctx.next_frame_center.type = SHOW_CENTER_HOME;
+
+        if (key == ctx.key_bindings.show_settings)
+            ctx.next_frame_center.type = SHOW_CENTER_SETTINGS;
+
+        if (key == ctx.key_bindings.show_edit)
+            ctx.next_frame_center.type = SHOW_CENTER_EDIT;
+
+        if (key == ctx.key_bindings.show_search)
+            ctx.next_frame_center.type = SHOW_CENTER_SEARCH;
+
+        if (key == ctx.key_bindings.show_lyrics)
+            ctx.next_frame_center.type = SHOW_CENTER_LYRICS;
+
+        if (key == ctx.key_bindings.song_next)
+            mp_play_next();
+
+        if (key == ctx.key_bindings.song_previous)
+            mp_play_previous();
+
+        if (key == ctx.key_bindings.song_forward)
+            mp_go_forward_in_current_song();
+
+        if (key == ctx.key_bindings.song_backward)
+            mp_go_backward_in_current_song();
+    }
+
+#ifndef NDEBUG
+    if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
+        ctx.show_demo_window = !ctx.show_demo_window;
+    if (key == GLFW_KEY_F12 && action == GLFW_PRESS)
+        ctx.show_debug_window = !ctx.show_debug_window;
+#endif
 }
 
 void ui_init()
@@ -3765,9 +3830,9 @@ static void draw_header(ImVec2 size)
 
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + advance, (size.y - button_size.y) / 2.0f));
 
-    ImVec4 tint = (ctx.quick_access_open) ? SELECTED_COLOR_1 : WHITE;
+    ImVec4 tint = (ctx.pins_open) ? SELECTED_COLOR_1 : WHITE;
     if (imgui_image_button(ctx.textures.pin_button.id, button_size, tint))
-        ctx.quick_access_open = !ctx.quick_access_open;
+        ctx.pins_open = !ctx.pins_open;
 
 
     ImGui::SameLine();
@@ -3796,19 +3861,19 @@ static void draw_header(ImVec2 size)
 
     ImGui::SameLine();
 
-    const bool history_has_previous = ctx.view_history_cursor == 0;
-    if (history_has_previous)
+    const bool history_has_previous = ctx.view_history_cursor > 0;
+    if (!history_has_previous)
         ImGui::BeginDisabled();
 
     ImGui::SetCursorPos(ImVec2(size.x - button_size.x * 2 - advance * 3, (size.y - button_size.y) / 2.0f));
     if (imgui_image_button(ctx.textures.play_button.id, button_size, WHITE, UV0_INVERTED_HORIZONTALLY, UV1_INVERTED_HORIZONTALLY))
         history_previous();
 
-    if (history_has_previous)
+    if (!history_has_previous)
         ImGui::EndDisabled();
 
-    const bool history_has_next = ctx.view_history_cursor >= ctx.view_history.size();
-    if (history_has_next)
+    const bool history_has_next = ctx.view_history_cursor < ctx.view_history.size();
+    if (!history_has_next)
         ImGui::BeginDisabled();
 
     ImGui::SameLine();
@@ -3816,7 +3881,7 @@ static void draw_header(ImVec2 size)
     if (imgui_image_button(ctx.textures.play_button.id, button_size))
         history_next();
 
-    if (history_has_next)
+    if (!history_has_next)
         ImGui::EndDisabled();
 }
 
@@ -4193,7 +4258,6 @@ static void draw_player(const ImVec2 size)
     float advance = button_size.x + spacing;
     float cursor_x = (size.x - width) / 2.0f;
     float cursor_y = 60.0f;
-    constexpr float skip_time = 5.0f;
     ImVec4 tmp_col = WHITE;
 
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
@@ -4212,7 +4276,7 @@ static void draw_player(const ImVec2 size)
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     if (imgui_image_button(ctx.textures.round_rewind_button.id, button_size, tmp_col))
-        mp_go_backward_in_current_song(skip_time);
+        mp_go_backward_in_current_song();
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
@@ -4234,7 +4298,7 @@ static void draw_player(const ImVec2 size)
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
     if (imgui_image_button(ctx.textures.round_rewind_button.id, button_size, tmp_col, UV0_INVERTED_HORIZONTALLY, UV1_INVERTED_HORIZONTALLY))
-        mp_go_forward_in_current_song(skip_time);
+        mp_go_forward_in_current_song();
 
     cursor_x += advance;
     ImGui::SetCursorPos(ImVec2(cursor_x, cursor_y));
@@ -4512,9 +4576,9 @@ static void draw_imgui()
     ImGui::SetNextWindowSize(ImVec2(display_size.x, interface_height));
     ImGui::BeginChild("##Interface", ImVec2(0.0f, interface_height));
     ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.0f, 0.0f));
-    if (ImGui::BeginTable("view", 1 + ctx.quick_access_open + ctx.queue_open, ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerV))
+    if (ImGui::BeginTable("view", 1 + ctx.pins_open + ctx.queue_open, ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerV))
     {
-        if (ctx.quick_access_open)
+        if (ctx.pins_open)
             ImGui::TableSetupColumn("left", ImGuiTableColumnFlags_WidthFixed, 300);
         ImGui::TableSetupColumn("center", ImGuiTableColumnFlags_NoSort);
         if (ctx.queue_open)
@@ -4522,7 +4586,7 @@ static void draw_imgui()
 
         ImGui::TableNextRow();
 
-        if (ctx.quick_access_open)
+        if (ctx.pins_open)
         {
             ImGui::TableNextColumn();
             ImGui::SetNextWindowPos(ImVec2(ImGui::GetCursorPosX(), header_height));

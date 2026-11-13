@@ -238,8 +238,8 @@ Art mp_get_art(MPUID uid);
 // Skip current song in queue
 void mp_play_previous();
 void mp_play_next();
-void mp_go_backward_in_current_song(float seconds);
-void mp_go_forward_in_current_song(float seconds);
+void mp_go_backward_in_current_song(float seconds = 5.0f);
+void mp_go_forward_in_current_song(float seconds = 5.0f);
 void mp_queue_clear();
 
 MPUID mp_get_uid(int id, MPUIDEnum type);
