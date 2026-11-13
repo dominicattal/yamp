@@ -1346,14 +1346,13 @@ static void prompt_edit_art_slot()
             if (path.size() > 0)
             {
                 int width, height, nc;
-                uint8_t* raw_art_data = stbi_load(path.front().c_str(), &width, &height, &nc, 4);
+                uint8_t* raw_art_data = stbi_load(path.front().c_str(), &width, &height, &nc, ART_CHANNELS);
                 ctx.center.edit.art.clear();
                 ctx.center.edit.art.data = stbir_resize_uint8_linear(
                             raw_art_data, width, height, 0,
                             NULL, ART_WIDTH, ART_WIDTH, 0,
                             STBIR_4CHANNEL
                         );
-                ctx.center.edit.art.size = ART_WIDTH * ART_WIDTH * 4 * sizeof(uint8_t);
                 stbi_image_free(raw_art_data);
                 return std::move(path.front());
             }
@@ -1496,7 +1495,7 @@ static void initialize_default_texture(GLuint* id, const char* path)
     int nc;
     FILE* fptr = fopen(path, "rb");
     int width, height;
-    unsigned char* data = stbi_load_from_file(fptr, &width, &height, &nc, 4);
+    unsigned char* data = stbi_load_from_file(fptr, &width, &height, &nc, ART_CHANNELS);
     assert(data);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     stbi_image_free(data);
@@ -1506,7 +1505,7 @@ static void initialize_default_texture(GLuint* id, const char* path)
 static void initialize_default_texture_slot(const char* path)
 {
     int width, height, nc;
-    unsigned char* data = stbi_load(path, &width, &height, &nc, 4);
+    unsigned char* data = stbi_load(path, &width, &height, &nc, ART_CHANNELS);
     unsigned char* resized_data = stbir_resize_uint8_linear(
                 data, width, height, 0,
                 NULL, ART_WIDTH, ART_WIDTH, 0,
@@ -1520,7 +1519,7 @@ static void initialize_default_texture_slot(const char* path)
 static void initialize_default_artist_slot(const char* path)
 {
     int width, height, nc;
-    unsigned char* data = stbi_load(path, &width, &height, &nc, 4);
+    unsigned char* data = stbi_load(path, &width, &height, &nc, ART_CHANNELS);
     unsigned char* resized_data = stbir_resize_uint8_linear(
                 data, width, height, 0,
                 NULL, ART_WIDTH, ART_WIDTH, 0,

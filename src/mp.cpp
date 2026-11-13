@@ -81,13 +81,12 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
                 return art;
             int input_w, input_h, nc;
             const TagLib::ByteVector data = map["data"].toByteVector();
-            uint8_t* raw_art_data = stbi_load_from_memory(reinterpret_cast<const uint8_t*>(data.data()), data.size(), &input_w, &input_h, &nc, 4);
+            uint8_t* raw_art_data = stbi_load_from_memory(reinterpret_cast<const uint8_t*>(data.data()), data.size(), &input_w, &input_h, &nc, ART_CHANNELS);
             art.data = stbir_resize_uint8_linear(
                         raw_art_data, input_w, input_h, 0,
                         NULL, ART_WIDTH, ART_WIDTH, 0,
                         STBIR_4CHANNEL
                     );
-            art.size = ART_WIDTH * ART_WIDTH * 4;
             stbi_image_free(raw_art_data);
             return art;
         };
@@ -134,13 +133,12 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
                     album.id = conn.create_album(album);
 
                     int input_w, input_h, nc;
-                    uint8_t* raw_art_data = stbi_load(fs_song_path.string().c_str(), &input_w, &input_h, &nc, 4);
+                    uint8_t* raw_art_data = stbi_load(fs_song_path.string().c_str(), &input_w, &input_h, &nc, ART_CHANNELS);
                     art.data = stbir_resize_uint8_linear(
                                 raw_art_data, input_w, input_h, 0,
                                 NULL, ART_WIDTH, ART_WIDTH, 0,
                                 STBIR_4CHANNEL
                             );
-                    art.size = ART_WIDTH * ART_WIDTH * 4;
                     stbi_image_free(raw_art_data);
 
                     conn.update_album_art(album.id, art);

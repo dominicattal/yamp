@@ -19,7 +19,9 @@ using MPUID = uint64_t;
 #define INVALID_TRACK 0
 #define INVALID_YEAR 0
 
-#define ART_WIDTH 256
+#define ART_WIDTH 210
+#define ART_CHANNELS 4
+#define ART_SIZE (ART_WIDTH * ART_WIDTH * ART_CHANNELS * sizeof(uint8_t))
 
 typedef struct sqlite3 sqlite3;
 typedef struct sqlite3_stmt sqlite3_stmt;
@@ -86,17 +88,16 @@ struct PinID {
 class Art {
 public:
     uint8_t* data;
-    size_t size;
 
     Art() = default;
-    Art(uint8_t* data, size_t size)
-        : data{data}, size{size}
+    Art(uint8_t* data)
+        : data{data}
     {
     }
 
     ~Art()
     {
-        delete[] data;
+        free(data);
     }
 
     Art(Art& other) = delete;
@@ -105,16 +106,13 @@ public:
     Art(Art&& other)
     {
         this->data = other.data;
-        this->size = other.size;
         other.data = nullptr;
-        other.size = 0;
     }
 
     Art& operator=(std::nullptr_t)
     {
         clear();
         this->data = nullptr;
-        this->size = 0;
         return *this;
     }
 
@@ -122,9 +120,7 @@ public:
     {
         clear();
         this->data = other.data;
-        this->size = other.size;
         other.data = nullptr;
-        other.size = 0;
         return *this;
     }
 
@@ -132,7 +128,6 @@ public:
     {
         free(this->data);
         this->data = nullptr;
-        this->size = 0;
     }
 
     bool operator==(std::nullptr_t)

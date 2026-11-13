@@ -12,9 +12,10 @@
 #include <future>
 
 #define HISTORY_MAX_SIZE 1000
-#define TEXTURE_SIZE 4096
-#define SLOTS_PER_TEXTURE ((TEXTURE_SIZE / ART_WIDTH) * (TEXTURE_SIZE / ART_WIDTH))
 #define MAX_LYRICS_SIZE 4096
+#define TEXTURE_SIZE 4096
+#define SLOTS_ACROSS (TEXTURE_SIZE / ART_WIDTH)
+#define SLOTS_PER_TEXTURE (SLOTS_ACROSS * SLOTS_ACROSS)
 
 struct SongTrack {
     LruCacheRef<Song> song;
