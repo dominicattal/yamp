@@ -469,6 +469,11 @@ static bool imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 reg
     return false;
 }
 
+static void imgui_aligned_text(const char* text)
+{
+    imgui_aligned_text(text, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail());
+}
+
 static bool imgui_image_button(ImTextureRef tex_ref, const ImVec2& image_size, const ImVec4& tint_col = WHITE, const ImVec2& uv0 = UV0, const ImVec2& uv1 = UV1)
 {
     ImGui::ImageWithBg(tex_ref, image_size, uv0, uv1, INVISIBILE, tint_col);
@@ -1955,7 +1960,7 @@ static void draw_album_table(std::vector<LruCacheRef<Album>>& albums)
     {
         ImGui::PushID(album->id);
         GLTexture tex = get_texture_from_album(album->id);
-        float text_height = ImGui::CalcTextSize(album->name.c_str()).y;
+        float text_height = ImGui::GetFontSize();
         ImGui::SetCursorPos(region_start);
         if (imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1))
         {
@@ -1988,7 +1993,7 @@ static void draw_playlist_table(std::vector<LruCacheRef<Playlist>>& playlists)
     {
         ImGui::PushID(playlist->id);
         GLTexture tex = get_texture_from_playlist(playlist->id);
-        float text_height = ImGui::CalcTextSize(playlist->name.c_str()).y;
+        float text_height = ImGui::GetFontSize();
         ImGui::SetCursorPos(region_start);
         if (imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1))
         {
@@ -2021,7 +2026,7 @@ static void draw_artist_table(std::vector<LruCacheRef<Artist>>& artists)
     {
         ImGui::PushID(artist->id);
         GLTexture tex = get_texture_from_artist(artist->id);
-        float text_height = ImGui::CalcTextSize(artist->name.c_str()).y;
+        float text_height = ImGui::GetFontSize();
         ImGui::SetCursorPos(region_start);
         imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
         if (imgui_aligned_text_button(artist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
@@ -2227,7 +2232,7 @@ static void draw_song_info_edit_album_picker()
     {
         ImGui::PushID(test_album->id);
         GLTexture tex = get_texture_from_album(test_album->id);
-        float text_height = ImGui::CalcTextSize(test_album->name.c_str()).y;
+        float text_height = ImGui::GetFontSize();
         ImGui::SetCursorPos(region_start);
         imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
         if (imgui_aligned_text_button(test_album->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
@@ -2293,7 +2298,7 @@ static void draw_song_info_edit_artist_picker()
     {
         ImGui::PushID(test_artist->id);
         GLTexture tex = get_texture_from_artist(test_artist->id);
-        float text_height = ImGui::CalcTextSize(test_artist->name.c_str()).y;
+        float text_height = ImGui::GetFontSize();
         ImGui::SetCursorPos(region_start);
         imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
         if (imgui_aligned_text_button(test_artist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
@@ -2833,7 +2838,7 @@ static void draw_album_info_edit_artist_picker()
     {
         ImGui::PushID(test_artist->id);
         GLTexture tex = get_texture_from_artist(test_artist->id);
-        float text_height = ImGui::CalcTextSize(test_artist->name.c_str()).y;
+        float text_height = ImGui::GetFontSize();
         ImGui::SetCursorPos(region_start);
         imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
         if (imgui_aligned_text_button(test_artist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
@@ -3457,7 +3462,7 @@ static void draw_artist_info_edit_merge()
     {
         ImGui::PushID(test_artist->id);
         GLTexture tex = get_texture_from_artist(test_artist->id);
-        float text_height = ImGui::CalcTextSize(test_artist->name.c_str()).y;
+        float text_height = ImGui::GetFontSize();
         ImGui::SetCursorPos(region_start);
         imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
         if (imgui_aligned_text_button(test_artist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
@@ -4000,58 +4005,80 @@ static void draw_center()
     }
 }
 
+static void draw_queue_song(const LruCacheRef<Song>& song, const LruCacheRef<Album>& album, const LruCacheRef<Artist>& artist, const ImVec4 color)
+{
+    GLTexture tex = get_texture_from_song(song->id);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, color);
+    if (imgui_image_button(tex.id, SMALL_IMAGE_SIZE, WHITE, tex.uv0, tex.uv1))
+        ctx.next_frame_center.song = mp_get_song(song->id);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+
+    ImGui::SameLine();
+    ImVec2 cursor_pos = ImGui::GetCursorPos();
+
+    if (imgui_aligned_text_button(song->name.c_str(), cursor_pos))
+        ctx.next_frame_center.song = mp_get_song(song->id);
+
+    cursor_pos.y += ImGui::GetFontSize();
+
+    ImGui::SetCursorPos(cursor_pos);
+    if (artist != nullptr)
+    {
+        if (imgui_aligned_text_button(artist->name.c_str(), cursor_pos))
+            ctx.next_frame_center.artist = mp_get_artist(artist->id);
+        cursor_pos.y += ImGui::GetFontSize();
+    }
+
+    ImGui::SetCursorPos(cursor_pos);
+    if (album != nullptr)
+    {
+        if (imgui_aligned_text_button(album->name.c_str(), cursor_pos))
+            ctx.next_frame_center.album = mp_get_album(album->id);
+        cursor_pos.y += ImGui::GetFontSize();
+    }
+}
+
 static void draw_queue()
 {
     float padding = 8.0f;
     ImGui::SetCursorPosX(padding);
     imgui_push_font_scale(2.0f); 
-    ImGui::Text("Queue");
+    imgui_aligned_text("Queue");
     imgui_pop_font_scale(); 
-    int row = 0;
+    float row_advance = 72.0f;
+
     ImVec2 root_pos = ImGui::GetCursorPos();
     root_pos.x = padding;
-    float row_advance = 72.0f;
-    auto list_song = [&row, &root_pos, &row_advance](const LruCacheRef<Song>& song, const LruCacheRef<Album>& album, const LruCacheRef<Artist>& artist, const ImVec4& color)
-        {
-            ImGui::SetCursorPos(ImVec2(root_pos.x, root_pos.y + row * row_advance));
-            GLTexture tex = get_texture_from_song(song->id);
-            ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 1.0f);
-            ImGui::PushStyleColor(ImGuiCol_Border, color);
-            ImGui::Image(tex.id, SMALL_IMAGE_SIZE, tex.uv0, tex.uv1);
-            ImGui::PopStyleColor();
-            ImGui::PopStyleVar();
-            ImGui::SameLine();
-            ImVec2 cursor_pos = ImGui::GetCursorPos();
-            if (imgui_aligned_text_button(song->name.c_str(), cursor_pos))
-                ctx.next_frame_center.song = mp_get_song(song->id);
-            ImVec2 text_size = ImGui::CalcTextSize(song->name.c_str());
-            cursor_pos.y += text_size.y;
-            ImGui::SetCursorPos(cursor_pos);
-            if (artist != nullptr)
-            {
-                if (imgui_aligned_text_button(artist->name.c_str(), cursor_pos))
-                    ctx.next_frame_center.artist = mp_get_artist(artist->id);
-                cursor_pos.y += text_size.y;
-            }
-            ImGui::SetCursorPos(cursor_pos);
-            if (album != nullptr)
-            {
-                if (imgui_aligned_text_button(album->name.c_str(), cursor_pos))
-                    ctx.next_frame_center.album = mp_get_album(album->id);
-                cursor_pos.y += text_size.y;
-            }
+    for (size_t i = 0; i < mp_ctx.queue.size(); i++)
+    {
+        SongAlbumArtist& song = mp_ctx.queue[i];
+        ImVec2 region_start = ImVec2(root_pos.x, root_pos.y + i * row_advance);
+        ImGui::SetCursorPos(region_start);
+        draw_queue_song(song.song, song.album, song.artist, RED);
+    }
 
-            row++;
-        };
-
-    for (const SongAlbumArtist& song : mp_ctx.queue)
-        list_song(song.song, song.album, song.artist, RED);
-
-    for (const SongAlbumArtistTrack& song_track : mp_ctx.group_queue)
-        list_song(song_track.song, song_track.album, song_track.artist, GREEN);
+    root_pos = ImGui::GetCursorPos();
+    root_pos.x = padding;
+    for (size_t i = 0; i < mp_ctx.group_queue.size(); i++)
+    {
+        SongAlbumArtistTrack& song_track = mp_ctx.group_queue[i];
+        ImVec2 region_start = ImVec2(root_pos.x, root_pos.y + i * row_advance);
+        ImGui::SetCursorPos(region_start);
+        draw_queue_song(song_track.song, song_track.album, song_track.artist, GREEN);
+    }
     
-    for (const SongAlbumArtist& song : mp_ctx.autoplay_queue)
-        list_song(song.song, song.album, song.artist, BLUE);
+    root_pos = ImGui::GetCursorPos();
+    root_pos.x = padding;
+    for (size_t i = 0; i < mp_ctx.autoplay_queue.size(); i++)
+    {
+        SongAlbumArtist& song = mp_ctx.autoplay_queue[i];
+        ImVec2 region_start = ImVec2(root_pos.x, root_pos.y + i * row_advance);
+        ImGui::SetCursorPos(region_start);
+        draw_queue_song(song.song, song.album, song.artist, BLUE);
+    }
 }
 
 static void draw_player(const ImVec2 size)
@@ -4090,14 +4117,14 @@ static void draw_player(const ImVec2 size)
             imgui_aligned_text(song_text, region_start, region_size, ALIGN_LEFT, ALIGN_LEFT);
     }
 
-    song_info_offset.y += ImGui::CalcTextSize(song_text).y + padding;
+    song_info_offset.y += ImGui::GetFontSize() + padding;
 
     if (mp_ctx.current_song.artist != nullptr)
     {
         const char* artist_name = mp_ctx.current_song.artist->name.c_str();
         if (imgui_aligned_text_button(artist_name, song_info_offset, ImVec2(song_cursor_x - song_info_offset.x, ImGui::GetContentRegionAvail().y), ALIGN_LEFT, ALIGN_LEFT))
             ctx.next_frame_center.artist = mp_get_artist(mp_ctx.current_song.artist->id);
-        song_info_offset.y += ImGui::CalcTextSize(artist_name).y + padding;
+        song_info_offset.y += ImGui::GetFontSize() + padding;
     }
     if (mp_ctx.current_song.album != nullptr)
     {
@@ -4113,7 +4140,8 @@ static void draw_player(const ImVec2 size)
     snprintf(cursor_str, sizeof(cursor_str), "%d:%02d / %d:%02d", cursor / 60, cursor % 60, length / 60, length % 60);
     ImGui::SetCursorPos(ImVec2(song_cursor_x, 15.0f));
     ImGui::Text("%s", cursor_str);
-    ImGui::SetCursorPos(ImVec2(song_cursor_x, 15.0f + ImGui::CalcTextSize(cursor_str).y + 5.0f));
+    float text_height = ImGui::GetFontSize();
+    ImGui::SetCursorPos(ImVec2(song_cursor_x, 15.0f + text_height + 5.0f));
     if (imgui_custom_slider_float("##cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, ImVec2(cursor_width, 5.0f)))
         mp_update_cursor();
 
@@ -4289,9 +4317,89 @@ static void draw_debug_info()
 }
 #endif
 
+static MPUID draw_pin_song(LruCacheRef<Song>& song)
+{
+    GLTexture tex = get_texture_from_song(song->id);
+    ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, YELLOW);
+    ImGui::Image(tex.id, SMALL_IMAGE_SIZE, tex.uv0, tex.uv1);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    ImGui::SameLine();
+    if (imgui_aligned_text_button(song->name.c_str()))
+    {
+        ctx.next_frame_center.song = mp_get_song(song->id);
+        return mp_get_song_uid(song->id);
+    }
+    return INVALID_UID;
+}
+
+static MPUID draw_pin_album(LruCacheRef<Album>& album)
+{
+    GLTexture tex = get_texture_from_album(album->id);
+    ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, PURPLE);
+    ImGui::Image(tex.id, SMALL_IMAGE_SIZE, tex.uv0, tex.uv1);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    ImGui::SameLine();
+    if (imgui_aligned_text_button(album->name.c_str()))
+    {
+        ctx.next_frame_center.album = mp_get_album(album->id);
+        return mp_get_album_uid(album->id);
+    }
+    return INVALID_UID;
+}
+
+static MPUID draw_pin_artist(LruCacheRef<Artist>& artist)
+{
+    GLTexture tex = get_texture_from_artist(artist->id);
+    ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, CYAN);
+    ImGui::Image(tex.id, SMALL_IMAGE_SIZE, tex.uv0, tex.uv1);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    ImGui::SameLine();
+    if (imgui_aligned_text_button(artist->name.c_str()))
+    {
+        ctx.next_frame_center.artist = mp_get_artist(artist->id);
+        return mp_get_artist_uid(artist->id);
+    }
+    return INVALID_UID;
+}
+
+static MPUID draw_pin_playlist(LruCacheRef<Playlist>& playlist)
+{
+    GLTexture tex = get_texture_from_playlist(playlist->id);
+    ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, ORANGE);
+    ImGui::Image(tex.id, SMALL_IMAGE_SIZE, tex.uv0, tex.uv1);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    ImGui::SameLine();
+    if (imgui_aligned_text_button(playlist->name.c_str()))
+    {
+        ctx.next_frame_center.playlist = mp_get_playlist(playlist->id);
+        return mp_get_playlist_uid(playlist->id);
+    }
+    return INVALID_UID;
+}
+
+static MPUID draw_pin(Pin& pin)
+{
+    if (pin.type == MPUID_SONG)
+        return draw_pin_song(pin.song);
+    else if (pin.type == MPUID_ALBUM)
+        return draw_pin_album(pin.album);
+    else if (pin.type == MPUID_ARTIST)
+        return draw_pin_artist(pin.artist);
+    else if (pin.type == MPUID_PLAYLIST)
+        return draw_pin_playlist(pin.playlist);
+    return INVALID_UID;
+}
+
 static void draw_pins()
 {
-    int row = 0;
     float row_advance = 72.0f;
 
     float padding = 10.0f;
@@ -4305,84 +4413,13 @@ static void draw_pins()
 
     MPUID updated_pin_uid = INVALID_UID;
 
-    auto list_pin = [&row, &root_pos, &row_advance, &updated_pin_uid, padding](const Pin& pin)
-        {
-            GLTexture tex = get_texture_from_slot(ctx.textures.default_album_slot);
-            ImVec4 color = WHITE;
-            if (pin.type == MPUID_SONG)
-            {
-                tex = get_texture_from_song(pin.song->id);
-                color = YELLOW;
-            }
-            if (pin.type == MPUID_ALBUM)
-            {
-                tex = get_texture_from_album(pin.album->id);
-                color = PURPLE;
-            }
-            if (pin.type == MPUID_ARTIST)
-            {
-                tex = get_texture_from_artist(pin.artist->id);
-                color = CYAN;
-            }
-            if (pin.type == MPUID_PLAYLIST)
-            {
-                tex = get_texture_from_playlist(pin.playlist->id);
-                color = ORANGE;
-            }
-
-            ImGui::SetCursorPos(ImVec2(root_pos.x + padding, root_pos.y + row * row_advance));
-            ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 1.0f);
-            ImGui::PushStyleColor(ImGuiCol_Border, color);
-            ImGui::Image(tex.id, SMALL_IMAGE_SIZE, tex.uv0, tex.uv1);
-            ImGui::PopStyleColor();
-            ImGui::PopStyleVar();
-            ImGui::SameLine();
-            ImVec2 cursor_pos = ImGui::GetCursorPos();
-            switch (pin.type)
-            {
-                case MPUID_SONG:
-                {
-                    if (imgui_aligned_text_button(pin.song->name.c_str(), cursor_pos))
-                    {
-                        updated_pin_uid = pin.uid;
-                        ctx.next_frame_center.song = mp_get_song(pin.song->id);
-                    }
-                    break;
-                }
-                case MPUID_PLAYLIST:
-                {
-                    if (imgui_aligned_text_button(pin.playlist->name.c_str(), cursor_pos))
-                    {
-                        updated_pin_uid = pin.uid;
-                        ctx.next_frame_center.playlist = mp_get_playlist(pin.playlist->id);
-                    }
-                    break;
-                }
-                case MPUID_ALBUM:
-                {
-                    if (imgui_aligned_text_button(pin.album->name.c_str(), cursor_pos))
-                    {
-                        updated_pin_uid = pin.uid;
-                        ctx.next_frame_center.album = mp_get_album(pin.album->id);
-                    }
-                    break;
-                }
-                case MPUID_ARTIST:
-                {
-                    if (imgui_aligned_text_button(pin.artist->name.c_str(), cursor_pos))
-                    {
-                        updated_pin_uid = pin.uid;
-                        ctx.next_frame_center.artist = mp_get_artist(pin.artist->id);
-                    }
-                    break;
-                }
-                default: break;
-            }
-            row++;
-        };
-
-    for (Pin& pin : mp_ctx.pins)
-        list_pin(pin);
+    for (size_t row = 0; row < mp_ctx.pins.size(); row++)
+    {
+        ImGui::SetCursorPos(ImVec2(root_pos.x + padding, root_pos.y + row * row_advance));
+        MPUID clicked_pin_uid = draw_pin(mp_ctx.pins[row]);
+        if (clicked_pin_uid != INVALID_UID)
+            updated_pin_uid = clicked_pin_uid;
+    }
 
     if (updated_pin_uid != INVALID_UID)
         mp_update_pin(updated_pin_uid);
@@ -4445,14 +4482,14 @@ static void draw_imgui()
         {
             ImGui::TableNextColumn();
             ImGui::SetNextWindowPos(ImVec2(ImGui::GetCursorPosX(), header_height));
-            ImGui::BeginChild("##Left Side", ImGui::GetContentRegionAvail());
+            ImGui::BeginChild("##Left Side", ImGui::GetContentRegionAvail(), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
             draw_pins();
             ImGui::EndChild();
         }
 
         ImGui::TableNextColumn();
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetCursorPosX(), header_height));
-        ImGui::BeginChild("##Center", ImGui::GetContentRegionAvail());
+        ImGui::BeginChild("##Center", ImGui::GetContentRegionAvail(), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
         draw_center();
         ImGui::EndChild();
 
@@ -4460,7 +4497,7 @@ static void draw_imgui()
         {
             ImGui::TableNextColumn();
             ImGui::SetNextWindowPos(ImVec2(ImGui::GetCursorPosX(), header_height));
-            ImGui::BeginChild("##Right Side", ImGui::GetContentRegionAvail());
+            ImGui::BeginChild("##Right Side", ImGui::GetContentRegionAvail(), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
             draw_queue();
             ImGui::EndChild();
         }
