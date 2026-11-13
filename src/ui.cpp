@@ -452,8 +452,9 @@ static bool imgui_aligned_text(const char* text, ImVec2 region_start, ImVec2 reg
     const char* end = text + strlen(text);
     const char ellipse[] = "…";
     ImVec2 ellipse_size = ImGui::CalcTextSize(ellipse);
+    ImVec2 text_size = ImGui::CalcTextSize(text); // ensure characters are in the font cache
 
-    ImVec2 text_size(0.0f, ellipse_size.y);
+    text_size.x = 0.0f;
     ImFont* font = ImGui::GetFont();
     ImFontBaked* baked = font->GetFontBaked(ImGui::GetFontSize());
 
@@ -578,9 +579,9 @@ static bool imgui_is_region_hovered(ImVec2 region_start, ImVec2 size)
     const ImVec2 mouse_pos = ImGui::GetMousePos();
     return imgui_is_mouse_in_window_bounds()
         && mouse_pos.x >= region_start.x 
-        && mouse_pos.x <= region_start.x + size.x
+        && mouse_pos.x < region_start.x + size.x
         && mouse_pos.y >= region_start.y 
-        && mouse_pos.y <= region_start.y + size.y;
+        && mouse_pos.y < region_start.y + size.y;
 }
 
 static void imgui_custom_table(CustomTableParams& params)
@@ -2342,7 +2343,6 @@ static void draw_album_picker()
     ImVec2 region_start = ImGui::GetCursorPos();
     region_start.x += margin;
     region_start.y += margin;
-    ImVec2 region_size = ImGui::GetContentRegionAvail();
     imgui_push_font_scale(1.5f);
     ImVec2 image_size = ImVec2(64, 64);
     float spacing = 10.0f;
@@ -2353,7 +2353,7 @@ static void draw_album_picker()
         float text_height = ImGui::GetFontSize();
         ImGui::SetCursorPos(region_start);
         imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
-        if (imgui_aligned_text_button(test_album->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
+        if (imgui_aligned_text_button(test_album->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f)))
         {
             ctx.center.edit.changed_info = true;
             ctx.center.edit.album_id = test_album->id;
@@ -2406,7 +2406,6 @@ static void draw_artist_picker()
     ImVec2 region_start = ImGui::GetCursorPos();
     region_start.x += margin;
     region_start.y += margin;
-    ImVec2 region_size = ImGui::GetContentRegionAvail();
     imgui_push_font_scale(1.5f);
     ImVec2 image_size = ImVec2(64, 64);
     float spacing = 10.0f;
@@ -2417,7 +2416,7 @@ static void draw_artist_picker()
         float text_height = ImGui::GetFontSize();
         ImGui::SetCursorPos(region_start);
         imgui_image_button(tex.id, image_size, WHITE, tex.uv0, tex.uv1);
-        if (imgui_aligned_text_button(test_artist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f), region_size))
+        if (imgui_aligned_text_button(test_artist->name.c_str(), ImVec2(region_start.x + image_size.x + 5.0f, region_start.y + (image_size.y - text_height) / 2.0f)))
         {
             ctx.center.edit.changed_info = true;
             ctx.center.edit.artist_id = test_artist->id;
