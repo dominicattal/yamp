@@ -359,6 +359,7 @@ static void imgui_pop_font_scale()
 static void imgui_separator()
 {
     ImVec2 position = ImGui::GetCursorPos();
+    position.y += 1.0f;
     ImGui::Separator();
     ImGui::SetCursorPos(position);
 }
@@ -633,7 +634,6 @@ static void imgui_custom_table(CustomTableParams& params)
     }
     ImGui::SetCursorPos(ImVec2(origin.x, origin.y + params.header_row_height));
     imgui_separator();
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
     ImGui::BeginChild("##table_body", ImGui::GetContentRegionAvail(), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
     float cursor_pos_y = ImGui::GetCursorPosY();
     for (int row = 0; row < params.num_rows; row++)
@@ -4532,7 +4532,7 @@ static void draw_imgui()
     ImGui::EndChild();
 
     ImGui::SetCursorPos(ImVec2(0.0f, header_height));
-    ImGui::Separator();
+    imgui_separator();
 
     ImGui::SetNextWindowPos(ImVec2(0.0f, header_height));
     ImGui::SetNextWindowSize(ImVec2(display_size.x, interface_height));
