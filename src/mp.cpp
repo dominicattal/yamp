@@ -608,6 +608,55 @@ void mp_update_playlist_art(PlaylistID playlist_id, Art& art)
     ctx.conn.update_playlist_art(playlist_id, art);
 }
 
+void mp_merge_albums(AlbumID dst_album_id, AlbumID src_album_id)
+{
+    {
+        std::lock_guard lock{mp_ctx.adding_songs_mutex};
+        mp_ctx.added_albums.erase(
+                std::remove_if(mp_ctx.added_albums.begin(), mp_ctx.added_albums.end(),
+                    [&src_album_id](ArtistID album_id)
+                    {
+                        return album_id == src_album_id;
+                    }),
+                mp_ctx.added_albums.end()
+            );
+    }
+
+    mp_ctx.pins.erase(
+        std::remove_if(mp_ctx.pins.begin(), mp_ctx.pins.end(),
+            [&src_album_id](Pin& pin)
+            {
+                return pin.type == MPUID_ALBUM && pin.album->id == src_album_id;
+            }),
+        mp_ctx.pins.end()
+        );
+
+    if (mp_ctx.current_song.album != nullptr && mp_ctx.current_song.album->id == src_album_id)
+        mp_ctx.current_song.album = mp_get_album(dst_album_id);
+
+    for (SongAlbumArtist& song : mp_ctx.queue)
+        if (song.album != nullptr && song.album->id == src_album_id)
+            song.album = mp_get_album(dst_album_id);
+
+    for (SongAlbumArtist& song : mp_ctx.autoplay_queue)
+        if (song.album != nullptr && song.album->id == src_album_id)
+            song.album = mp_get_album(dst_album_id);
+
+    for (SongAlbumArtistTrack& song_track : mp_ctx.group_queue)
+        if (song_track.album != nullptr && song_track.album->id == src_album_id)
+            song_track.album = mp_get_album(dst_album_id);
+
+
+    mp_ctx.albums.remove(src_album_id);
+    mp_ctx.song_album.clear();
+    mp_ctx.album_artist.clear();
+
+    ctx.conn.begin_transaction();
+    ctx.conn.delete_pin(mp_get_album_uid(src_album_id));
+    ctx.conn.merge_albums(dst_album_id, src_album_id);
+    ctx.conn.commit_transaction();
+}
+
 void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
 {
     {

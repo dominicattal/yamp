@@ -19,7 +19,7 @@ using MPUID = uint64_t;
 #define INVALID_TRACK 0
 #define INVALID_YEAR 0
 
-#define ART_WIDTH 210
+#define ART_WIDTH 256
 #define ART_CHANNELS 4
 #define ART_SIZE (ART_WIDTH * ART_WIDTH * ART_CHANNELS * sizeof(uint8_t))
 
@@ -230,6 +230,7 @@ public:
 
     void update_artist(Artist& artist);
     void update_artist_art(ArtistID artist_id, Art& art);
+    void merge_albums(AlbumID dst_album_id, AlbumID src_album_id);
     void merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id);
 
     void update_playlist(Playlist& playlist);

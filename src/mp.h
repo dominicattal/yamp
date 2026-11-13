@@ -206,6 +206,7 @@ void mp_update_song_album(SongID song_id, AlbumID album_id, int track);
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
 void mp_update_playlist_art(PlaylistID playlist_id, Art& art);
 void mp_update_pin(MPUID pin_uid);
+void mp_merge_albums(AlbumID dst_album_id, AlbumID src_album_id);
 void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id);
 
 void mp_delete_song(SongID song_id);

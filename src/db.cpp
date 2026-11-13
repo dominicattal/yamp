@@ -258,7 +258,7 @@ Art DBConn::get_song_art(SongID song_id)
     Art art{};
     if (blob != nullptr)
     {
-        art.data = new uint8_t[blob_bytes];
+        art.data = static_cast<uint8_t*>(malloc(blob_bytes));
         memcpy(art.data, blob, blob_bytes);
     }
     sqlite3_finalize(stmt);
@@ -301,7 +301,7 @@ Art DBConn::get_album_art(AlbumID album_id)
     Art art{};
     if (blob != nullptr)
     {
-        art.data = new uint8_t[blob_bytes];
+        art.data = static_cast<uint8_t*>(malloc(blob_bytes));
         memcpy(art.data, blob, blob_bytes);
     }
     sqlite3_finalize(stmt);
@@ -325,7 +325,7 @@ Art DBConn::get_artist_art(ArtistID artist_id)
     Art art{};
     if (blob != nullptr)
     {
-        art.data = new uint8_t[blob_bytes];
+        art.data = static_cast<uint8_t*>(malloc(blob_bytes));
         memcpy(art.data, blob, blob_bytes);
     }
     sqlite3_finalize(stmt);
@@ -349,7 +349,7 @@ Art DBConn::get_playlist_art(PlaylistID playlist_id)
     Art art{};
     if (blob != nullptr)
     {
-        art.data = new uint8_t[blob_bytes];
+        art.data = static_cast<uint8_t*>(malloc(blob_bytes));
         memcpy(art.data, blob, blob_bytes);
     }
     sqlite3_finalize(stmt);
@@ -941,6 +941,32 @@ void DBConn::update_artist_art(ArtistID artist_id, Art& art)
     sqlite3_bind_int(stmt, 2, artist_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+}
+
+void DBConn::merge_albums(ArtistID dst_album_id, ArtistID src_album_id)
+{
+    this->begin_transaction();
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE ArtistAlbum SET album_id=?1 WHERE album_id=?2";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, dst_album_id);
+    sqlite3_bind_int(stmt, 2, src_album_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    query = "UPDATE AlbumSong SET album_id=?1 WHERE album_id=?2";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, dst_album_id);
+    sqlite3_bind_int(stmt, 2, src_album_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    query = "DELETE FROM Albums WHERE id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, src_album_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    this->commit_transaction();
 }
 
 void DBConn::merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
