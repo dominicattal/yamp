@@ -61,6 +61,9 @@
 #define DEFAULT_MARGIN 10.0f
 
 #define MAX_HISTORY_SIZE 200
+#if MAX_HISTORY_SIZE <= 0
+#   error "MAX_HISTORY_SIZE must be greater than 0"
+#endif
 
 using Key = int;
 
@@ -253,15 +256,26 @@ struct UIContext {
     bool quick_access_open = true;
     bool queue_open = true;
 
+    // View history keeps track of the views the user has visited.
+    // The cursor tracks the currently selected view. When the user
+    // visits a view anyway besides calling history_next(), then 
+    // the last entry is the current view.
+    //
+    // if view_history_cursor == 0, then the view is CENTER_VIEW_NONE
+    // if view_history_cursor == 1, then the view is the first entry in view_history
+    // if view_history_cursor == view_history.size(), then the view is the last entry in view_history
+    //
+    // dont_push_next_history_entry will not modify the view history when selecting
+    // a different view
     std::deque<std::pair<ViewEnum, GenericID>> view_history;
-    size_t view_history_idx;
+    size_t view_history_cursor;
+    bool dont_push_next_history_entry;
 
     char search_query[256];
 
     bool window_maximized;
 
     bool confirm_delete;
-    bool popped_history;
 
     // for file dialogs
     std::optional<std::future<std::string>> prompt;
@@ -922,10 +936,16 @@ static void delete_texture_with_uid(MPUID uid)
     }
 }
 
-static void push_history_entry()
+static void history_push_entry()
 {
-    if (ctx.popped_history)
+    if (ctx.dont_push_next_history_entry)
+    {
+        ctx.dont_push_next_history_entry = false;
         return;
+    }
+
+    if (ctx.view_history_cursor < ctx.view_history.size())
+        ctx.view_history.resize(ctx.view_history_cursor);
 
     GenericID id = INVALID_ID;
 
@@ -937,13 +957,48 @@ static void push_history_entry()
         id = ctx.center.artist->id;
     else if (ctx.center.type == SHOW_CENTER_PLAYLIST)
         id = ctx.center.playlist->id;
-    else
-        SPDLOG_WARN("Pushing invalid history entry {}", static_cast<int>(ctx.center.type));
         
     ctx.view_history.emplace_back(ctx.center.type, id);
 
     if (ctx.view_history.size() > MAX_HISTORY_SIZE)
         ctx.view_history.pop_front();
+
+    ctx.view_history_cursor = ctx.view_history.size();
+}
+
+static void history_set_next_frame(ViewEnum type, GenericID id)
+{
+    ctx.next_frame_center.type = type;
+    if (type == SHOW_CENTER_SONG)
+        ctx.next_frame_center.song = mp_get_song(id);
+    else if (type == SHOW_CENTER_ALBUM)
+        ctx.next_frame_center.album = mp_get_album(id);
+    else if (type == SHOW_CENTER_ARTIST)
+        ctx.next_frame_center.artist = mp_get_artist(id);
+    else if (type == SHOW_CENTER_PLAYLIST)
+        ctx.next_frame_center.playlist = mp_get_playlist(id);
+}
+
+static void history_previous()
+{
+    ctx.dont_push_next_history_entry = true;
+    if (ctx.view_history_cursor <= 1)
+    {
+        ctx.next_frame_center.type = SHOW_CENTER_NONE;
+        ctx.view_history_cursor = 0;
+        return;
+    }
+    auto [view_type, id] = ctx.view_history[ctx.view_history_cursor - 2];
+    --ctx.view_history_cursor;
+    history_set_next_frame(view_type, id);
+}
+
+static void history_next()
+{
+    assert(ctx.view_history_cursor <= ctx.view_history.size());
+    ctx.dont_push_next_history_entry = true;
+    auto [view_type, id] = ctx.view_history[ctx.view_history_cursor++];
+    history_set_next_frame(view_type, id);
 }
 
 // this has to be called after the objects have been moved bc those objects
@@ -981,30 +1036,29 @@ static void reset_center_view_containers()
     ctx.center.show = SHOW_NONE;
     ctx.center.show_split = SHOW_NONE;
     ctx.confirm_delete = false;
-    ctx.popped_history = false;
     if (ctx.center.edit.art.data != nullptr)
         ctx.center.edit.art.clear();
 }
 
 static void set_center_view_lyrics()
 {
-    push_history_entry();
     ctx.center.type = SHOW_CENTER_LYRICS;
     reset_center_view_containers();
+    history_push_entry();
 }
 
 static void set_center_view_home()
 {
-    push_history_entry();
     ctx.center.type = SHOW_CENTER_HOME;
     reset_center_view_containers();
+    history_push_entry();
 }
 
 static void set_center_view_settings()
 {
-    push_history_entry();
     ctx.center.type = SHOW_CENTER_SETTINGS;
     reset_center_view_containers();
+    history_push_entry();
 }
 
 static void refresh_added_songs()
@@ -1065,14 +1119,6 @@ static void refresh_added_songs()
     }
 }
 
-static void set_center_view_edit()
-{
-    push_history_entry();
-    ctx.center.type = SHOW_CENTER_EDIT;
-    reset_center_view_containers();
-    refresh_added_songs();
-}
-
 static void set_edit_art_slot(MPUID uid)
 {
     if (ctx.textures.slot_map.find(uid) == ctx.textures.slot_map.end())
@@ -1110,10 +1156,16 @@ static void update_from_edit_art_slot(MPUID uid)
     }
 }
 
+static void set_center_view_edit()
+{
+    ctx.center.type = SHOW_CENTER_EDIT;
+    reset_center_view_containers();
+    refresh_added_songs();
+    history_push_entry();
+}
+
 static void set_center_view_song(LruCacheRef<Song>&& song)
 {
-    push_history_entry();
-
     ctx.center.type = SHOW_CENTER_SONG;
     reset_center_view_containers();
 
@@ -1142,12 +1194,12 @@ static void set_center_view_song(LruCacheRef<Song>&& song)
     ctx.center.edit.volume = ctx.center.song->volume;
 
     set_edit_art_slot(mp_get_song_uid(ctx.center.song->id));
+
+    history_push_entry();
 }
 
 static void set_center_view_album(LruCacheRef<Album>&& album)
 {
-    push_history_entry();
-
     ctx.center.type = SHOW_CENTER_ALBUM;
     reset_center_view_containers();
 
@@ -1174,12 +1226,12 @@ static void set_center_view_album(LruCacheRef<Album>&& album)
     ctx.center.edit.year = ctx.center.album->year;
 
     set_edit_art_slot(mp_get_album_uid(ctx.center.album->id));
+
+    history_push_entry();
 }
 
 static void set_center_view_playlist(LruCacheRef<Playlist>&& playlist)
 {
-    push_history_entry();
-
     ctx.center.type = SHOW_CENTER_PLAYLIST;
     reset_center_view_containers();
 
@@ -1199,12 +1251,12 @@ static void set_center_view_playlist(LruCacheRef<Playlist>&& playlist)
     snprintf(ctx.center.edit.playlist, sizeof(ctx.center.edit.playlist), "%s", ctx.center.playlist->name.c_str());
 
     set_edit_art_slot(mp_get_playlist_uid(ctx.center.playlist->id));
+
+    history_push_entry();
 }
 
 static void set_center_view_artist(LruCacheRef<Artist>&& artist)
 {
-    push_history_entry();
-
     ctx.center.type = SHOW_CENTER_ARTIST;
     reset_center_view_containers();
 
@@ -1219,12 +1271,12 @@ static void set_center_view_artist(LruCacheRef<Artist>&& artist)
     snprintf(ctx.center.edit.artist, sizeof(ctx.center.edit.artist), "%s", ctx.center.artist->name.c_str());
 
     set_edit_art_slot(mp_get_artist_uid(ctx.center.artist->id));
+
+    history_push_entry();
 }
 
 static void set_center_view_search()
 {
-    push_history_entry();
-
     ctx.center.type = SHOW_CENTER_SEARCH;
     reset_center_view_containers();
 
@@ -1236,12 +1288,15 @@ static void set_center_view_search()
         ctx.center.artist_search_result = mp_search_artists(ctx.search_query, SEARCH_RESULTS_PER_PAGE, 1);
     else if (ctx.center.search_result_type == SEARCH_TYPE_PLAYLIST)
         ctx.center.playlist_search_result = mp_search_playlists(ctx.search_query, SEARCH_RESULTS_PER_PAGE, 1);
+
+    history_push_entry();
 }
 
 static void set_next_frame_center_view()
 {
-    if (ctx.popped_history && ctx.next_frame_center.type == SHOW_CENTER_NONE)
+    if (ctx.dont_push_next_history_entry && ctx.next_frame_center.type == SHOW_CENTER_NONE)
     {
+        ctx.dont_push_next_history_entry = false;
         ctx.center.type = SHOW_CENTER_NONE;
         reset_center_view_containers();
     }
@@ -3703,28 +3758,6 @@ static void draw_artist_info()
     ImGui::EndChild();
 }
 
-static void pop_history()
-{
-    ctx.popped_history = true;
-    if (ctx.view_history.empty())
-    {
-        ctx.next_frame_center.type = SHOW_CENTER_NONE;
-        return;
-    }
-    auto [view_type, id] = ctx.view_history.back();
-    ctx.next_frame_center.type = view_type;
-    ctx.view_history.pop_back();
-
-    if (view_type == SHOW_CENTER_SONG)
-        ctx.next_frame_center.song = mp_get_song(id);
-    else if (view_type == SHOW_CENTER_ALBUM)
-        ctx.next_frame_center.album = mp_get_album(id);
-    else if (view_type == SHOW_CENTER_ARTIST)
-        ctx.next_frame_center.artist = mp_get_artist(id);
-    else if (view_type == SHOW_CENTER_PLAYLIST)
-        ctx.next_frame_center.playlist = mp_get_playlist(id);
-}
-
 static void draw_header(ImVec2 size)
 {
     const float advance = 10.0f;
@@ -3763,19 +3796,27 @@ static void draw_header(ImVec2 size)
 
     ImGui::SameLine();
 
-    const bool history_non_empty = ctx.view_history.empty() && ctx.center.type == SHOW_CENTER_NONE;
-    if (history_non_empty)
+    const bool history_has_previous = ctx.view_history_cursor == 0;
+    if (history_has_previous)
         ImGui::BeginDisabled();
 
     ImGui::SetCursorPos(ImVec2(size.x - button_size.x * 2 - advance * 3, (size.y - button_size.y) / 2.0f));
     if (imgui_image_button(ctx.textures.play_button.id, button_size, WHITE, UV0_INVERTED_HORIZONTALLY, UV1_INVERTED_HORIZONTALLY))
-        pop_history();
+        history_previous();
+
+    if (history_has_previous)
+        ImGui::EndDisabled();
+
+    const bool history_has_next = ctx.view_history_cursor >= ctx.view_history.size();
+    if (history_has_next)
+        ImGui::BeginDisabled();
+
     ImGui::SameLine();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + advance);
     if (imgui_image_button(ctx.textures.play_button.id, button_size))
-        pop_history();
+        history_next();
 
-    if (history_non_empty)
+    if (history_has_next)
         ImGui::EndDisabled();
 }
 
@@ -4277,6 +4318,9 @@ static void draw_debug_info()
         ImGui::Text("Song History size: %zu", mp_ctx.song_history.size());
         ImGui::Text("Max num slots: %d", ctx.textures.num_slots);
         ImGui::Text("Num slots in use: %zd", ctx.textures.num_slots - ctx.textures.free_slot_textures.size());
+        ImGui::Text("View History Size: %zu", ctx.view_history.size());
+        ImGui::Text("View History Cursor: %zu", ctx.view_history_cursor);
+        ImGui::Text("ctx.dont_push_next_history_entry: %d", ctx.dont_push_next_history_entry);
 
         static int log_level = SPDLOG_LEVEL_TRACE;
         const char* log_levels[] = {
