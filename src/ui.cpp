@@ -2775,7 +2775,12 @@ static void draw_song_info_edit()
     {
         SongID song_id = ctx.center.song->id;
         ctx.next_frame_center.type = SHOW_CENTER_HOME;
+        destroy_cache_references();
         mp_delete_song(song_id);
+        imgui_pop_font_scale();
+        ImGui::EndChild();
+        ImGui::EndTable();
+        return;
     }
 
     ImGui::SetCursorPosX(col_1_cursor_x);
@@ -3176,7 +3181,12 @@ static void draw_album_info_edit()
     {
         AlbumID album_id = ctx.center.album->id;
         ctx.next_frame_center.type = SHOW_CENTER_HOME;
+        destroy_cache_references();
         mp_delete_album(album_id);
+        imgui_pop_font_scale();
+        ImGui::EndChild();
+        ImGui::EndTable();
+        return;
     }
     imgui_pop_font_scale(); 
     ImGui::Dummy({0.0f, 8.0f});
@@ -3410,7 +3420,12 @@ static void draw_playlist_info_edit()
     {
         PlaylistID playlist_id = ctx.center.playlist->id;
         ctx.next_frame_center.type = SHOW_CENTER_HOME;
+        destroy_cache_references();
         mp_delete_playlist(playlist_id);
+        imgui_pop_font_scale();
+        ImGui::EndChild();
+        ImGui::EndTable();
+        return;
     }
 
     imgui_pop_font_scale(); 
@@ -3698,8 +3713,12 @@ static void draw_artist_info_edit()
     {
         ArtistID artist_id = ctx.center.artist->id;
         ctx.next_frame_center.type = SHOW_CENTER_HOME;
+        destroy_cache_references();
         mp_delete_artist(artist_id);
         imgui_pop_font_scale();
+        ImGui::EndChild();
+        ImGui::EndTable();
+        return;
     }
     ImGui::SetCursorPosX(col_1_cursor_x);
     if (imgui_button("Merge"))
