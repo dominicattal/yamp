@@ -8,6 +8,7 @@
 int main(int argc, char** argv)
 {
     spdlog::set_pattern("[%^%l%$] [%s:%#] %v");
+    spdlog::set_level(spdlog::level::trace);
     if (argc == 1)
     {
         SPDLOG_ERROR("Missing config file path");

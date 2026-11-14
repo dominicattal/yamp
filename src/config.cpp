@@ -31,6 +31,7 @@ bool config_load(const char* path)
         return false;
     }
 
+    SPDLOG_INFO("DB path: {}", config.db_path);
     if (config.db_path.size() == 0)
     {
         SPDLOG_ERROR("Missing db_path in config file {}", path);

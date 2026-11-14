@@ -7,22 +7,82 @@ random_cover_art = sqlite3.Binary(bytes([randrange(0,256) for _ in range(cover_a
 
 test_song_path = "assets/music/ChopinFourteenWaltzes/06 No. 6 in D flat, Op. 64 No. 1 Minute valse.mp3"
 
-db_path = "build/test1M.db"
+db_path = "build/test.db"
 try:
     os.remove(db_path)
 except:
     pass
 
-con = sqlite3.connect(db_path)
-cur = con.cursor()
+conn = sqlite3.connect(db_path)
+cur = conn.cursor()
 
-schema_file = open("assets/sql/schema.sql", "r")
-schema = schema_file.read()
-schema_file.close()
+schema = """
+    CREATE TABLE IF NOT EXISTS Songs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(256),
+        path VARCHAR(256),
+        cover BLOB,
+        length REAL,
+        volume REAL DEFAULT 1.0,
+        year INT,
+        lyrics TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS SongNameIndex ON Songs(name);
+
+    CREATE TABLE IF NOT EXISTS Albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(256),
+        cover BLOB,
+        year INT,
+        length REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS Artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(256),
+        picture BLOB
+    );
+
+    CREATE TABLE IF NOT EXISTS Playlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(256),
+        cover BLOB,
+        length REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS ArtistAlbum (
+        artist_id INTEGER,
+        album_id INTEGER PRIMARY KEY
+    );
+
+    CREATE TABLE IF NOT EXISTS ArtistSong (
+        artist_id INTEGER,
+        song_id INTEGER PRIMARY KEY
+    );
+
+    CREATE TABLE IF NOT EXISTS AlbumSong (
+        album_id INTEGER,
+        song_id INTEGER PRIMARY KEY,
+        track INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS PlaylistSong (
+        playlist_id INTEGER,
+        song_id INTEGER,
+        track INTEGER,
+        PRIMARY KEY (playlist_id, song_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS Pins (
+        uid INTEGER PRIMARY KEY,
+        last_accessed INTEGER
+    );
+"""
 
 cur.executescript(schema)
 
-N = 1000000
+N = 100000
 
 artist_num = 0
 tot_num_songs = 0
@@ -36,7 +96,7 @@ while tot_num_songs < N:
                     [[artist_num+1, album_num+tot_num_albums+1] for album_num in range(num_albums)])
     for album_num in range(num_albums):
         num_songs = min(randrange(12, 100), N - tot_num_songs)
-        cur.executemany("INSERT INTO Songs (title, path, cover) VALUES (?, ?, ?)", 
+        cur.executemany("INSERT INTO Songs (name, path, cover) VALUES (?, ?, ?)", 
                         [[f"Song {song_num+tot_num_songs+1}", test_song_path, random_cover_art] for song_num in range(num_songs)])
         cur.executemany("INSERT INTO AlbumSong (album_id, song_id, track) VALUES (?, ?, ?)",
                         [(album_num+tot_num_albums+1, song_num+tot_num_songs+1, song_num+1) for song_num in range(num_songs)])
@@ -47,6 +107,6 @@ while tot_num_songs < N:
     tot_num_albums += num_albums
     artist_num += 1
 
-con.commit()
+conn.commit()
 
-con.close()
+conn.close()

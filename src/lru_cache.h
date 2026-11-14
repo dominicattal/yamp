@@ -5,7 +5,6 @@
 #include <functional>
 #include <unordered_map>
 #include <list>
-//#include <spdlog/spdlog.h>
 
 template<typename val_t>
 class LruCache;
@@ -52,11 +51,14 @@ public:
         if (this == &other)
             return *this;
 
+        release();
+
         m_lru_cache = other.m_lru_cache;
         m_key = other.m_key;
         m_ptr = std::move(other.m_ptr);
         other.m_lru_cache = nullptr;
         other.m_key = 0;
+        other.m_ptr = nullptr;
         return *this;
     }
 
@@ -73,9 +75,14 @@ public:
     operator bool() { return m_ptr != nullptr; }
     operator val_t*() { return m_ptr; }
 
-    bool operator==(std::nullptr_t)
+    bool operator==(std::nullptr_t) const
     {
-        return m_lru_cache == nullptr;
+        return m_ptr == nullptr;
+    }
+
+    bool operator!=(std::nullptr_t) const
+    {
+        return m_ptr != nullptr;
     }
 
     val_t* get()
@@ -135,12 +142,11 @@ public:
     using Iterator = typename std::list<LruCacheEntry>::iterator;
 
     LruCache()
-        : m_max_size{256}, m_list{}, m_destructor_callback{}, m_map{}
+        : m_max_size{0}, m_list{}, m_destructor_callback{}, m_map{}
     {
     }
     LruCacheRef<val_t> get(int key)
     {
-        //SPDLOG_INFO("LruCache<{}> get {}", typeid(val_t).name(), key);
         if (auto it = m_map.find(key); it != m_map.end())
         {
             ++it->second->ref_count;
@@ -151,7 +157,6 @@ public:
     }
     LruCacheRef<val_t> put(int key, val_t&& val)
     {
-        //SPDLOG_INFO("LruCache<{}> put {}", typeid(val_t).name(), key);
         assert(m_map.find(key) == m_map.end());
         m_list.emplace_front(1, key, std::move(val));
         m_map[key] = m_list.begin();
@@ -176,6 +181,16 @@ public:
     void set_destructor_callback(DestructorCallback callback)
     {
         m_destructor_callback = callback;
+    }
+    void remove(int key)
+    {
+        auto it = m_map.find(key);
+        if (it == m_map.end())
+            return;
+
+        assert(it->second->ref_count == 0);
+        m_list.erase(it->second);
+        m_map.erase(it);
     }
     void clear()
     {

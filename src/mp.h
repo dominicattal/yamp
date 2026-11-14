@@ -12,36 +12,52 @@
 #include <future>
 
 #define HISTORY_MAX_SIZE 1000
-#define TEXTURE_SIZE_BITS 12
-#define LARGE_COVER_ART_SIZE_BITS 8
-#define SMALL_COVER_ART_SIZE_BITS 6
-#define TEXTURE_SIZE (1<<TEXTURE_SIZE_BITS)
-#define LARGE_COVER_ART_SIZE (1<<LARGE_COVER_ART_SIZE_BITS)
-#define SMALL_COVER_ART_SIZE (1<<SMALL_COVER_ART_SIZE_BITS)
-#define SLOTS_PER_TEXTURE (1<<(TEXTURE_SIZE_BITS<<1)>>(LARGE_COVER_ART_SIZE_BITS<<1))
-#define MAX_LYRICS_SIZE (1<<15)
+#define MAX_LYRICS_SIZE 4096
+#define TEXTURE_SIZE 4096
+#define SLOTS_ACROSS (TEXTURE_SIZE / ART_WIDTH)
+#define SLOTS_PER_TEXTURE (SLOTS_ACROSS * SLOTS_ACROSS)
 
 struct SongTrack {
     LruCacheRef<Song> song;
     int track;
 };
 
+struct SongAlbumArtistTrack {
+    LruCacheRef<Song> song;
+    LruCacheRef<Album> album;
+    LruCacheRef<Artist> artist;
+    int track;
+};
+
+using SongAlbumArtist = SongAlbumArtistTrack;
+using SongAlbum = SongAlbumArtistTrack;
+
 struct Pin {
     LruCacheRef<Song> song;
     LruCacheRef<Album> album;
     LruCacheRef<Artist> artist;
     LruCacheRef<Playlist> playlist;
+    MPUID uid;
     MPUIDEnum type;
-    int order;
+    uint64_t last_accessed;
 };
 
 template<typename T>
 struct SearchResult {
-    std::vector<LruCacheRef<T>> entries;
+    std::vector<T> entries;
     int page_num;
     int num_pages;
     int results_per_page;
     int num_results;
+
+    void clear()
+    {
+        entries.clear();
+        page_num = 0;
+        num_pages = 0;
+        results_per_page = 0;
+        num_results = 0;
+    }
 };
 
 struct MPContext {
@@ -55,28 +71,25 @@ struct MPContext {
     LruCache<AlbumID> song_album;
     LruCache<ArtistID> album_artist;
 
-    LruCacheRef<Song> current_song;
-    LruCacheRef<Artist> current_song_artist;
-    LruCacheRef<Album> current_song_album;
-    char current_song_lyrics[MAX_LYRICS_SIZE];
-
     int num_songs;
     int num_albums;
     int num_artists;
     int num_playlists;
 
     // in seconds
+    SongAlbumArtist current_song;
     float current_song_cursor;
     float current_song_length;
+    char current_song_lyrics[MAX_LYRICS_SIZE];
 
     // this stores songs the user explicity queues up
-    std::deque<LruCacheRef<Song>> queue;
+    std::deque<SongAlbumArtist> queue;
 
     // this stores songs that come on autoplay
-    std::deque<LruCacheRef<Song>> autoplay_queue;
+    std::deque<SongAlbumArtist> autoplay_queue;
 
     // this stores the order songs should be played in the group
-    std::deque<SongTrack> group_queue;
+    std::deque<SongAlbumArtistTrack> group_queue;
 
     // this stores the history of played songs
     std::deque<SongID> song_history;
@@ -86,7 +99,7 @@ struct MPContext {
     // true if group is album, false otherwise
     bool group_is_album;
     // album_id if group_is_album == true, playlist_id otherwise
-    int group_id;
+    GenericID group_id;
 
     bool mute;
     float volume;
@@ -100,8 +113,10 @@ struct MPContext {
 
     LoopMode loop_mode;
 
-    std::vector<Pin> pins;
+    std::deque<Pin> pins;
 
+    // Avoid using a lock by using num_songs_added instead of
+    // reading the changing added_songs vector
     bool adding_songs;
     int num_songs_added;
     int num_songs_to_add;
@@ -124,14 +139,11 @@ void mp_update();
 
 // Add a song to the database. Right now, just add it to the database whether or not it exists already.
 // Eventually, flow should be like preview song in ui -> add config -> choose to save to database
-void mp_add_song(std::string&& song_path);
 void mp_add_songs(std::vector<std::string>&& song_paths);
-void mp_recursive_add_songs(const std::string& folder_path);
+// Folder paths delimited by '\n'
+void mp_recursive_add_songs(const std::string& folder_paths);
 // When finished adding song, call this to destroy objects in mp_ctx.loaded_songs
-void mp_reset_loaded_songs();
-
-// Add a playlist to the database. Returns the id of the created playlist.
-void mp_rename_playlist(PlaylistID playlist_id, const char* new_playlist_name);
+void mp_reset_added_songs();
 
 // Immediately play a song
 void mp_play_song(SongID song_id);
@@ -154,12 +166,13 @@ void mp_play_playlist(PlaylistID playlist_id);
 void mp_play_album(AlbumID album_id);
 
 // Search for songs based on query
-SearchResult<Song> mp_search_songs(const char* search_query, int results_per_page, int page_num);
-SearchResult<Album> mp_search_albums(const char* search_query, int results_per_page, int page_num);
-SearchResult<Artist> mp_search_artists(const char* search_query, int results_per_page, int page_num);
-SearchResult<Playlist> mp_search_playlists(const char* search_query, int results_per_page, int page_num);
+SearchResult<SongAlbumArtist> mp_search_songs(const char* search_query, int results_per_page, int page_num);
+SearchResult<LruCacheRef<Album>> mp_search_albums(const char* search_query, int results_per_page, int page_num);
+SearchResult<LruCacheRef<Artist>> mp_search_artists(const char* search_query, int results_per_page, int page_num);
+SearchResult<LruCacheRef<Playlist>> mp_search_playlists(const char* search_query, int results_per_page, int page_num);
 
-SearchResult<Song> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
+SearchResult<SongAlbum> mp_get_paginated_songs_from_artist(ArtistID artist_id, int results_per_page, int page_num);
+SearchResult<LruCacheRef<Album>> mp_get_paginated_albums_from_artist(ArtistID artist_id, int results_per_page, int page_num);
 
 LruCacheRef<Song> mp_get_song(SongID song_id);
 LruCacheRef<Album> mp_get_album(AlbumID album_id);
@@ -182,14 +195,24 @@ std::vector<LruCacheRef<Playlist>> mp_get_playlists();
 void mp_get_song_lyrics(SongID song_id, char* lryics_buffer, size_t lyrics_buffer_size);
 void mp_update_song(Song& song);
 void mp_update_song_lyrics(SongID song_id, const char* lyrics);
-void mp_update_song_art(SongID song_id, Art* art);
+void mp_update_song_art(SongID song_id, Art& art);
 void mp_update_album(Album& album);
 void mp_update_artist(Artist& artist);
-void mp_update_artist_art(ArtistID artist_id, Art* art);
-void mp_update_album_art(AlbumID album_id, Art* art);
+void mp_update_playlist(Playlist& playlist);
+void mp_update_artist_art(ArtistID artist_id, Art& art);
+void mp_update_album_art(AlbumID album_id, Art& art);
 void mp_update_song_artist(SongID song_id, ArtistID artist_id);
 void mp_update_song_album(SongID song_id, AlbumID album_id, int track);
 void mp_update_album_artist(AlbumID album_id, ArtistID artist_id);
+void mp_update_playlist_art(PlaylistID playlist_id, Art& art);
+void mp_update_pin(MPUID pin_uid);
+void mp_merge_albums(AlbumID dst_album_id, AlbumID src_album_id);
+void mp_merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id);
+
+void mp_delete_song(SongID song_id);
+void mp_delete_album(AlbumID album_id);
+void mp_delete_artist(ArtistID artist_id);
+void mp_delete_playlist(PlaylistID playlist_id);
 
 void mp_update_album_songs_year(AlbumID album_id, int year);
 void mp_update_album_songs_art(AlbumID album_id);
@@ -199,24 +222,26 @@ LruCacheRef<Album> mp_create_album();
 LruCacheRef<Artist> mp_create_artist();
 LruCacheRef<Playlist> mp_create_playlist();
 
-void mp_pin_song(SongID song_id);
-void mp_pin_album(AlbumID album_id);
-void mp_pin_artist(ArtistID artist_id);
-void mp_pin_playlist(PlaylistID playlist_id);
+bool mp_uid_pinned(MPUID uid);
+bool mp_toggle_pin_song(SongID song_id);
+bool mp_toggle_pin_album(AlbumID album_id);
+bool mp_toggle_pin_artist(ArtistID artist_id);
+bool mp_toggle_pin_playlist(PlaylistID playlist_id);
 
-void mp_add_song_to_playlist(SongID song_id, int playlist_id);
-void mp_add_album_to_playlist(AlbumID album_id, int playlist_id);
+void mp_add_song_to_playlist(SongID song_id, PlaylistID playlist_id);
+void mp_add_album_to_playlist(AlbumID album_id, PlaylistID playlist_id);
 
 Art mp_get_song_art(SongID song_id);
 Art mp_get_album_art(AlbumID album_id);
+Art mp_get_artist_art(ArtistID artist_id);
+Art mp_get_playlist_art(PlaylistID playlist_id);
 Art mp_get_art(MPUID uid);
-void mp_free_art(Art* art);
 
 // Skip current song in queue
 void mp_play_previous();
 void mp_play_next();
-void mp_go_backward_in_current_song(float seconds);
-void mp_go_forward_in_current_song(float seconds);
+void mp_go_backward_in_current_song(float seconds = 5.0f);
+void mp_go_forward_in_current_song(float seconds = 5.0f);
 void mp_queue_clear();
 
 MPUID mp_get_uid(int id, MPUIDEnum type);
