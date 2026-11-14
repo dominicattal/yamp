@@ -1,6 +1,7 @@
 #include "mp.h"
 #include "config.h"
 #include <iostream>
+#include <vector>
 #include <filesystem>
 #include <algorithm>
 #include <fstream>
@@ -16,6 +17,7 @@
 #include <spdlog/spdlog.h>
 #include <stb_image.h>
 #include <stb_image_resize2.h>
+#include <stb_image_write.h>
 #include <thread>
 #include <condition_variable>
 
@@ -53,7 +55,8 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
 {
     TagLib::FileRef mp3_file_ref(song_path.c_str());
 
-    if (mp3_file_ref.isNull() || !mp3_file_ref.tag()) {
+    if (mp3_file_ref.isNull() || !mp3_file_ref.tag())
+    {
         SPDLOG_ERROR("Could not read {}", song_path);
         return;
     }
@@ -70,15 +73,23 @@ static void add_song_from_path(DBConn& conn, const std::string& song_path)
         return;
     }
 
-    auto get_song_art_data = [&mp3_file_ref]() -> Art
+    auto get_song_art_data =
+        [&mp3_file_ref]() -> Art
         {
             Art art{};
             TagLib::List<TagLib::VariantMap> props = mp3_file_ref.complexProperties("PICTURE");
+
             if (props.isEmpty())
                 return art;
+
             const TagLib::VariantMap& map = props.front();
+
             if (!map.contains("data"))
                 return art;
+
+            if (!map.contains("pictureType") || map["pictureType"] != "Front Cover")
+                return art;
+            
             int input_w, input_h, nc;
             const TagLib::ByteVector data = map["data"].toByteVector();
             uint8_t* raw_art_data = stbi_load_from_memory(reinterpret_cast<const uint8_t*>(data.data()), data.size(), &input_w, &input_h, &nc, ART_CHANNELS);
@@ -291,8 +302,12 @@ static void end_song_callback(void* user_data, ma_sound* sound)
 
 void mp_play_song(SongID song_id)
 {
+    if (mp_ctx.current_song.song != nullptr)
+        mp_ctx.song_history.push_back(mp_ctx.current_song.song->id);
+
     if (ctx.current_song_loaded)
         ma_sound_uninit(&ctx.current_song_sound);
+
     LruCacheRef<Song> song = mp_get_song(song_id);
     ma_sound_config config = ma_sound_config_init();
     config.channelsIn = 1;
@@ -895,6 +910,132 @@ void mp_update_album_songs_art(AlbumID album_id)
     ctx.conn.update_album_songs_art(album_id);
 }
 
+static void append_bytes(void* ctx, void* data, int size)
+{
+    auto* out = static_cast<std::vector<unsigned char>*>(ctx);
+    auto* p = static_cast<unsigned char*>(data);
+    out->insert(out->end(), p, p + size);
+}
+
+static void update_song_metadata(DBConn& conn, SongID song_id)
+{
+    Song song = conn.get_song_info(song_id);
+
+    {
+        std::lock_guard lock{mp_ctx.adding_songs_mutex};
+        mp_ctx.adding_songs_current_path = song.path;
+    }
+
+    TagLib::FileRef mp3_file_ref(song.path.c_str());
+
+    if (mp3_file_ref.isNull() || !mp3_file_ref.tag())
+    {
+        SPDLOG_ERROR("Could not read {}", song.path);
+        return;
+    }
+
+    TagLib::Tag* tag = mp3_file_ref.tag();
+
+    tag->setTitle(TagLib::String(song.name, TagLib::String::UTF8));
+    tag->setYear(song.year);
+
+    int track = conn.get_song_track(song_id);
+    tag->setTrack(track);
+
+    Album album{};
+    AlbumID album_id = conn.get_album_from_song(song_id);
+    if (album_id != INVALID_ID)
+    {
+        album = conn.get_album_info(album_id);
+    }
+    tag->setAlbum(TagLib::String(album.name, TagLib::String::UTF8));
+
+    Artist artist{};
+    ArtistID artist_id = conn.get_artist_from_song(song_id);
+    if (artist_id != INVALID_ID)
+    {
+        artist = conn.get_artist_info(artist_id);
+    }
+    tag->setArtist(TagLib::String(artist.name, TagLib::String::UTF8));
+
+    Art art = conn.get_song_art(song_id);
+    TagLib::List<TagLib::VariantMap> pictures;
+    if (art.data != nullptr)
+    {
+        std::vector<unsigned char> encoded{};
+        stbi_write_png_to_func(append_bytes, &encoded, ART_WIDTH, ART_WIDTH, ART_CHANNELS, art.data, ART_WIDTH * ART_CHANNELS);
+
+        TagLib::VariantMap picture;
+        TagLib::ByteVector byte_vector(reinterpret_cast<const char*>(encoded.data()), static_cast<unsigned int>(encoded.size()));
+        picture.insert("data", byte_vector);
+        picture.insert("description", TagLib::String(""));
+        picture.insert("mimeType", TagLib::String("image/png"));
+        picture.insert("pictureType", TagLib::String("Front Cover"));
+        pictures.append(picture);
+    }
+    tag->setComplexProperties("PICTURE", pictures);
+
+    mp3_file_ref.save();
+}
+
+void mp_update_song_metadata(SongID song_id)
+{
+    DBConn conn{config.db_path.c_str()};
+    mp_ctx.num_songs_to_add = 1;
+    mp_ctx.num_songs_added = 0;
+    mp_ctx.adding_songs = true;
+    update_song_metadata(conn, song_id);
+    mp_ctx.adding_songs = false;
+}
+
+void mp_update_album_metadata(AlbumID album_id)
+{
+    DBConn conn{config.db_path.c_str()};
+    std::vector<SongTrackID> song_ids = conn.get_songs_from_album(album_id);
+    mp_ctx.num_songs_to_add = song_ids.size();
+    mp_ctx.num_songs_added = 0;
+    mp_ctx.adding_songs = true;
+    for (auto& [song_id, track] : song_ids)
+        update_song_metadata(conn, song_id);
+    mp_ctx.adding_songs = false;
+}
+
+void mp_update_artist_metadata(ArtistID artist_id)
+{
+    DBConn conn{config.db_path.c_str()};
+    std::vector<SongID> song_ids = conn.get_songs_from_artist(artist_id);
+    mp_ctx.num_songs_to_add = song_ids.size();
+    mp_ctx.num_songs_added = 0;
+    mp_ctx.adding_songs = true;
+    for (size_t i = 0; i < song_ids.size(); i++)
+    {
+        update_song_metadata(conn, song_ids[i]);
+        mp_ctx.num_songs_added = i;
+    }
+    mp_ctx.adding_songs = false;
+}
+
+void mp_update_all_metadata()
+{
+    DBConn conn{config.db_path.c_str()};
+    int page_num = 1;
+    const int results_per_page = 20;
+    SearchResultID<SongID> songs = conn.search_songs("", results_per_page, page_num);
+    mp_ctx.num_songs_to_add = songs.num_results;
+    mp_ctx.num_songs_added = 0;
+    mp_ctx.adding_songs = true;
+    while (page_num <= songs.num_pages)
+    {
+        for (size_t i = 0; i < songs.entries.size(); i++)
+        {
+            update_song_metadata(conn, songs.entries[i]);
+            mp_ctx.num_songs_added = results_per_page * (page_num - 1) + static_cast<int>(i);
+        }
+        page_num++;
+    }
+    mp_ctx.adding_songs = false;
+}
+
 LruCacheRef<Artist> mp_create_artist()
 {
     Artist artist{};
@@ -1323,13 +1464,11 @@ static void play_next_group_song()
 
 void mp_play_next()
 {
-    if (mp_ctx.current_song.song != nullptr)
-        mp_ctx.song_history.push_back(mp_ctx.current_song.song->id);
-
     if (mp_ctx.loop_mode == LOOP_TRACK && mp_ctx.current_song.song != nullptr) {
         mp_play_song(mp_ctx.current_song.song->id);
         return;
     }
+
     mp_ctx.paused = false;
     if (mp_ctx.queue.size() == 0) {
         if (mp_ctx.playing_group) {

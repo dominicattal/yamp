@@ -217,6 +217,11 @@ void mp_delete_playlist(PlaylistID playlist_id);
 void mp_update_album_songs_year(AlbumID album_id, int year);
 void mp_update_album_songs_art(AlbumID album_id);
 
+void mp_update_song_metadata(SongID song_id);
+void mp_update_album_metadata(AlbumID album_id);
+void mp_update_artist_metadata(ArtistID artist_id);
+void mp_update_all_metadata();
+
 LruCacheRef<Song> mp_create_song();
 LruCacheRef<Album> mp_create_album();
 LruCacheRef<Artist> mp_create_artist();
