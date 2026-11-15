@@ -185,6 +185,8 @@ LruCacheRef<Artist> mp_get_artist_from_album(AlbumID album_id);
 
 int mp_get_song_track(SongID song_id);
 
+int mp_get_highest_album_track(AlbumID album_id);
+
 std::vector<SongTrackID> mp_get_songs_from_album(AlbumID album_id);
 std::vector<SongTrackID> mp_get_songs_from_playlist(PlaylistID playlist_id);
 std::vector<SongID> mp_get_songs_from_artist(ArtistID artist_id);

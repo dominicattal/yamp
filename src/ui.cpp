@@ -2374,11 +2374,11 @@ static void draw_search_results()
 
         if (glfw_key_down(ctx.key_bindings.reset_table))
         {
-            float width = ImGui::GetContentRegionAvail().x;
+            length_col_right_offset = 100.0f;
+            float width = ImGui::GetContentRegionAvail().x - length_col_right_offset;
             float offset = width / 3.0f;
             artist_col_offset = name_col_offset + offset;
             album_col_offset = name_col_offset + 2 * offset;
-            length_col_right_offset = 100.0f;
         }
 
         DrawSongTableParams params{};
@@ -2778,6 +2778,7 @@ static void draw_song_info_edit()
                     ctx.center.edit.changed_info = true;
                     ctx.center.edit.album_id = album->id;
                     snprintf(ctx.center.edit.album, sizeof(ctx.center.edit.album), "%s", album->name.c_str());
+                    ctx.center.edit.track = mp_get_highest_album_track(album->id) + 1;
                     LruCacheRef<Artist> artist = mp_get_artist_from_album(album->id);
                     ctx.center.edit.artist_id = artist->id;
                     snprintf(ctx.center.edit.artist, sizeof(ctx.center.edit.artist), "%s", artist->name.c_str());
@@ -3163,8 +3164,14 @@ static void draw_album_info_edit()
             draw_album_picker(
                 [](LruCacheRef<Album>& album)
                 {
+                    ctx.center.show_split = SHOW_NONE;
+
                     AlbumID dst_album_id = album->id; 
                     AlbumID src_album_id = ctx.center.album->id;
+
+                    if (dst_album_id == src_album_id)
+                        return;
+
                     ctx.center.album.release();
                     ctx.center.album_search_result.clear();
                     ctx.center.added_albums.clear();
@@ -3274,15 +3281,6 @@ static void draw_album_info()
         ctx.center.pinned = mp_toggle_pin_album(album->id);
 
     ImGui::SameLine();
-    if (imgui_image_button(ctx.textures.pencil_button.id, button_size, (ctx.center.show == SHOW_EDIT) ? RED : WHITE))
-    {
-        if (ctx.center.show == SHOW_EDIT)
-            ctx.center.show = SHOW_NONE;
-        else
-            ctx.center.show = SHOW_EDIT;
-    }
-
-    ImGui::SameLine();
     if (imgui_image_button(ctx.textures.menu_button.id, button_size))
         ImGui::OpenPopup("add_to_playlist_popup");
     if (ImGui::BeginPopup("add_to_playlist_popup"))
@@ -3291,6 +3289,16 @@ static void draw_album_info()
         ImGui::Text("Create Playlist");
         ImGui::EndPopup();
     }
+
+    ImGui::SameLine();
+    if (imgui_image_button(ctx.textures.pencil_button.id, button_size, (ctx.center.show == SHOW_EDIT) ? RED : WHITE))
+    {
+        if (ctx.center.show == SHOW_EDIT)
+            ctx.center.show = SHOW_NONE;
+        else
+            ctx.center.show = SHOW_EDIT;
+    }
+
     ImGui::PopStyleVar();
     ImGui::EndChild();
 
@@ -3419,6 +3427,15 @@ static void draw_playlist_info_tracklist()
     static float album_col_offset = 550.0f;
     static float length_col_right_offset = 100.0f;
 
+    if (glfw_key_down(ctx.key_bindings.reset_table))
+    {
+        length_col_right_offset = 100.0f;
+        float width = ImGui::GetContentRegionAvail().x - length_col_right_offset;
+        float offset = width / 3.0f;
+        artist_col_offset = name_col_offset + offset;
+        album_col_offset = name_col_offset + 2 * offset;
+    }
+
     DrawSongTableParams params{};
     params.song_tracks = &ctx.center.song_tracks;
     params.show_track = true;
@@ -3520,8 +3537,9 @@ static void draw_artist_info_songs()
     if (glfw_key_down(ctx.key_bindings.reset_table))
     {
         name_col_offset = 10.0f;
-        album_col_offset = 550.0f;
         length_col_right_offset = 100.0f;
+        float width = ImGui::GetContentRegionAvail().x - length_col_right_offset;
+        album_col_offset = name_col_offset + width / 2.0f;
     }
 
     params.songs = &ctx.center.song_search_result.entries;
@@ -3663,8 +3681,14 @@ static void draw_artist_info_edit()
         draw_artist_picker(
             [](LruCacheRef<Artist>& artist)
             {
+                ctx.center.show_split = SHOW_NONE;
+
                 ArtistID dst_artist_id = artist->id; 
                 ArtistID src_artist_id = ctx.center.artist->id;
+
+                if (dst_artist_id == src_artist_id)
+                    return;
+
                 ctx.center.artist.release();
                 ctx.center.artist_search_result.clear();
                 ctx.center.added_artists.clear();
@@ -4012,6 +4036,15 @@ static void draw_edit()
             static float artist_col_offset = 300.0f;
             static float album_col_offset = 550.0f;
             static float length_col_right_offset = 100.0f;
+
+            if (glfw_key_down(ctx.key_bindings.reset_table))
+            {
+                length_col_right_offset = 100.0f;
+                float width = ImGui::GetContentRegionAvail().x - length_col_right_offset;
+                float offset = width / 3.0f;
+                artist_col_offset = name_col_offset + offset;
+                album_col_offset = name_col_offset + 2 * offset;
+            }
 
             DrawSongTableParams params{};
             params.songs = &ctx.center.added_songs.entries;

@@ -181,6 +181,7 @@ public:
     Album      get_album_info(AlbumID album_id);
     Art        get_album_art(AlbumID album_id);
     AlbumID    get_album_from_song(SongID song_id);
+    int        get_highest_album_track(AlbumID album_id);
 
     ArtistID   get_artist_id(const char* name);
     Artist     get_artist_info(ArtistID artist_id);
@@ -247,6 +248,7 @@ public:
 
 private:
     sqlite3* conn;
+    int transaction_count;
 };
 
 // UID

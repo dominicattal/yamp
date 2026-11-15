@@ -175,6 +175,11 @@ bool DBConn::close()
     if (this->conn != nullptr)
         return true;
 
+    if (this->transaction_count > 0)
+    {
+        SPDLOG_WARN("Closing DB while transaction is active");
+    }
+
     int res = sqlite3_close(this->conn);
     if (res != SQLITE_OK)
     {
@@ -187,6 +192,12 @@ bool DBConn::close()
 
 void DBConn::begin_transaction()
 {
+    if (this->transaction_count > 0)
+    {
+        ++this->transaction_count;
+        return;
+    }
+
     char* error_msg{};
     sqlite3_exec(this->conn, "BEGIN TRANSACTION", nullptr, nullptr, &error_msg);
     if (error_msg != NULL)
@@ -195,10 +206,17 @@ void DBConn::begin_transaction()
         sqlite3_free(error_msg);
         return;
     }
+    this->transaction_count = 1;
 }
 
 void DBConn::commit_transaction()
 {
+    if (this->transaction_count > 1)
+    {
+        --this->transaction_count;
+        return;
+    }
+
     // https://www.sqlite.org/lang_transaction.html Section 2.3
     char* error_msg{};
     sqlite3_exec(this->conn, "COMMIT TRANSACTION", nullptr, nullptr, &error_msg);
@@ -208,6 +226,7 @@ void DBConn::commit_transaction()
         sqlite3_free(error_msg);
         return;
     }
+    this->transaction_count = 0;
 }
 
 SongID DBConn::get_song_id(const char* song_path)
@@ -402,6 +421,18 @@ AlbumID DBConn::get_album_from_song(SongID song_id)
     AlbumID album_id = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : INVALID_ID;
     sqlite3_finalize(stmt);
     return album_id;
+}
+
+int DBConn::get_highest_album_track(AlbumID album_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT MAX(track) FROM AlbumSong WHERE album_id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, album_id);
+    int res = sqlite3_step(stmt);
+    int track = (res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : 0;
+    sqlite3_finalize(stmt);
+    return track;
 }
 
 ArtistID DBConn::get_artist_from_song(SongID song_id)
@@ -954,18 +985,25 @@ void DBConn::merge_albums(ArtistID dst_album_id, ArtistID src_album_id)
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
-    query = "UPDATE AlbumSong SET album_id=?1 WHERE album_id=?2";
+    query = 
+        R"(
+            UPDATE AlbumSong
+            SET album_id=?1,
+                track = track + (
+                    SELECT MAX(track)
+                    FROM AlbumSong
+                    WHERE album_id=?1
+                )
+            WHERE album_id=?2
+        )";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, dst_album_id);
     sqlite3_bind_int(stmt, 2, src_album_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
-    query = "DELETE FROM Albums WHERE id=?1";
-    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
-    sqlite3_bind_int(stmt, 1, src_album_id);
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
+    this->delete_album(src_album_id);
+    this->update_album_length(dst_album_id);
     this->commit_transaction();
 }
 
@@ -987,11 +1025,7 @@ void DBConn::merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id)
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
-    query = "DELETE FROM Artists WHERE id=?1";
-    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
-    sqlite3_bind_int(stmt, 1, src_artist_id);
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
+    this->delete_artist(src_artist_id);
     this->commit_transaction();
 }
 

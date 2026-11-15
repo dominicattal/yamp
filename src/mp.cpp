@@ -1386,6 +1386,11 @@ int mp_get_song_track(SongID song_id)
     return ctx.conn.get_song_track(song_id);
 }
 
+int mp_get_highest_album_track(AlbumID album_id)
+{
+    return ctx.conn.get_highest_album_track(album_id);
+}
+
 std::vector<SongTrackID> mp_get_songs_from_album(AlbumID album_id)
 {
     return ctx.conn.get_songs_from_album(album_id);
