@@ -23,16 +23,50 @@
 
 struct MPContextInternal {
     DBConn conn;
-
     std::mt19937 mt;
-    ma_engine engine;
-    ma_sound current_song_sound;
+    
+    ma_device device;
+    ma_decoder decoder;
+
+    std::mutex decoder_mutex;
+    ma_uint64 decoder_length; // number of PCM frames in decoder
+    ma_uint64 decoder_cursor; // current pcm frame of decoder
+
     bool current_song_loaded;
+    bool editing_cursor;
     bool song_ended;
 };
 
 MPContext mp_ctx;
 static MPContextInternal ctx;
+
+static void unload_song()
+{
+    if (!ctx.current_song_loaded)
+        return;
+
+    std::lock_guard lock{ctx.decoder_mutex};
+    ma_decoder_uninit(&ctx.decoder);
+    ctx.current_song_loaded = false;
+}
+
+static void load_song(const char* path)
+{
+    if (ctx.current_song_loaded)
+    {
+        SPDLOG_WARN("Called load_song when song was loaded, call unload_song first");
+        return;
+    }
+
+    std::lock_guard lock{ctx.decoder_mutex};
+    ma_decoder_config config = ma_decoder_config(ma_format_f32, ctx.device.playback.channels, ctx.device.sampleRate);
+    ma_result res = ma_decoder_init_file(path, &config, &ctx.decoder);
+    (void)res;
+
+    ma_decoder_get_length_in_pcm_frames(&ctx.decoder, &ctx.decoder_length);
+    mp_ctx.current_song_length = static_cast<double>(ctx.decoder_length) / ctx.decoder.outputSampleRate;
+    ctx.current_song_loaded = true;
+}
 
 static bool test_pin_with_uid(Pin* pin, MPUID uid)
 {
@@ -304,29 +338,18 @@ void mp_add_album_to_playlist(AlbumID album_id, PlaylistID playlist_id)
     }
 }
 
-static void end_song_callback(void* user_data, ma_sound* sound)
-{
-    (void)user_data; (void)sound;
-    ctx.song_ended = true;
-}
-
 void mp_play_song(SongID song_id)
 {
     if (mp_ctx.current_song.song != nullptr)
         mp_ctx.song_history.push_back(mp_ctx.current_song.song->id);
 
     if (ctx.current_song_loaded)
-        ma_sound_uninit(&ctx.current_song_sound);
+        unload_song();
 
     LruCacheRef<Song> song = mp_get_song(song_id);
-    ma_sound_config config = ma_sound_config_init();
-    config.channelsIn = 1;
-    config.pFilePath = song->path.c_str();
-    config.endCallback = end_song_callback;
-    ma_sound_init_ex(&ctx.engine, &config, &ctx.current_song_sound);
-    ma_sound_start(&ctx.current_song_sound);
-    ma_sound_get_length_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_length);
-    ctx.current_song_loaded = true;
+
+    load_song(song->path.c_str());
+
     mp_ctx.paused = false;
     mp_ctx.current_song.song = std::move(song);
     mp_ctx.current_song.album = mp_get_album_from_song(song_id);
@@ -353,13 +376,8 @@ void mp_pause_or_resume()
 {
     if (!ctx.current_song_loaded)
         return;
-    if (mp_ctx.paused) {
-        mp_ctx.paused = false;
-        ma_sound_start(&ctx.current_song_sound);
-    } else {
-        mp_ctx.paused = true;
-        ma_sound_stop(&ctx.current_song_sound);
-    }
+
+    mp_ctx.paused = !mp_ctx.paused;
 }
 
 void mp_go_forward_in_current_song(float seconds)
@@ -367,14 +385,15 @@ void mp_go_forward_in_current_song(float seconds)
     if (!ctx.current_song_loaded)
         return;
 
-    const ma_uint32 sample_rate = ctx.current_song_sound.engineNode.resampler.sampleRateIn;
-    ma_uint64 current_pcm_frame;
-    ma_sound_get_cursor_in_pcm_frames(&ctx.current_song_sound, &current_pcm_frame);
+    std::lock_guard lock{ctx.decoder_mutex};
 
-    ma_uint64 skip_pcm_frames = static_cast<ma_uint64>(seconds) * sample_rate;
+    ma_uint64 current_pcm_frame;
+    ma_decoder_get_cursor_in_pcm_frames(&ctx.decoder, &current_pcm_frame);
+
+    ma_uint64 skip_pcm_frames = static_cast<ma_uint64>(seconds) * ctx.decoder.outputSampleRate;
     current_pcm_frame += skip_pcm_frames;
 
-    ma_sound_seek_to_pcm_frame(&ctx.current_song_sound, current_pcm_frame);
+    ma_decoder_seek_to_pcm_frame(&ctx.decoder, current_pcm_frame);
 }
 
 void mp_go_backward_in_current_song(float seconds)
@@ -382,17 +401,19 @@ void mp_go_backward_in_current_song(float seconds)
     if (!ctx.current_song_loaded)
         return;
 
-    const ma_uint32 sample_rate = ctx.current_song_sound.engineNode.resampler.sampleRateIn;
-    ma_uint64 current_pcm_frame;
-    ma_sound_get_cursor_in_pcm_frames(&ctx.current_song_sound, &current_pcm_frame);
+    std::lock_guard lock{ctx.decoder_mutex};
 
-    ma_uint64 skip_pcm_frames = static_cast<ma_uint64>(seconds) * sample_rate;
-    if (skip_pcm_frames > current_pcm_frame)
+    ma_uint64 current_pcm_frame;
+    ma_decoder_get_cursor_in_pcm_frames(&ctx.decoder, &current_pcm_frame);
+
+    ma_uint64 skip_pcm_frames = static_cast<ma_uint64>(seconds) * ctx.decoder.outputSampleRate;
+
+    if (current_pcm_frame < skip_pcm_frames)
         current_pcm_frame = 0;
     else
         current_pcm_frame -= skip_pcm_frames;
 
-    ma_sound_seek_to_pcm_frame(&ctx.current_song_sound, current_pcm_frame);
+    ma_decoder_seek_to_pcm_frame(&ctx.decoder, current_pcm_frame);
 }
 
 void mp_toggle_shuffle()
@@ -436,10 +457,15 @@ void mp_toggle_autoplay()
 
 void mp_update_volume(float volume)
 {
+    (void)volume;
     if (mp_ctx.mute)
-        ma_sound_set_volume(&ctx.current_song_sound, 0.0f);
+    {
+        ma_device_set_master_volume(&ctx.device, 0.0f);
+    }
     else
-        ma_sound_set_volume(&ctx.current_song_sound, mp_ctx.volume * volume);
+    {
+        ma_device_set_master_volume(&ctx.device, std::clamp(mp_ctx.volume * volume, 0.0f, 1.0f));
+    }
 }
 
 void mp_toggle_mute()
@@ -449,9 +475,18 @@ void mp_toggle_mute()
         mp_update_volume(mp_ctx.current_song.song->volume);
 }
 
-void mp_update_cursor()
+void mp_start_editing_cursor()
 {
-    ma_sound_seek_to_second(&ctx.current_song_sound, mp_ctx.current_song_cursor);
+    std::lock_guard lock{ctx.decoder_mutex};
+    ctx.editing_cursor = true;
+}
+
+void mp_stop_editing_cursor()
+{
+    std::lock_guard lock{ctx.decoder_mutex};
+    ctx.editing_cursor = false;
+    ma_uint64 target_pcm_frame = mp_ctx.current_song_cursor * ctx.decoder.outputSampleRate;
+    ma_decoder_seek_to_pcm_frame(&ctx.decoder, target_pcm_frame);
 }
 
 static void sort_or_shuffle_group_queue()
@@ -1501,11 +1536,11 @@ void mp_play_next()
             mp_ctx.autoplay_queue.push_back(std::move(new_song));
 
         } else if (ctx.current_song_loaded) {
+            unload_song();
             mp_ctx.current_song.song = nullptr;
             mp_ctx.current_song.artist = nullptr;
             mp_ctx.current_song.album = nullptr;
             mp_ctx.current_song_lyrics[0] = '\0';
-            ma_sound_uninit(&ctx.current_song_sound);
             ctx.current_song_loaded = false;
             mp_ctx.current_song_length = 0.0f;
             mp_ctx.current_song_cursor = 0.0f;
@@ -1597,50 +1632,39 @@ int mp_get_id(MPUID uid)
     return db_get_id(uid);
 }
 
-void mp_change_db(const std::string& db_path)
+void data_callback(ma_device* device, void* output, const void* input, ma_uint32 frame_count)
 {
-    (void)db_path;
-    return;
-    //if (ctx.current_song_loaded)
-    //    ma_sound_uninit(&ctx.current_song_sound);
-    //ctx.current_song_loaded = false;
-
-    //mp_ctx.current_song.release();
-    //mp_ctx.current_song_artist.release();
-    //mp_ctx.current_song_album.release();
-    //mp_ctx.queue.clear();
-    //mp_ctx.autoplay_queue.clear();
-    //mp_ctx.group_queue.clear();
-    //mp_ctx.song_history.clear();
-    //mp_ctx.pins.clear();
-    //mp_ctx.added_songs.clear();
-    //mp_ctx.added_artists.clear();
-    //mp_ctx.added_albums.clear();
-    //mp_ctx.playing_group = false;
-    //mp_ctx.autoplay = false;
-
-    //mp_ctx.songs.clear();
-    //mp_ctx.albums.clear();
-    //mp_ctx.artists.clear();
-    //mp_ctx.playlists.clear();
-    //mp_ctx.song_artist.clear();
-    //mp_ctx.song_album.clear();
-    //mp_ctx.album_artist.clear();
+    (void)device; (void)input;
+    std::lock_guard lock{ctx.decoder_mutex};
+    ma_uint64 frames_read;
+    if (ctx.current_song_loaded && !mp_ctx.paused && !ctx.song_ended && !ctx.editing_cursor)
+    {
+        ma_result res = ma_decoder_read_pcm_frames(&ctx.decoder, output, frame_count, &frames_read);
+        ma_decoder_get_cursor_in_pcm_frames(&ctx.decoder, &ctx.decoder_cursor);
+        ctx.song_ended = (res == MA_AT_END);
+    }
 }
 
-void mp_init()
+static void initialize_device()
 {
-    ctx.mt.seed(std::chrono::steady_clock::now().time_since_epoch().count());
+    ma_device_config config = ma_device_config_init(ma_device_type_playback);
+    config.playback.format = ma_format_f32;
+    config.playback.channels = 0;
+    config.sampleRate = 0;
+    config.dataCallback = data_callback;
+    config.pUserData = NULL;
 
-    ctx.conn.open(config.db_path.c_str());
-
-    mp_ctx.volume = 1.0f;
-    mp_ctx.shuffle = true;
-    ma_result res;
-    res = ma_engine_init(NULL, &ctx.engine);
+    ma_result res = ma_device_init(NULL, &config, &ctx.device);
     if (res != MA_SUCCESS)
+    {
+        SPDLOG_INFO("Could not initialize miniaudio device");
         exit(1);
+    }
+    ma_device_start(&ctx.device);
+}
 
+static void initialize_pins()
+{
     std::vector<PinID> pin_ids = ctx.conn.get_pins();
     mp_ctx.pins.resize(pin_ids.size());
     std::transform(pin_ids.begin(), pin_ids.end(), mp_ctx.pins.begin(),
@@ -1670,6 +1694,19 @@ void mp_init()
         });
 }
 
+void mp_init()
+{
+    ctx.mt.seed(std::chrono::steady_clock::now().time_since_epoch().count());
+
+    ctx.conn.open(config.db_path.c_str());
+
+    mp_ctx.volume = 1.0f;
+    mp_ctx.shuffle = true;
+
+    initialize_device();
+    initialize_pins();
+}
+
 void mp_cleanup()
 {
     mp_ctx.queue.clear();
@@ -1679,17 +1716,18 @@ void mp_cleanup()
     mp_ctx.current_song.song.release();
     mp_ctx.current_song.album.release();
     mp_ctx.current_song.artist.release();
-    if (ctx.current_song_loaded)
-        ma_sound_uninit(&ctx.current_song_sound);
-    ma_engine_uninit(&ctx.engine);
+    unload_song();
+    ma_device_uninit(&ctx.device);
     SPDLOG_INFO("MP cleaned up");
 }
 
 void mp_update()
 {
-    if (mp_ctx.current_song.song != nullptr) {
-        ma_sound_get_cursor_in_seconds(&ctx.current_song_sound, &mp_ctx.current_song_cursor);
+    if (ctx.current_song_loaded && !ctx.editing_cursor) {
+        std::lock_guard lock{ctx.decoder_mutex};
+        mp_ctx.current_song_cursor = static_cast<double>(ctx.decoder_cursor) / ctx.decoder.outputSampleRate;
     }
+
     if (ctx.song_ended) {
         mp_play_next();
         ctx.song_ended = false;

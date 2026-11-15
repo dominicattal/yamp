@@ -17,6 +17,9 @@
 #define SLOTS_ACROSS (TEXTURE_SIZE / ART_WIDTH)
 #define SLOTS_PER_TEXTURE (SLOTS_ACROSS * SLOTS_ACROSS)
 
+#define MIN_VOLUME 0.0f
+#define MAX_VOLUME 1.0f
+
 struct SongTrack {
     LruCacheRef<Song> song;
     int track;
@@ -76,6 +79,7 @@ struct MPContext {
     float current_song_cursor;
     float current_song_length;
     char current_song_lyrics[MAX_LYRICS_SIZE];
+    bool editing_song_cursor;
 
     // this stores songs the user explicity queues up
     std::deque<SongAlbumArtist> queue;
@@ -127,7 +131,6 @@ extern MPContext mp_ctx;
 // Initializes and cleans up music play context
 void mp_init();
 void mp_cleanup();
-void mp_change_db(const std::string& db_path);
 
 // Call this every frame. Checks whether current song ended or not
 void mp_update();
@@ -151,6 +154,8 @@ void mp_pause_or_resume();
 
 void mp_toggle_shuffle();
 void mp_toggle_autoplay();
+void mp_start_editing_cursor();
+void mp_stop_editing_cursor();
 void mp_update_cursor();
 // multiplied by the context volume
 void mp_update_volume(float volume);

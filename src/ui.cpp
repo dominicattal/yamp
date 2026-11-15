@@ -1390,36 +1390,6 @@ static void prompt_edit_art_slot()
         };
 }
 
-[[maybe_unused]] static void prompt_new_db()
-{
-    if (prompting())
-        return;
-
-    ctx.prompt = std::async(std::launch::async,
-        []() -> std::string {
-            const std::string name {"Choose database"};
-            const std::string default_path = pfd::path::home();
-            const std::vector<std::string> filters {"SQLite DB", "*.db"};
-            const pfd::opt options = pfd::opt::none;
-            std::vector<std::string> db_path = pfd::open_file(name, default_path, filters, options).result();
-            return (db_path.size() > 0) ? std::move(db_path.front()) : std::string{};
-        });
-    ctx.prompt_callback =
-        []() -> void
-        {
-            std::string db_path = ctx.prompt->get();
-            if (db_path.size() > 0)
-            {
-                destroy_cache_references();
-                mp_change_db(db_path);
-            }
-            else
-            {
-                SPDLOG_INFO("Change db prompt cancelled");
-            }
-        };
-}
-
 static void prompt_mp3_file()
 {
     if (prompting())
@@ -2719,7 +2689,7 @@ static void draw_song_info_edit()
     ImGui::SameLine();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 4.0f);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (volume_icon_size.y - volume_slider_size.y) / 2.0f);
-    if (imgui_custom_slider_float("##Volume", &ctx.center.song->volume, 0.0f, 2.0f, volume_slider_size))
+    if (imgui_custom_slider_float("##Volume", &ctx.center.song->volume, MIN_VOLUME, MAX_VOLUME, volume_slider_size))
     {
         if (mp_ctx.current_song.song != nullptr && ctx.center.song->id == mp_ctx.current_song.song->id)
             mp_update_volume(ctx.center.song->volume);
@@ -4384,8 +4354,18 @@ static void draw_player(const ImVec2 size)
     ImGui::Text("%s", cursor_str);
     float text_height = ImGui::GetFontSize();
     ImGui::SetCursorPos(ImVec2(song_cursor_x, 15.0f + text_height + 5.0f));
-    if (imgui_custom_slider_float("##cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, ImVec2(cursor_width, 5.0f)))
-        mp_update_cursor();
+
+    ItemActiveEnum slider_res = imgui_custom_slider_float("##cursor", &mp_ctx.current_song_cursor, 0.0f, mp_ctx.current_song_length, ImVec2(cursor_width, 5.0f));
+
+    if (slider_res == ITEM_ACTIVATED)
+    {
+        mp_start_editing_cursor();
+    }
+
+    if (slider_res == ITEM_DEACTIVATED)
+    {
+        mp_stop_editing_cursor();
+    }
 
     const ImVec2 button_size = ImVec2(32.0f, 32.0f);
     float spacing = 20.0f;
@@ -4461,7 +4441,7 @@ static void draw_player(const ImVec2 size)
         ImGui::PopStyleVar();
 
         ImGui::SetCursorPos(ImVec2(size.x - slider_size.x - right_edge_spacing, slider_y_offset + (volume_icon_size.x - slider_size.y) / 2.0f));
-        if (imgui_custom_slider_float("##volume", &mp_ctx.volume, 0.0f, 1.0f, slider_size))
+        if (imgui_custom_slider_float("##volume", &mp_ctx.volume, MIN_VOLUME, MAX_VOLUME, slider_size))
         {
             if (mp_ctx.current_song.song != nullptr)
                 mp_update_volume(mp_ctx.current_song.song->volume);
