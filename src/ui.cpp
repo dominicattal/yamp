@@ -327,6 +327,7 @@ enum AlignmentEnum {
 };
 
 enum MenuPopupEnum {
+    MENU_NONE,
     MENU_END_POPUP,
     MENU_CLOSE_POPUP,
     MENU_CLOSE_TABLE
@@ -371,9 +372,9 @@ static void imgui_separator()
     ImGui::SetCursorPos(position);
 }
 
-static bool imgui_button(const char* text)
+static bool imgui_button(const char* text, ImVec2 size = ImVec2(0.0f, 0.0f))
 {
-    const bool pressed = ImGui::Button(text);
+    const bool pressed = ImGui::Button(text, size);
     if (ImGui::IsItemHovered())
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     return pressed;
@@ -665,12 +666,18 @@ static void imgui_custom_table(CustomTableParams& params)
 
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
             *params.selected_row = row;
-        if (ImGui::BeginPopupContextItem("A"))
+
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 2.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_Border, GRAY);
+        if (ImGui::BeginPopupContextItem("table_popup"))
         {
             *params.selected_row = row;
             MenuPopupEnum res = params.menu_popup_callback(params.selected_row);
             if (res == MENU_CLOSE_TABLE)
             {
+                ImGui::PopStyleVar(2);
+                ImGui::PopStyleColor();
                 ImGui::EndPopup();
                 ImGui::PopID();
                 ImGui::EndChild();
@@ -700,6 +707,8 @@ static void imgui_custom_table(CustomTableParams& params)
             params.body_row_col_callback[col](region_start, region_size, row);
             ImGui::PopID();
         }
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
         ImGui::PopID();
         cursor_pos_y += params.row_height;
     }
@@ -778,6 +787,10 @@ static void destroy_cache_references()
     ctx.center.added_songs.entries.clear();
     ctx.center.added_albums.entries.clear();
     ctx.center.added_artists.entries.clear();
+    ctx.next_frame_center.song.release();
+    ctx.next_frame_center.album.release();
+    ctx.next_frame_center.artist.release();
+    ctx.next_frame_center.playlist.release();
 }
 
 static GLTexture get_texture_from_slot(Slot& slot)
@@ -1300,7 +1313,7 @@ static void set_next_frame_center_view()
         set_center_view_edit();
     else if (ctx.next_frame_center.type == SHOW_CENTER_LYRICS)
         set_center_view_lyrics();
-    else if (ctx.next_frame_center.type == SHOW_CENTER_SEARCH)
+    else if (ctx.next_frame_center.type == SHOW_CENTER_SEARCH && ctx.center.type != SHOW_CENTER_SEARCH)
         set_center_view_search();
     else if (ctx.next_frame_center.song != nullptr)
         set_center_view_song(std::move(ctx.next_frame_center.song));
@@ -1377,7 +1390,7 @@ static void prompt_edit_art_slot()
         };
 }
 
-static void prompt_new_db()
+[[maybe_unused]] static void prompt_new_db()
 {
     if (prompting())
         return;
@@ -1795,30 +1808,55 @@ void ui_cleanup()
     SPDLOG_INFO("UI cleaned up");
 }
 
-static void draw_add_to_playlist_popup(SongID song_id)
+static void draw_add_to_playlist_popup(std::function<bool(void)> widget_callback, std::function<void(PlaylistID)> playlist_callback)
 {
-    (void)song_id;
-    if (imgui_button("Add to Playlist"))
+    assert(widget_callback);
+    assert(playlist_callback);
+
+    const ImVec2 size = ImVec2(150.0f, 0.0f);
+
+    if (widget_callback())
         ImGui::OpenPopup("add_to_playlist_popup");
+
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 2.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, GRAY);
     if (ImGui::BeginPopup("add_to_playlist_popup"))
     {
-        if (imgui_button("Add To Playlist"))
+        for (Pin& pin : mp_ctx.pins)
         {
-            //mp_add_song_to_playlist(song_id, playlist_id);
+            if (pin.type != MPUID_PLAYLIST)
+                continue;
+
+            if (imgui_button(pin.playlist->name.c_str(), size))
+            {
+                playlist_callback(pin.playlist->id);
+                ctx.next_frame_center.playlist = mp_get_playlist(pin.playlist->id);
+                ImGui::CloseCurrentPopup();
+            }
         }
-        ImGui::Text("Create Playlist");
-        if (imgui_button("Close"))
+        if (imgui_button("Create Playlist", size))
+        {
+            LruCacheRef<Playlist> playlist = mp_create_playlist();
+            mp_toggle_pin_playlist(playlist->id);
+            playlist_callback(playlist->id);
+            ctx.next_frame_center.playlist = std::move(playlist);
+        }
+        if (imgui_button("Close", size))
         {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
     }
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
 }
 
 struct DrawSongTableParams {
     std::vector<SongAlbumArtistTrack>* song_tracks;
     std::vector<SongAlbumArtist>* songs;
     std::vector<float*> column_offsets;
+    std::function<bool(SongAlbumArtistTrack&)> menu_options;
     bool show_track = false;
     bool show_art = true;
     bool show_name = true;
@@ -1852,33 +1890,67 @@ static void draw_song_table(DrawSongTableParams& params)
     static float album_col_width = 300.0f;
     static float length_col_width = 50.0f;
 
-    static int selected_row = -1;
+    int selected_row = -1;
 
     custom_table_params.selected_row = &selected_row;
     custom_table_params.menu_popup_callback = 
         [&params](int* selected_row) -> MenuPopupEnum
         {
+            const ImVec2 size = ImVec2(150.0f, 0.0f);
             LruCacheRef<Song>& song = (params.show_track)
                                 ? params.song_tracks->at(*selected_row).song
                                 : params.songs->at(*selected_row).song;
-            if (imgui_button("Show"))
+
+            if (imgui_button("Show", size))
             {
                 *selected_row = -1;
                 ctx.next_frame_center.song = mp_get_song(song->id);
                 return MENU_CLOSE_TABLE;
             }
-            if (imgui_button("Play"))
+
+            if (imgui_button("Play", size))
             {
                 mp_play_song(song->id);
                 return MENU_CLOSE_POPUP;
             }
-            if (imgui_button("Queue"))
+
+            if (imgui_button("Queue", size))
             {
                 mp_queue_song(song->id);
                 return MENU_CLOSE_POPUP;
             }
-            draw_add_to_playlist_popup(song->id);
-            if (imgui_button("Close"))
+
+            bool added_to_playlist = false;
+            draw_add_to_playlist_popup(
+                [&size]() -> bool
+                {
+                    return imgui_button("Add to Playlist", size);
+                },
+                [&added_to_playlist, song_id = song->id](PlaylistID playlist_id) -> void
+                {
+                    mp_add_song_to_playlist(song_id, playlist_id);
+                    added_to_playlist = true;
+                });
+
+            if (added_to_playlist)
+            {
+                *selected_row = -1;
+                return MENU_CLOSE_POPUP;
+            }
+
+            if (params.menu_options)
+            {
+                bool close_popup{};
+                if (params.show_track)
+                    close_popup = params.menu_options(params.song_tracks->at(*selected_row));
+                else
+                    close_popup = params.menu_options(params.songs->at(*selected_row));
+                
+                if (close_popup)
+                    return MENU_CLOSE_POPUP;
+            }
+
+            if (imgui_button("Close", size))
                 return MENU_CLOSE_POPUP;
 
             return MENU_END_POPUP;
@@ -2743,9 +2815,19 @@ static void draw_song_info_edit()
     if (imgui_delete_button())
     {
         SongID song_id = ctx.center.song->id;
-        history_previous();
+
+        ctx.view_history.erase(
+            std::remove_if(ctx.view_history.begin(), ctx.view_history.end(),
+                [song_id](std::pair<ViewEnum, GenericID>& pair) -> bool
+                {
+                    return pair.first == SHOW_CENTER_SONG && pair.second == song_id;
+                }),
+            ctx.view_history.end()
+        );
+
         destroy_cache_references();
         mp_delete_song(song_id);
+        history_previous();
         imgui_pop_font_scale();
         ImGui::EndChild();
         ImGui::EndTable();
@@ -3132,9 +3214,19 @@ static void draw_album_info_edit()
     if (imgui_delete_button())
     {
         AlbumID album_id = ctx.center.album->id;
-        history_previous();
+
+        ctx.view_history.erase(
+            std::remove_if(ctx.view_history.begin(), ctx.view_history.end(),
+                [album_id](std::pair<ViewEnum, GenericID>& pair) -> bool
+                {
+                    return pair.first == SHOW_CENTER_ALBUM && pair.second == album_id;
+                }),
+            ctx.view_history.end()
+        );
+
         destroy_cache_references();
         mp_delete_album(album_id);
+        history_previous();
         imgui_pop_font_scale();
         ImGui::EndChild();
         ImGui::EndTable();
@@ -3281,14 +3373,15 @@ static void draw_album_info()
         ctx.center.pinned = mp_toggle_pin_album(album->id);
 
     ImGui::SameLine();
-    if (imgui_image_button(ctx.textures.menu_button.id, button_size))
-        ImGui::OpenPopup("add_to_playlist_popup");
-    if (ImGui::BeginPopup("add_to_playlist_popup"))
-    {
-        ImGui::Text("Add To Playlist");
-        ImGui::Text("Create Playlist");
-        ImGui::EndPopup();
-    }
+    draw_add_to_playlist_popup(
+        [&button_size]() -> bool
+        {
+            return imgui_image_button(ctx.textures.menu_button.id, button_size);
+        },
+        [](PlaylistID playlist_id) -> void
+        {
+            mp_add_album_to_playlist(ctx.center.album->id, playlist_id);
+        });
 
     ImGui::SameLine();
     if (imgui_image_button(ctx.textures.pencil_button.id, button_size, (ctx.center.show == SHOW_EDIT) ? RED : WHITE))
@@ -3406,12 +3499,20 @@ static void draw_playlist_info_edit()
     if (imgui_delete_button())
     {
         PlaylistID playlist_id = ctx.center.playlist->id;
-        history_previous();
+
+        ctx.view_history.erase(
+            std::remove_if(ctx.view_history.begin(), ctx.view_history.end(),
+                [playlist_id](std::pair<ViewEnum, GenericID>& pair) -> bool
+                {
+                    return pair.first == SHOW_CENTER_PLAYLIST && pair.second == playlist_id;
+                }),
+            ctx.view_history.end()
+        );
+
         destroy_cache_references();
         mp_delete_playlist(playlist_id);
+        history_previous();
         imgui_pop_font_scale();
-        ImGui::EndChild();
-        ImGui::EndTable();
         return;
     }
 
@@ -3439,6 +3540,17 @@ static void draw_playlist_info_tracklist()
     DrawSongTableParams params{};
     params.song_tracks = &ctx.center.song_tracks;
     params.show_track = true;
+    params.menu_options =
+        [](SongAlbumArtistTrack& song_track) -> bool
+        {
+            if (imgui_button("Remove", ImVec2(150.0f, 0.0f)))
+            {
+                mp_remove_song_from_playlist(ctx.center.playlist->id, song_track.track);
+                ctx.next_frame_center.playlist = mp_get_playlist(ctx.center.playlist->id);
+                return true;
+            }
+            return false;
+        };
     params.column_offsets = {
         &track_col_offset,
         &name_col_offset,
@@ -3446,6 +3558,7 @@ static void draw_playlist_info_tracklist()
         &album_col_offset,
         &length_col_right_offset,
     };
+
     draw_song_table(params);
 }
 
@@ -3656,9 +3769,19 @@ static void draw_artist_info_edit()
     if (imgui_delete_button())
     {
         ArtistID artist_id = ctx.center.artist->id;
-        history_previous();
+
+        ctx.view_history.erase(
+            std::remove_if(ctx.view_history.begin(), ctx.view_history.end(),
+                [artist_id](std::pair<ViewEnum, GenericID>& pair) -> bool
+                {
+                    return pair.first == SHOW_CENTER_ARTIST && pair.second == artist_id;
+                }),
+            ctx.view_history.end()
+        );
+
         destroy_cache_references();
         mp_delete_artist(artist_id);
+        history_previous();
         imgui_pop_font_scale();
         ImGui::EndChild();
         ImGui::EndTable();
@@ -3875,23 +3998,16 @@ static void draw_header(ImVec2 size)
 
 static void draw_home()
 {
-    ImGui::Text("Home");
-
-    if (imgui_button("Change DB")) 
-    {
-        prompt_new_db();
-    }
-
-    ImGui::Text("DB: %s", config.db_path.c_str());
-    ImGui::Text("# Songs = %d", mp_ctx.num_songs);
-    ImGui::Text("# Albums = %d", mp_ctx.num_albums);
-    ImGui::Text("# Artists = %d", mp_ctx.num_artists);
-    ImGui::Text("# Playlists = %d", mp_ctx.num_playlists);
+    imgui_push_font_scale(2.0f); 
+    imgui_aligned_text("Home", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail(), ALIGN_CENTER, ALIGN_CENTER);
+    imgui_pop_font_scale();
 }
 
 static void draw_settings()
 {
-    ImGui::Text("Settings");
+    imgui_push_font_scale(2.0f); 
+    imgui_aligned_text("Settings", ImGui::GetCursorPos(), ImGui::GetContentRegionAvail(), ALIGN_CENTER, ALIGN_CENTER);
+    imgui_pop_font_scale();
 }
 
 static void draw_edit()

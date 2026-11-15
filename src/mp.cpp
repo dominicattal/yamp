@@ -275,14 +275,16 @@ void mp_reset_added_songs()
 
 void mp_add_song_to_playlist(SongID song_id, PlaylistID playlist_id)
 {
-    std::vector<SongTrackID> tracks = ctx.conn.get_songs_from_playlist(playlist_id);
-    int track = tracks.size() + 1;
-    ctx.conn.create_playlist_song(playlist_id, song_id, track);
-    tracks.emplace_back(song_id, track);
+    ctx.conn.create_playlist_song(playlist_id, song_id);
     LruCacheRef<Song> song = mp_get_song(song_id);
     LruCacheRef<Playlist> playlist = mp_ctx.playlists.get(playlist_id);
     if (playlist != nullptr)
         playlist->length += song->length;
+}
+
+void mp_remove_song_from_playlist(PlaylistID playlist_id, int track)
+{
+    ctx.conn.delete_playlist_song(playlist_id, track);
 }
 
 void mp_add_album_to_playlist(AlbumID album_id, PlaylistID playlist_id)

@@ -64,8 +64,7 @@ const char* schema = R"(
     CREATE TABLE IF NOT EXISTS PlaylistSong (
         playlist_id INTEGER,
         song_id INTEGER,
-        track INTEGER,
-        PRIMARY KEY (playlist_id, song_id)
+        track INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS Pins (
@@ -1157,6 +1156,27 @@ void DBConn::delete_pin(MPUID uid)
     sqlite3_finalize(stmt);
 }
 
+void DBConn::delete_playlist_song(PlaylistID playlist_id, int track)
+{
+    sqlite3_stmt* stmt;
+
+    this->begin_transaction();
+    const char* query = "DELETE FROM PlaylistSong WHERE playlist_id=?1 AND track=?2";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, playlist_id);
+    sqlite3_bind_int(stmt, 2, track);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    query = "UPDATE PlaylistSong SET track=track-1 WHERE playlist_id=?1 AND track>track";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, playlist_id);
+    sqlite3_bind_int(stmt, 2, track);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    this->commit_transaction();
+}
+
 AlbumID DBConn::get_album_id(const char* name)
 {
     sqlite3_stmt* stmt;
@@ -1278,16 +1298,26 @@ void DBConn::update_album_songs_art(AlbumID album_id)
     sqlite3_finalize(stmt);
 }
 
-void DBConn::create_playlist_song(PlaylistID playlist_id, SongID song_id, int track)
+void DBConn::create_playlist_song(PlaylistID playlist_id, SongID song_id)
 {
     sqlite3_stmt* stmt;
-    const char* query = "INSERT INTO PlaylistSong (playlist_id, song_id, track) VALUES (?1, ?2, ?3)";
+
+    this->begin_transaction();
+    const char* query = "SELECT MAX(track) FROM PlaylistSong WHERE playlist_id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, playlist_id);
+    int res = sqlite3_step(stmt);
+    int track = 1 + ((res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : 0);
+    sqlite3_finalize(stmt);
+
+    query = "INSERT INTO PlaylistSong (playlist_id, song_id, track) VALUES (?1, ?2, ?3)";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, playlist_id);
     sqlite3_bind_int(stmt, 2, song_id);
     sqlite3_bind_int(stmt, 3, track);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    this->commit_transaction();
 }
 
 bool DBConn::artist_album_exists(ArtistID artist_id, AlbumID album_id)

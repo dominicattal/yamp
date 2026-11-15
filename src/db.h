@@ -165,7 +165,7 @@ public:
     PlaylistID create_playlist(Playlist& playlist);
     void       create_artist_song(ArtistID artist_id, SongID song_id);
     void       create_album_song(AlbumID album_id, SongID song_id, int track);
-    void       create_playlist_song(PlaylistID playlist_id, SongID song_id, int track);
+    void       create_playlist_song(PlaylistID playlist_id, SongID song_id);
     void       create_artist_album(ArtistID artist_id, AlbumID album_id);
     PinID      create_pin(MPUID uid);
 
@@ -245,6 +245,7 @@ public:
     void delete_artist(ArtistID artist_id);
     void delete_playlist(PlaylistID playlist_id);
     void delete_pin(MPUID uid);
+    void delete_playlist_song(PlaylistID playlist_id, int track);
 
 private:
     sqlite3* conn;
