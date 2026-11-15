@@ -71,11 +71,6 @@ struct MPContext {
     LruCache<AlbumID> song_album;
     LruCache<ArtistID> album_artist;
 
-    int num_songs;
-    int num_albums;
-    int num_artists;
-    int num_playlists;
-
     // in seconds
     SongAlbumArtist current_song;
     float current_song_cursor;

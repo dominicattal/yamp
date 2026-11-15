@@ -276,15 +276,23 @@ void mp_reset_added_songs()
 void mp_add_song_to_playlist(SongID song_id, PlaylistID playlist_id)
 {
     ctx.conn.create_playlist_song(playlist_id, song_id);
-    LruCacheRef<Song> song = mp_get_song(song_id);
     LruCacheRef<Playlist> playlist = mp_ctx.playlists.get(playlist_id);
     if (playlist != nullptr)
-        playlist->length += song->length;
+    {
+        Playlist updated_playlist = ctx.conn.get_playlist_info(playlist_id);
+        playlist->length = updated_playlist.length;
+    }
 }
 
 void mp_remove_song_from_playlist(PlaylistID playlist_id, int track)
 {
     ctx.conn.delete_playlist_song(playlist_id, track);
+    LruCacheRef<Playlist> playlist = mp_ctx.playlists.get(playlist_id);
+    if (playlist != nullptr)
+    {
+        Playlist updated_playlist = ctx.conn.get_playlist_info(playlist_id);
+        playlist->length = updated_playlist.length;
+    }
 }
 
 void mp_add_album_to_playlist(AlbumID album_id, PlaylistID playlist_id)
@@ -1660,11 +1668,6 @@ void mp_init()
             }
             return pin;
         });
-
-    mp_ctx.num_songs = ctx.conn.get_num_songs();
-    mp_ctx.num_albums = ctx.conn.get_num_albums();
-    mp_ctx.num_artists = ctx.conn.get_num_artists();
-    mp_ctx.num_playlists = ctx.conn.get_num_playlists();
 }
 
 void mp_cleanup()

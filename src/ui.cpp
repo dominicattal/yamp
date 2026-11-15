@@ -1823,8 +1823,12 @@ static void draw_add_to_playlist_popup(std::function<bool(void)> widget_callback
     ImGui::PushStyleColor(ImGuiCol_Border, GRAY);
     if (ImGui::BeginPopup("add_to_playlist_popup"))
     {
+        int num_playlists_shown = 0;
         for (Pin& pin : mp_ctx.pins)
         {
+            if (num_playlists_shown > 5)
+                break;
+
             if (pin.type != MPUID_PLAYLIST)
                 continue;
 
@@ -1834,6 +1838,7 @@ static void draw_add_to_playlist_popup(std::function<bool(void)> widget_callback
                 ctx.next_frame_center.playlist = mp_get_playlist(pin.playlist->id);
                 ImGui::CloseCurrentPopup();
             }
+            ++num_playlists_shown;
         }
         if (imgui_button("Create Playlist", size))
         {

@@ -235,6 +235,7 @@ public:
     void merge_artists(ArtistID dst_artist_id, ArtistID src_artist_id);
 
     void update_playlist(Playlist& playlist);
+    void update_playlist_length(PlaylistID playlist_id);
     void update_playlist_art(PlaylistID playlist_id, Art& art);
 
     void update_pin(MPUID uid, uint64_t last_accessed);

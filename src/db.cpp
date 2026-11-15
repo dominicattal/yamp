@@ -950,7 +950,6 @@ void DBConn::update_album_length(AlbumID album_id)
     sqlite3_finalize(stmt);
 }
 
-
 void DBConn::update_artist(Artist& artist)
 {
     sqlite3_stmt* stmt;
@@ -1168,12 +1167,15 @@ void DBConn::delete_playlist_song(PlaylistID playlist_id, int track)
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
-    query = "UPDATE PlaylistSong SET track=track-1 WHERE playlist_id=?1 AND track>track";
+    query = "UPDATE PlaylistSong SET track=track-1 WHERE playlist_id=?1 AND track>?2";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, playlist_id);
     sqlite3_bind_int(stmt, 2, track);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+
+    this->update_playlist_length(playlist_id);
+
     this->commit_transaction();
 }
 
@@ -1205,6 +1207,7 @@ AlbumID DBConn::create_album(Album& album)
 void DBConn::create_album_song(AlbumID album_id, SongID song_id, int track)
 {
     sqlite3_stmt* stmt;
+    this->begin_transaction();
     const char* query = "INSERT INTO AlbumSong (album_id, song_id, track) VALUES (?1, ?2, ?3)";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, album_id);
@@ -1212,7 +1215,8 @@ void DBConn::create_album_song(AlbumID album_id, SongID song_id, int track)
     sqlite3_bind_int(stmt, 3, track);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    DBConn::update_album_length(album_id);
+    this->update_album_length(album_id);
+    this->commit_transaction();
 }
 
 PlaylistID DBConn::get_playlist_id(const char* name)
@@ -1246,6 +1250,16 @@ void DBConn::update_playlist(Playlist& playlist)
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_text(stmt, 1, playlist.name.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, playlist.id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void DBConn::update_playlist_length(PlaylistID playlist_id)
+{
+    sqlite3_stmt* stmt;
+    const char* query = "UPDATE Playlists SET length=(SELECT SUM(length) FROM Songs S JOIN PlaylistSong P ON S.id=P.song_id WHERE P.playlist_id=?1) WHERE id=?1";
+    sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+    sqlite3_bind_int(stmt, 1, playlist_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
@@ -1310,6 +1324,17 @@ void DBConn::create_playlist_song(PlaylistID playlist_id, SongID song_id)
     int track = 1 + ((res == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : 0);
     sqlite3_finalize(stmt);
 
+    // If there are no songs in the playlist, then copy the song's art
+    if (track == 1)
+    {
+        query = "UPDATE Playlists SET cover=(SELECT cover FROM Songs WHERE id=?1) WHERE id=?2";
+        sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
+        sqlite3_bind_int(stmt, 1, song_id);
+        sqlite3_bind_int(stmt, 2, playlist_id);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+
     query = "INSERT INTO PlaylistSong (playlist_id, song_id, track) VALUES (?1, ?2, ?3)";
     sqlite3_prepare_v2(this->conn, query, -1, &stmt, NULL); 
     sqlite3_bind_int(stmt, 1, playlist_id);
@@ -1317,6 +1342,9 @@ void DBConn::create_playlist_song(PlaylistID playlist_id, SongID song_id)
     sqlite3_bind_int(stmt, 3, track);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+
+    this->update_playlist_length(playlist_id);
+
     this->commit_transaction();
 }
 
